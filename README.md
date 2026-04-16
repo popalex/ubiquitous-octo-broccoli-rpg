@@ -59,6 +59,7 @@ This starts:
 - `postgres` on `localhost:5432`
 - `ollama` on `localhost:11434`
 - `api` on `localhost:8000`
+- `frontend` on `localhost:5173`
 
 The startup flow is:
 
@@ -67,8 +68,29 @@ The startup flow is:
 3. `ollama-init` pulls the configured small models automatically
 4. The API runs `alembic upgrade head`
 5. Uvicorn starts
+6. The `pnpm` frontend dev server starts
 
 The first boot can take several minutes because model downloads happen automatically.
+
+Open the UI at:
+
+```bash
+http://localhost:5173
+```
+
+If you want to run the frontend outside Docker:
+
+```bash
+cd frontend
+pnpm install
+pnpm dev
+```
+
+Then open:
+
+```bash
+http://localhost:5173
+```
 
 ## 3. Run Migrations Manually
 
@@ -87,6 +109,8 @@ docker compose exec api python -m app.seed
 ```bash
 curl http://localhost:8000/health
 ```
+
+The browser UI uses the Vite dev proxy, so it talks to the backend through `/api/*` while you browse `localhost:5173`.
 
 ## 6. Load or Update a Character
 
