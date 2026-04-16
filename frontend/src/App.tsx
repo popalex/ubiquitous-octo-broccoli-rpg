@@ -281,25 +281,25 @@ export default function App() {
       <div className="ambient ambient-right" />
       <header className="masthead">
         <div>
-          <p className="eyebrow">Small Models Only</p>
-          <h1>Roleplay Control Room</h1>
+          <p className="eyebrow">Arcane Chronicle</p>
+          <h1>✦ Roleplay Session Console</h1>
           <p className="lede">
-            Template-driven character setup, live in-character chat, retrieval visibility, and long-term memory inspection in one console.
+            Craft your character, weave your story, and watch memories form across the tapestry of your adventure.
           </p>
         </div>
         <div className="status-strip">
-          <div className={`pill ${health?.status === "ok" ? "ok" : "warn"}`}>API {health?.status || "..."}</div>
-          <div className={`pill ${health?.database === "ok" ? "ok" : "warn"}`}>DB {health?.database || "..."}</div>
-          <div className="pill neutral">Ollama-first</div>
-          <div className="pill neutral">pnpm + Vite</div>
+          <div className={`pill ${health?.status === "ok" ? "ok" : "warn"}`}>Realm {health?.status || "..."}</div>
+          <div className={`pill ${health?.database === "ok" ? "ok" : "warn"}`}>Archive {health?.database || "..."}</div>
+          <div className="pill neutral">Local Models</div>
+          <div className="pill neutral">Ollama</div>
         </div>
       </header>
 
       <main className="dashboard">
         <section className="panel panel-left">
           <div className="panel-header">
-            <p className="eyebrow">Templates</p>
-            <h2>Starting Cast</h2>
+            <p className="eyebrow">Character Codex</p>
+            <h2>Choose Your Path</h2>
           </div>
           <div className="template-grid">
             {templates.map((template) => (
@@ -322,37 +322,41 @@ export default function App() {
                 Character Name
                 <input
                   value={form.name}
+                  placeholder="Enter name..."
                   onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
                 />
               </label>
               <label>
-                Session Title
-                <input value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value)} />
+                Chronicle Title
+                <input value={sessionTitle} placeholder="Name this session..." onChange={(event) => setSessionTitle(event.target.value)} />
               </label>
             </div>
 
             <label>
-              Character Description
+              Character Lore
               <textarea
                 rows={5}
+                placeholder="Describe their history, personality, and motivations..."
                 value={form.description}
                 onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
               />
             </label>
 
             <label>
-              Character Hard Rules
+              Sacred Laws
               <textarea
                 rows={5}
+                placeholder="Rules the character must never break..."
                 value={listToText(form.hard_rules)}
                 onChange={(event) => setForm((current) => ({ ...current, hard_rules: textToList(event.target.value) }))}
               />
             </label>
 
             <label>
-              Style Guide
+              Voice &amp; Style
               <textarea
                 rows={3}
+                placeholder="How they speak and carry themselves..."
                 value={form.style_guide}
                 onChange={(event) => setForm((current) => ({ ...current, style_guide: event.target.value }))}
               />
@@ -360,40 +364,44 @@ export default function App() {
 
             <div className="form-row">
               <label>
-                World Name
+                Realm Name
                 <input
+                  placeholder="Name of the world..."
                   value={form.world_name}
                   onChange={(event) => setForm((current) => ({ ...current, world_name: event.target.value }))}
                 />
               </label>
               <label>
-                Template Difficulty
+                Challenge Rating
                 <input value={selectedTemplate.difficulty} disabled />
               </label>
             </div>
 
             <label>
-              World Description
+              Realm Description
               <textarea
                 rows={4}
+                placeholder="Paint the world in words..."
                 value={form.world_description}
                 onChange={(event) => setForm((current) => ({ ...current, world_description: event.target.value }))}
               />
             </label>
 
             <label>
-              World Canon
+              Established Canon
               <textarea
                 rows={4}
+                placeholder="Known truths of this world..."
                 value={form.world_canon}
                 onChange={(event) => setForm((current) => ({ ...current, world_canon: event.target.value }))}
               />
             </label>
 
             <label>
-              World Hard Rules
+              World Laws
               <textarea
                 rows={4}
+                placeholder="Immutable rules of reality..."
                 value={listToText(form.world_hard_rules)}
                 onChange={(event) => setForm((current) => ({ ...current, world_hard_rules: textToList(event.target.value) }))}
               />
@@ -409,13 +417,13 @@ export default function App() {
 
             <div className="button-row">
               <button className="btn btn-primary" type="submit" disabled={isBusy}>
-                Load Character
+                ⚔ Summon Character
               </button>
               <button className="btn btn-secondary" type="button" disabled={isBusy} onClick={handleStartSession}>
-                Start Session
+                ✦ Begin Chronicle
               </button>
               <button className="btn btn-secondary" type="button" onClick={() => setChatInput(selectedTemplate.starterUserPrompt)}>
-                Use Starter Prompt
+                ↯ Load Opening
               </button>
             </div>
           </form>
@@ -423,30 +431,30 @@ export default function App() {
 
         <section className="panel panel-center">
           <div className="panel-header">
-            <p className="eyebrow">Live Scene</p>
-            <h2>Transcript</h2>
+            <p className="eyebrow">Live Chronicle</p>
+            <h2>The Unfolding Tale</h2>
           </div>
 
           <div className="session-meta">
             <div>
-              <span className="meta-label">Character</span>
-              <strong>{form.name}</strong>
+              <span className="meta-label">Protagonist</span>
+              <strong>{form.name || "—"}</strong>
             </div>
             <div>
-              <span className="meta-label">Session</span>
-              <strong>{ids.sessionId || "Not started"}</strong>
+              <span className="meta-label">Chronicle</span>
+              <strong>{ids.sessionId ? `#${ids.sessionId.slice(0, 8)}` : "Awaiting"}</strong>
             </div>
             <div>
-              <span className="meta-label">World</span>
-              <strong>{form.world_name}</strong>
+              <span className="meta-label">Realm</span>
+              <strong>{form.world_name || "—"}</strong>
             </div>
           </div>
 
           <div className="chat-log">
             {chatMessages.length === 0 ? (
               <div className="empty-state">
-                <p>No turns yet.</p>
-                <span>Load a template, start a session, then send the opener.</span>
+                <p>The pages await your tale</p>
+                <span>Choose a character template, begin a chronicle, then speak your opening words</span>
               </div>
             ) : (
               chatMessages.map((message) => (
@@ -461,14 +469,14 @@ export default function App() {
           <div className="composer">
             <textarea
               rows={4}
-              placeholder="Write the next turn..."
+              placeholder="Inscribe your next action or words..."
               value={chatInput}
               onChange={(event) => setChatInput(event.target.value)}
             />
             <div className="composer-actions">
               <div className="status-note">{statusText}</div>
               <button className="btn btn-primary" type="button" disabled={isBusy || !ids.sessionId} onClick={handleSendChat}>
-                {isBusy ? "Working..." : "Send Turn"}
+                {isBusy ? "✦ Weaving..." : "⟡ Send Turn"}
               </button>
             </div>
           </div>
@@ -476,15 +484,15 @@ export default function App() {
 
         <section className="panel panel-right">
           <div className="panel-header">
-            <p className="eyebrow">Memory + Debug</p>
-            <h2>Inspector</h2>
+            <p className="eyebrow">Memory Vault</p>
+            <h2>The Archive</h2>
           </div>
 
           <div className="stack">
             <div className="subpanel">
-              <h3>Retrieved This Turn</h3>
+              <h3>✧ Retrieved Echoes</h3>
               {retrievedMemories.length === 0 ? (
-                <p className="muted">No retrieval results yet.</p>
+                <p className="muted">No memories stirred this turn...</p>
               ) : (
                 retrievedMemories.map((item) => (
                   <div key={item.id} className="memory-card">
@@ -499,9 +507,9 @@ export default function App() {
             </div>
 
             <div className="subpanel">
-              <h3>Continuity Notes</h3>
+              <h3>⚠ Continuity Rifts</h3>
               {continuityIssues.length === 0 ? (
-                <p className="muted">No continuity corrections on the latest reply.</p>
+                <p className="muted">The timeline flows true...</p>
               ) : (
                 continuityIssues.map((issue) => (
                   <div key={issue} className="issue-card">
@@ -512,7 +520,7 @@ export default function App() {
             </div>
 
             <div className="subpanel">
-              <h3>Long-Term Facts</h3>
+              <h3>✦ Eternal Truths</h3>
               {memory?.facts.length ? (
                 memory.facts.slice(0, 8).map((fact) => (
                   <div key={fact.id} className="memory-card">
@@ -524,18 +532,18 @@ export default function App() {
                   </div>
                 ))
               ) : (
-                <p className="muted">Facts appear after a few turns.</p>
+                <p className="muted">Facts crystallize after several turns...</p>
               )}
             </div>
 
             <div className="subpanel">
-              <h3>Episode Summaries</h3>
+              <h3>✧ Episode Scrolls</h3>
               {memory?.episode_summaries.length ? (
                 memory.episode_summaries.slice(0, 4).map((summary) => (
                   <div key={summary.id} className="memory-card">
                     <div className="memory-topline">
                       <span>
-                        turns {summary.start_turn_index}-{summary.end_turn_index}
+                        turns {summary.start_turn_index}–{summary.end_turn_index}
                       </span>
                       <span>{summary.importance.toFixed(2)}</span>
                     </div>
@@ -543,7 +551,7 @@ export default function App() {
                   </div>
                 ))
               ) : (
-                <p className="muted">No summaries yet.</p>
+                <p className="muted">No scrolls penned yet...</p>
               )}
             </div>
           </div>
