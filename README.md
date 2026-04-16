@@ -1,0 +1,152 @@
+# Small RPG GPT MVP
+
+Hybrid roleplay chat backend built with FastAPI, PostgreSQL, pgvector, Alembic, and Docker Compose. It routes actor generation, memory extraction, summarization, embeddings, and continuity checks through configurable small-model providers only.
+
+Default mode is Ollama-first and Docker Compose now runs Ollama inside the stack:
+
+- Actor replies: Ollama
+- Memory extraction and summaries: Ollama
+- Embeddings: Ollama
+- OpenAI: optional fallback only
+
+## Stack
+
+- Python 3.11
+- FastAPI
+- SQLAlchemy 2.x
+- Alembic
+- PostgreSQL 16 + pgvector
+- Docker Compose
+- Ollama or OpenAI-compatible small models
+
+## 1. Configure Environment
+
+```bash
+cp .env.sample .env
+```
+
+Defaults are already set up for Docker Compose to run Ollama locally in a container.
+
+Important:
+
+- `OLLAMA_BASE_URL` should stay `http://ollama:11434` when the API runs inside Docker Compose.
+- The first startup auto-pulls the default small models:
+  - `llama3.2:3b`
+  - `nomic-embed-text`
+- If you change `ACTOR_MODEL_NAME`, `MEMORY_MODEL_NAME`, or `EMBEDDING_MODEL_NAME`, the init container will pull those instead.
+
+OpenAI is optional. If you want to switch providers later, set:
+
+```bash
+ACTOR_PROVIDER=openai
+MEMORY_PROVIDER=openai
+EMBEDDING_PROVIDER=openai
+OPENAI_API_KEY=your_key_here
+ACTOR_MODEL_NAME=gpt-4o-mini
+MEMORY_MODEL_NAME=gpt-4o-mini
+EMBEDDING_MODEL_NAME=text-embedding-3-small
+EMBEDDING_DIMENSION=768
+```
+
+## 2. Start the Stack
+
+```bash
+docker compose up --build
+```
+
+This starts:
+
+- `postgres` on `localhost:5432`
+- `ollama` on `localhost:11434`
+- `api` on `localhost:8000`
+
+The startup flow is:
+
+1. PostgreSQL starts
+2. Ollama starts
+3. `ollama-init` pulls the configured small models automatically
+4. The API runs `alembic upgrade head`
+5. Uvicorn starts
+
+The first boot can take several minutes because model downloads happen automatically.
+
+## 3. Run Migrations Manually
+
+```bash
+docker compose exec api alembic upgrade head
+```
+
+## 4. Seed a Default Character and World
+
+```bash
+docker compose exec api python -m app.seed
+```
+
+## 5. Health Check
+
+```bash
+curl http://localhost:8000/health
+```
+
+## 6. Load or Update a Character
+
+```bash
+curl -X POST http://localhost:8000/character/load \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Guide Rowan",
+    "description": "A calm scout-mage who speaks in precise sensory detail and never breaks character.",
+    "hard_rules": [
+      "Stay in character as Rowan.",
+      "Do not mention being an AI or a model.",
+      "Respect established canon and prior facts."
+    ],
+    "style_guide": "Grounded fantasy, observant, concise.",
+    "world_name": "Glass Harbor",
+    "world_description": "A storm-lashed port city built around old mirrored ruins.",
+    "world_canon": "A blue lantern warns of incoming tide spirits. The harbor gates close at moonrise.",
+    "world_hard_rules": [
+      "The setting remains low-magic and dangerous.",
+      "No instant travel or modern technology."
+    ]
+  }'
+```
+
+## 7. Start a Session
+
+Use the `character_card_id` and `world_state_id` returned from `/character/load`.
+
+```bash
+curl -X POST http://localhost:8000/session/init \
+  -H "Content-Type: application/json" \
+  -d '{
+    "character_card_id": "CHARACTER_ID",
+    "world_state_id": "WORLD_ID",
+    "title": "Harbor opening scene"
+  }'
+```
+
+## 8. Chat
+
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "SESSION_ID",
+    "user_message": "Rowan, what do the blue lanterns mean tonight?"
+  }'
+```
+
+## 9. Inspect Long-Term Memory
+
+```bash
+curl http://localhost:8000/session/SESSION_ID/memory
+```
+
+## Notes
+
+- `MEMORY_SUMMARY_INTERVAL=6` means the system summarizes every 6 stored turns, which is 3 user/assistant exchanges.
+- Hard rules are always included in the actor context packet.
+- Retrieval ranking uses `score = 0.6 * semantic + 0.25 * recency + 0.15 * importance`.
+- If first startup looks slow, check `docker compose logs -f ollama-init` to watch model pulls complete.
+- If `/chat` returns a provider error, check `docker compose ps` and `docker compose logs ollama ollama-init api`.
