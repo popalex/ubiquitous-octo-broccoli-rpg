@@ -233,39 +233,82 @@ export default function App() {
       role: "user",
       content: currentInput,
     };
+    const assistantMessageId = crypto.randomUUID();
 
-    setChatMessages((current) => [...current, userMessage]);
+    setChatMessages((current) => [
+      ...current,
+      userMessage,
+      { id: assistantMessageId, role: "assistant", content: "" },
+    ]);
     setChatInput("");
     setIsBusy(true);
     setStatusText("Generating in-character reply...");
 
     try {
-      const payload = await api<{
-        reply: string;
-        continuity_issues: string[];
-        retrieved_memories: RetrievedMemory[];
-      }>("/chat", {
+      const response = await fetch("/api/chat/stream", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           session_id: ids.sessionId,
           user_message: currentInput,
         }),
       });
 
-      setChatMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: payload.reply,
-        },
-      ]);
-      setRetrievedMemories(payload.retrieved_memories);
-      setContinuityIssues(payload.continuity_issues);
-      await refreshMemory(ids.sessionId);
+      if (!response.ok) {
+        throw new Error(response.statusText || "Stream request failed");
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("Failed to get response reader");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6);
+          if (!jsonStr.trim()) continue;
+
+          try {
+            const event = JSON.parse(jsonStr);
+
+            if (event.type === "chunk") {
+              setChatMessages((current) =>
+                current.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? { ...msg, content: msg.content + event.content }
+                    : msg
+                )
+              );
+            } else if (event.type === "memories") {
+              setRetrievedMemories(event.memories);
+            } else if (event.type === "error") {
+              throw new Error(event.error);
+            } else if (event.type === "done") {
+              await refreshMemory(ids.sessionId);
+            }
+          } catch {
+            // Skip malformed JSON lines
+          }
+        }
+      }
+
+      setContinuityIssues([]);
       setStatusText("Reply generated.");
     } catch (error) {
-      setChatMessages((current) => current.filter((item) => item.id !== userMessage.id));
+      setChatMessages((current) =>
+        current.filter((item) => item.id !== userMessage.id && item.id !== assistantMessageId)
+      );
       setChatInput(currentInput);
       setStatusText(error instanceof Error ? error.message : "Chat request failed.");
     } finally {
@@ -476,7 +519,7 @@ export default function App() {
             <div className="composer-actions">
               <div className="status-note">{statusText}</div>
               <button className="btn btn-primary" type="button" disabled={isBusy || !ids.sessionId} onClick={handleSendChat}>
-                {isBusy ? "✦ Weaving..." : "⟡ Send Turn"}
+                {isBusy ? "✦ Weaving..." : "▶ Send Turn"}
               </button>
             </div>
           </div>

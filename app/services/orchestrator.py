@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import AsyncIterator
 from functools import lru_cache
 
 from fastapi import HTTPException
@@ -123,6 +125,89 @@ class OrchestratorService:
                 for item in retrieved
             ],
         )
+
+    async def chat_stream(self, db: Session, session_id: str, user_message: str) -> AsyncIterator[str]:
+        """Stream chat response as Server-Sent Events (SSE)."""
+        session = db.scalar(
+            select(ChatSession)
+            .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
+            .where(ChatSession.id == session_id)
+        )
+        if session is None:
+            yield f"data: {json.dumps({'error': 'Session not found'})}\n\n"
+            return
+
+        retrieved = await self.retrieval.retrieve(db, session, user_message)
+        recent_turns = db.scalars(
+            select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
+        ).all()
+        recent_turns = list(reversed(recent_turns))
+
+        context_packet = self._build_context_packet(session, recent_turns, retrieved)
+        system_prompt = ACTOR_SYSTEM_PROMPT.format(
+            character_name=session.character_card.name,
+            character_description=session.character_card.description,
+            style_guide=session.character_card.style_guide or "Stay grounded, sensory, and concise.",
+            hard_rules=self._hard_rules_text(session.character_card, session.world_state),
+        )
+
+        # Send retrieved memories first
+        yield f"data: {json.dumps({'type': 'memories', 'memories': [{'id': item.id, 'kind': item.kind, 'content': item.content, 'weighted_score': item.weighted_score, 'semantic_score': item.semantic_score, 'recency_score': item.recency_score, 'importance': item.importance} for item in retrieved]})}\n\n"
+
+        # Stream the reply chunks
+        full_reply_parts: list[str] = []
+        try:
+            async for chunk in self.actor_provider.generate_text_stream(
+                [
+                    ProviderMessage(role="system", content=system_prompt),
+                    ProviderMessage(role="user", content=f"{context_packet}\n\nCurrent user message:\n{user_message}"),
+                ],
+                temperature=self.settings.actor_temperature,
+                max_tokens=self.settings.actor_reserved_output_tokens,
+            ):
+                full_reply_parts.append(chunk)
+                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+        except ProviderError as exc:
+            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
+            return
+
+        full_reply = "".join(full_reply_parts)
+
+        # Persist turns to database
+        next_user_index = session.turn_count + 1
+        next_actor_index = session.turn_count + 2
+        db.add_all(
+            [
+                Turn(
+                    session_id=session.id,
+                    turn_index=next_user_index,
+                    role="user",
+                    content=user_message,
+                    token_estimate=self._estimate_tokens(user_message),
+                ),
+                Turn(
+                    session_id=session.id,
+                    turn_index=next_actor_index,
+                    role="assistant",
+                    content=full_reply,
+                    token_estimate=self._estimate_tokens(full_reply),
+                ),
+            ]
+        )
+        session.turn_count = next_actor_index
+        db.commit()
+        db.refresh(session)
+
+        # Trigger memory refresh in background (non-blocking)
+        try:
+            await self.memory.maybe_refresh(db, session)
+        except ProviderError as exc:
+            logger.warning("memory refresh skipped for session=%s: %s", session.id, exc)
+
+        logger.info("chat_stream session=%s turn_count=%s", session.id, session.turn_count)
+
+        # Send completion signal
+        yield f"data: {json.dumps({'type': 'done', 'session_id': session.id})}\n\n"
 
     def _build_context_packet(self, session: ChatSession, recent_turns: list[Turn], retrieved: list) -> str:
         remaining_budget = self.settings.actor_context_budget

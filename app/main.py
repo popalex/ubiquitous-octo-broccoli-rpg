@@ -3,12 +3,13 @@ from __future__ import annotations
 import logging
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import CharacterCard, EpisodeSummary, MemoryFact, RelationshipState, Session as ChatSession, WorldState
-from app.schemas import CharacterLoadRequest, CharacterLoadResponse, ChatRequest, ChatResponse, HealthResponse, SessionInitRequest, SessionInitResponse, SessionMemoryResponse
+from app.schemas import CharacterLoadRequest, CharacterLoadResponse, ChatRequest, ChatResponse, EpisodeSummaryResponse, HealthResponse, MemoryFactResponse, RelationshipStateResponse, SessionInitRequest, SessionInitResponse, SessionMemoryResponse
 from app.providers.base import ProviderError
 from app.services.orchestrator import get_orchestrator
 
@@ -113,6 +114,24 @@ async def chat(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+@app.post("/chat/stream")
+async def chat_stream(
+    payload: ChatRequest,
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """Stream chat response as Server-Sent Events (SSE)."""
+    orchestrator = get_orchestrator()
+    return StreamingResponse(
+        orchestrator.chat_stream(db, payload.session_id, payload.user_message),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.get("/session/{session_id}/memory", response_model=SessionMemoryResponse)
 async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> SessionMemoryResponse:
     session = db.query(ChatSession).filter(ChatSession.id == session_id).one_or_none()
@@ -125,7 +144,7 @@ async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> 
 
     return SessionMemoryResponse(
         session_id=session_id,
-        facts=facts,
-        episode_summaries=summaries,
-        relationships=relationships,
+        facts=[MemoryFactResponse.model_validate(f) for f in facts],
+        episode_summaries=[EpisodeSummaryResponse.model_validate(s) for s in summaries],
+        relationships=[RelationshipStateResponse.model_validate(r) for r in relationships],
     )
