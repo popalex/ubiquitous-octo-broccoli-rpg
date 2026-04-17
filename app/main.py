@@ -220,6 +220,34 @@ async def gm_chat(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+@app.post("/gm/chat/stream")
+async def gm_chat_stream(
+    payload: GMChatRequest,
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """
+    Streaming GM-driven chat with narration and event generation.
+    
+    Streams pre-narration, character reply, and events as they generate.
+    """
+    orchestrator = get_orchestrator()
+    return StreamingResponse(
+        orchestrator.gm_chat_stream(
+            db,
+            payload.session_id,
+            payload.user_message,
+            location=payload.location,
+            time_of_day=payload.time_of_day,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.post("/gm/narration", response_model=GMNarrationResponse)
 async def gm_narration(
     payload: GMNarrationRequest,

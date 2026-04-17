@@ -14,9 +14,15 @@ logger = logging.getLogger(__name__)
 class OllamaProvider(BaseModelProvider):
     def __init__(self, model_name: str, settings) -> None:
         super().__init__(model_name=model_name, settings=settings)
+        # Use longer read timeout for streaming responses
         self.client = httpx.AsyncClient(
             base_url=self.settings.ollama_base_url,
-            timeout=self.settings.request_timeout_seconds,
+            timeout=httpx.Timeout(
+                connect=30.0,
+                read=self.settings.request_timeout_seconds,
+                write=30.0,
+                pool=30.0,
+            ),
         )
 
     async def generate_text(
@@ -42,18 +48,23 @@ class OllamaProvider(BaseModelProvider):
 
         content_parts: list[str] = []
         try:
+            logger.info("Starting streaming request to Ollama model=%s", self.model_name)
             async with self.client.stream("POST", "/api/chat", json=payload) as response:
                 response.raise_for_status()
+                logger.info("Ollama stream opened, status=%s", response.status_code)
                 async for line in response.aiter_lines():
                     if not line.strip():
                         continue
                     try:
                         chunk = json.loads(line)
                         part = chunk.get("message", {}).get("content", "")
+                        logger.info("Received chunk from Ollama: %s", part[:100])
                         if part:
                             content_parts.append(part)
                     except json.JSONDecodeError:
+                        logger.warning("Skipped non-JSON line: %s", line[:100])
                         continue
+            logger.info("Ollama stream completed, total parts=%d, total_len=%d", len(content_parts), len("".join(content_parts)))
         except httpx.HTTPError as exc:
             logger.exception("Ollama chat API error for model=%s", self.model_name)
             raise ProviderError(f"Failed to call Ollama chat API at {self.settings.ollama_base_url}: {exc}") from exc

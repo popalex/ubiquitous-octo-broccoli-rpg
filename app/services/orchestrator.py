@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 from functools import lru_cache
 
@@ -308,6 +309,182 @@ class OrchestratorService:
                 for item in retrieved
             ],
         )
+
+    async def gm_chat_stream(
+        self,
+        db: Session,
+        session_id: str,
+        user_message: str,
+        location: str | None = None,
+        time_of_day: str | None = None,
+    ) -> AsyncIterator[str]:
+        """
+        Streaming GM-driven chat with narration and character response.
+        
+        Streams each phase as it generates for responsive UI.
+        Skips continuity check for speed.
+        """
+        total_start = time.perf_counter()
+        logger.info("gm_chat_stream START session=%s user_message=%s", session_id, user_message[:50])
+        
+        session = db.scalar(
+            select(ChatSession)
+            .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
+            .where(ChatSession.id == session_id)
+        )
+        if session is None:
+            logger.warning("gm_chat_stream session=%s NOT FOUND", session_id)
+            yield f"data: {json.dumps({'type': 'error', 'error': 'Session not found'})}\n\n"
+            return
+
+        # Retrieve memories and recent turns
+        retrieval_start = time.perf_counter()
+        retrieved = await self.retrieval.retrieve(db, session, user_message)
+        logger.info("gm_chat_stream session=%s retrieval duration=%.2fs candidates=%d", session_id, time.perf_counter() - retrieval_start, len(retrieved))
+        recent_turns = db.scalars(
+            select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
+        ).all()
+        recent_turns = list(reversed(recent_turns))
+        recent_events = self._recent_turns_text(recent_turns[-4:]) if recent_turns else ""
+
+        # Send retrieved memories
+        yield f"data: {json.dumps({'type': 'memories', 'memories': [{'id': item.id, 'kind': item.kind, 'content': item.content, 'weighted_score': item.weighted_score, 'semantic_score': item.semantic_score, 'recency_score': item.recency_score, 'importance': item.importance} for item in retrieved]})}\n\n"
+
+        # Check for event trigger (fast, no LLM)
+        event_start = time.perf_counter()
+        event_check = await self.game_master.check_for_event(
+            db,
+            session,
+            location=location or "unknown",
+            time_of_day=time_of_day or "unknown",
+        )
+        logger.info("gm_chat_stream session=%s event_check duration=%.2fs should_trigger=%s", session_id, time.perf_counter() - event_start, event_check.should_trigger)
+
+        # Stream pre-narration
+        pre_narration_parts: list[str] = []
+        pre_narration_start = time.perf_counter()
+        try:
+            logger.info("gm_chat_stream session=%s pre_narration STARTING", session_id)
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'pre_narration'})}\n\n"
+            async for chunk in self.game_master.generate_narration_stream(
+                world_state=session.world_state,
+                recent_events=recent_events,
+                player_action=user_message,
+                scene_context=location or "",
+            ):
+                pre_narration_parts.append(chunk)
+                yield f"data: {json.dumps({'type': 'pre_narration_chunk', 'content': chunk})}\n\n"
+        except ProviderError as exc:
+            logger.exception("Pre-narration stream failed for session=%s", session.id)
+            yield f"data: {json.dumps({'type': 'pre_narration_error', 'error': str(exc)})}\n\n"
+
+        pre_narration = "".join(pre_narration_parts) if pre_narration_parts else None
+        logger.info("gm_chat_stream session=%s pre_narration DONE duration=%.2fs chars=%d", session_id, time.perf_counter() - pre_narration_start, len(pre_narration or ""))
+
+        # Build context for character response
+        context_packet = self._build_context_packet(session, recent_turns, retrieved)
+        if pre_narration:
+            context_packet = f"[Scene Narration]\n{pre_narration}\n\n{context_packet}"
+
+        system_prompt = ACTOR_SYSTEM_PROMPT.format(
+            character_name=session.character_card.name,
+            character_description=session.character_card.description,
+            style_guide=session.character_card.style_guide or "Stay grounded, sensory, and concise.",
+            hard_rules=self._hard_rules_text(session.character_card, session.world_state),
+        )
+
+        # Stream character reply
+        character_reply_parts: list[str] = []
+        character_start = time.perf_counter()
+        try:
+            logger.info("gm_chat_stream session=%s character_reply STARTING", session_id)
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'character_reply'})}\n\n"
+            async for chunk in self.actor_provider.generate_text_stream(
+                [
+                    ProviderMessage(role="system", content=system_prompt),
+                    ProviderMessage(role="user", content=f"{context_packet}\n\nCurrent user message:\n{user_message}"),
+                ],
+                temperature=self.settings.actor_temperature,
+                max_tokens=self.settings.actor_reserved_output_tokens,
+            ):
+                character_reply_parts.append(chunk)
+                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+        except ProviderError as exc:
+            logger.exception("Character reply stream failed for session=%s", session.id)
+            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
+            return
+
+        character_reply = "".join(character_reply_parts)
+        logger.info("gm_chat_stream session=%s character_reply DONE duration=%.2fs chars=%d", session_id, time.perf_counter() - character_start, len(character_reply))
+
+        # Generate event if triggered (stream event description as post-narration)
+        post_narration = None
+        event_response = None
+        if event_check.should_trigger and event_check.event_seed:
+            event_gen_start = time.perf_counter()
+            try:
+                logger.info("gm_chat_stream session=%s event_generation STARTING type=%s", session_id, event_check.event_type)
+                yield f"data: {json.dumps({'type': 'phase', 'phase': 'event'})}\n\n"
+                generated_event = await self.game_master.generate_event(
+                    world_state=session.world_state,
+                    event_seed=event_check.event_seed,
+                    event_type=event_check.event_type,
+                    urgency=event_check.urgency,
+                    player_actions=user_message,
+                )
+                event_response = {
+                    "event_type": generated_event.event_type,
+                    "urgency": generated_event.urgency,
+                    "description": generated_event.description,
+                    "npcs_involved": generated_event.npcs_involved,
+                }
+                post_narration = generated_event.description
+                yield f"data: {json.dumps({'type': 'event', 'event': event_response})}\n\n"
+                logger.info("gm_chat_stream session=%s event_generation DONE duration=%.2fs", session_id, time.perf_counter() - event_gen_start)
+            except ProviderError as exc:
+                logger.exception("Event generation failed for session=%s", session.id)
+
+        # Persist turns
+        next_user_index = session.turn_count + 1
+        next_actor_index = session.turn_count + 2
+        
+        full_assistant_content = character_reply
+        if post_narration:
+            full_assistant_content = f"{character_reply}\n\n---\n\n{post_narration}"
+
+        db.add_all(
+            [
+                Turn(
+                    session_id=session.id,
+                    turn_index=next_user_index,
+                    role="user",
+                    content=user_message,
+                    token_estimate=self._estimate_tokens(user_message),
+                ),
+                Turn(
+                    session_id=session.id,
+                    turn_index=next_actor_index,
+                    role="assistant",
+                    content=full_assistant_content,
+                    token_estimate=self._estimate_tokens(full_assistant_content),
+                ),
+            ]
+        )
+        session.turn_count = next_actor_index
+        db.commit()
+        db.refresh(session)
+
+        # Memory refresh (non-blocking)
+        try:
+            await self.memory.maybe_refresh(db, session)
+        except ProviderError as exc:
+            logger.exception("memory refresh skipped for session=%s", session.id)
+
+        total_duration = time.perf_counter() - total_start
+        logger.info("gm_chat_stream session=%s COMPLETE turn_count=%s total_duration=%.2fs pre_narration_chars=%d character_chars=%d", 
+                    session.id, session.turn_count, total_duration, len(pre_narration or ""), len(character_reply))
+
+        yield f"data: {json.dumps({'type': 'done', 'session_id': session.id})}\n\n"
 
     async def chat_stream(self, db: Session, session_id: str, user_message: str) -> AsyncIterator[str]:
         """Stream chat response as Server-Sent Events (SSE)."""

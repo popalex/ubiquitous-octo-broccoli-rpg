@@ -274,12 +274,24 @@ export default function App() {
     setChatInput("");
     setIsBusy(true);
 
-    // Use GM mode endpoint if enabled
+    // Use GM mode streaming endpoint if enabled
     if (gmEnabled) {
       setStatusText("The Game Master weaves the tale...");
+      
+      // Create placeholder messages for streaming
+      const preNarrationId = crypto.randomUUID();
+      const assistantMessageId = crypto.randomUUID();
+      
+      // Add pre-narration placeholder
+      setChatMessages((current) => [
+        ...current,
+        { id: preNarrationId, role: "narrator", content: "", messageType: "pre_narration" },
+      ]);
+
       try {
-        const response = await api<GMChatResponse>("/gm/chat", {
+        const response = await fetch("/api/gm/chat/stream", {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             session_id: ids.sessionId,
             user_message: currentInput,
@@ -289,46 +301,105 @@ export default function App() {
           }),
         });
 
-        const newMessages: ChatMessage[] = [];
-
-        // Add pre-narration from GM
-        if (response.pre_narration) {
-          newMessages.push({
-            id: crypto.randomUUID(),
-            role: "narrator",
-            content: response.pre_narration,
-            messageType: "pre_narration",
-          });
+        if (!response.ok) {
+          throw new Error(response.statusText || "Stream request failed");
         }
 
-        // Add character reply
-        newMessages.push({
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: response.character_reply,
-          messageType: "chat",
-        });
-
-        // Add post-narration/event from GM
-        if (response.post_narration) {
-          newMessages.push({
-            id: crypto.randomUUID(),
-            role: "narrator",
-            content: response.post_narration,
-            messageType: response.event ? "event" : "post_narration",
-          });
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error("Failed to get response reader");
         }
 
-        setChatMessages((current) => [...current, ...newMessages]);
-        setRetrievedMemories(response.retrieved_memories);
-        setContinuityIssues(response.continuity_issues);
-        if (response.event) {
-          setLastEvent(response.event);
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let hasAddedAssistant = false;
+        let hasPreNarration = false;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const jsonStr = line.slice(6);
+            if (!jsonStr.trim()) continue;
+
+            try {
+              const event = JSON.parse(jsonStr);
+
+              if (event.type === "phase" && event.phase === "character_reply") {
+                // Add character reply placeholder when we reach that phase
+                if (!hasAddedAssistant) {
+                  hasAddedAssistant = true;
+                  setChatMessages((current) => [
+                    ...current,
+                    { id: assistantMessageId, role: "assistant", content: "", messageType: "chat" },
+                  ]);
+                  setStatusText("Character responds...");
+                }
+              } else if (event.type === "pre_narration_chunk") {
+                hasPreNarration = true;
+                setChatMessages((current) =>
+                  current.map((msg) =>
+                    msg.id === preNarrationId
+                      ? { ...msg, content: msg.content + event.content }
+                      : msg
+                  )
+                );
+              } else if (event.type === "chunk") {
+                setChatMessages((current) =>
+                  current.map((msg) =>
+                    msg.id === assistantMessageId
+                      ? { ...msg, content: msg.content + event.content }
+                      : msg
+                  )
+                );
+              } else if (event.type === "memories") {
+                setRetrievedMemories(event.memories);
+              } else if (event.type === "event") {
+                setLastEvent(event.event);
+                // Add event as post-narration
+                setChatMessages((current) => [
+                  ...current,
+                  {
+                    id: crypto.randomUUID(),
+                    role: "narrator",
+                    content: event.event.description,
+                    messageType: "event",
+                  },
+                ]);
+                setStatusText(`Event triggered: ${event.event.event_type}`);
+              } else if (event.type === "error") {
+                throw new Error(event.error);
+              } else if (event.type === "done") {
+                await refreshMemory(ids.sessionId);
+                if (!hasPreNarration) {
+                  // Remove empty pre-narration placeholder
+                  setChatMessages((current) =>
+                    current.filter((msg) => msg.id !== preNarrationId)
+                  );
+                }
+              }
+            } catch {
+              // Skip malformed JSON lines
+            }
+          }
         }
-        await refreshMemory(ids.sessionId);
-        setStatusText(response.event ? `Event triggered: ${response.event.event_type}` : "The tale unfolds...");
+
+        setContinuityIssues([]);
+        setStatusText("The tale unfolds...");
       } catch (error) {
-        setChatMessages((current) => current.filter((item) => item.id !== userMessage.id));
+        setChatMessages((current) =>
+          current.filter((item) => 
+            item.id !== userMessage.id && 
+            item.id !== preNarrationId && 
+            item.id !== assistantMessageId
+          )
+        );
         setChatInput(currentInput);
         setStatusText(error instanceof Error ? error.message : "GM chat request failed.");
       } finally {
