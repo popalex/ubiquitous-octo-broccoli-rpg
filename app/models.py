@@ -66,6 +66,12 @@ class Session(TimestampMixin, Base):
     last_summarized_turn: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # GM mode fields
+    gm_enabled: Mapped[bool] = mapped_column(default=False, nullable=False)
+    current_location: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    time_of_day: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    last_event_turn: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
     character_card: Mapped[CharacterCard] = relationship(back_populates="sessions")
     world_state: Mapped[WorldState | None] = relationship(back_populates="sessions")
     turns: Mapped[list["Turn"]] = relationship(back_populates="session", cascade="all, delete-orphan")
@@ -85,6 +91,9 @@ class Turn(TimestampMixin, Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_estimate: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     continuity_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # GM mode field: 'chat', 'gm_narration', 'gm_event'
+    turn_type: Mapped[str] = mapped_column(String(32), default="chat", nullable=False)
 
     session: Mapped[Session] = relationship(back_populates="turns")
 

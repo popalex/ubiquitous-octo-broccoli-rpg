@@ -29,6 +29,9 @@ class SessionInitRequest(BaseModel):
     character_card_id: str
     world_state_id: str | None = None
     title: str | None = None
+    gm_enabled: bool = False
+    current_location: str | None = None
+    time_of_day: str | None = None
 
 
 class SessionInitResponse(ORMModel):
@@ -37,6 +40,9 @@ class SessionInitResponse(ORMModel):
     world_state_id: str | None
     title: str | None
     turn_count: int
+    gm_enabled: bool
+    current_location: str | None
+    time_of_day: str | None
 
 
 class ChatRequest(BaseModel):
@@ -98,3 +104,129 @@ class SessionMemoryResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     database: str
+
+
+# =============================================================================
+# GAME MASTER SCHEMAS
+# =============================================================================
+
+
+class GMNarrationRequest(BaseModel):
+    """Request for GM narration generation."""
+
+    session_id: str
+    player_action: str
+    scene_context: str | None = None
+
+
+class GMNarrationResponse(BaseModel):
+    """Response containing GM narration."""
+
+    session_id: str
+    narration: str
+    event_triggered: bool = False
+    event_description: str | None = None
+
+
+class GMEventCheckRequest(BaseModel):
+    """Request to check if an event should trigger."""
+
+    session_id: str
+    location: str = "unknown"
+    time_of_day: str = "unknown"
+
+
+class GMEventCheckResponse(BaseModel):
+    """Response from event check."""
+
+    should_trigger: bool
+    event_type: str
+    event_seed: str
+    urgency: str
+    reasoning: str
+
+
+class GMEventGenerateRequest(BaseModel):
+    """Request to generate a full event."""
+
+    session_id: str
+    event_seed: str
+    event_type: str
+    urgency: str = "gradual"
+
+
+class GMEventGenerateResponse(BaseModel):
+    """Response containing generated event."""
+
+    event_type: str
+    urgency: str
+    description: str
+    npcs_involved: list[str] = Field(default_factory=list)
+
+
+class GMSceneTransitionRequest(BaseModel):
+    """Request for scene transition narration."""
+
+    session_id: str
+    previous_scene: str
+    transition_type: str
+    destination: str
+
+
+class GMSceneTransitionResponse(BaseModel):
+    """Response containing transition narration."""
+
+    narration: str
+    time_passed: str
+    new_scene_elements: list[str] = Field(default_factory=list)
+
+
+class NPCDialogueRequest(BaseModel):
+    """Request for NPC dialogue generation."""
+
+    session_id: str
+    npc_name: str
+    npc_description: str
+    npc_disposition: str = "neutral"
+    npc_goal: str = ""
+    player_statement: str
+
+
+class NPCDialogueResponse(BaseModel):
+    """Response containing NPC dialogue."""
+
+    npc_name: str
+    dialogue: str
+
+
+class GMChatRequest(BaseModel):
+    """
+    Enhanced chat request that supports GM-driven gameplay.
+    
+    When gm_mode is True, the GM generates narration and potentially
+    events before/after the character response.
+    """
+
+    session_id: str
+    user_message: str
+    gm_mode: bool = False
+    location: str | None = None
+    time_of_day: str | None = None
+
+
+class GMChatResponse(BaseModel):
+    """
+    Enhanced chat response with GM elements.
+    
+    Includes pre-narration (scene setting), character reply,
+    post-narration (consequences), and any triggered events.
+    """
+
+    session_id: str
+    pre_narration: str | None = None
+    character_reply: str
+    post_narration: str | None = None
+    event: GMEventGenerateResponse | None = None
+    continuity_applied: bool
+    continuity_issues: list[str]
+    retrieved_memories: list[RetrievedMemoryItem]

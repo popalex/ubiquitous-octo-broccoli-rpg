@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator, Sequence
 
 import httpx
 
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
+
+logger = logging.getLogger(__name__)
 
 
 class OllamaProvider(BaseModelProvider):
@@ -24,10 +27,11 @@ class OllamaProvider(BaseModelProvider):
         max_tokens: int,
         json_mode: bool = False,
     ) -> str:
+        """Generate text using streaming internally to avoid Ollama timeout."""
         payload = {
             "model": self.model_name,
             "messages": [{"role": message.role, "content": message.content} for message in messages],
-            "stream": False,
+            "stream": True,  # Use streaming to avoid Ollama's internal timeout
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
@@ -36,13 +40,25 @@ class OllamaProvider(BaseModelProvider):
         if json_mode:
             payload["format"] = "json"
 
+        content_parts: list[str] = []
         try:
-            response = await self.client.post("/api/chat", json=payload)
-            response.raise_for_status()
+            async with self.client.stream("POST", "/api/chat", json=payload) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                        part = chunk.get("message", {}).get("content", "")
+                        if part:
+                            content_parts.append(part)
+                    except json.JSONDecodeError:
+                        continue
         except httpx.HTTPError as exc:
+            logger.exception("Ollama chat API error for model=%s", self.model_name)
             raise ProviderError(f"Failed to call Ollama chat API at {self.settings.ollama_base_url}: {exc}") from exc
 
-        content = response.json().get("message", {}).get("content", "")
+        content = "".join(content_parts)
         if not content:
             raise ProviderError("Ollama provider returned an empty completion.")
         return content
@@ -79,6 +95,7 @@ class OllamaProvider(BaseModelProvider):
                     except json.JSONDecodeError:
                         continue
         except httpx.HTTPError as exc:
+            logger.exception("Ollama stream API error for model=%s", self.model_name)
             raise ProviderError(f"Failed to stream from Ollama chat API at {self.settings.ollama_base_url}: {exc}") from exc
 
     async def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
@@ -90,6 +107,7 @@ class OllamaProvider(BaseModelProvider):
             response = await self.client.post("/api/embed", json=payload)
             response.raise_for_status()
         except httpx.HTTPError as exc:
+            logger.exception("Ollama embedding API error for model=%s", self.model_name)
             raise ProviderError(f"Failed to call Ollama embedding API at {self.settings.ollama_base_url}: {exc}") from exc
 
         embeddings = response.json().get("embeddings")

@@ -819,6 +819,165 @@ input:disabled {
   color: var(--crimson-glow);
 }
 
+/* Narrator / Game Master messages */
+.message-narrator {
+  align-self: stretch;
+  background: linear-gradient(135deg, rgba(201, 162, 39, 0.08) 0%, rgba(26, 23, 20, 0.95) 100%);
+  border: 1px solid rgba(201, 162, 39, 0.2);
+  border-left: 3px solid var(--gold);
+  font-style: italic;
+  position: relative;
+}
+
+.message-narrator::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 0L30 60M0 30L60 30' stroke='%23c9a227' stroke-width='0.3' opacity='0.05'/%3E%3C/svg%3E");
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.message-narrator .message-role {
+  color: var(--gold);
+}
+
+.message-narrator p {
+  position: relative;
+  z-index: 1;
+}
+
+/* Event messages - more dramatic */
+.message-type-event {
+  background: linear-gradient(135deg, rgba(139, 38, 53, 0.15) 0%, rgba(201, 162, 39, 0.08) 50%, rgba(26, 23, 20, 0.95) 100%);
+  border: 1px solid rgba(199, 62, 77, 0.3);
+  border-left: 3px solid var(--crimson-glow);
+  animation: event-pulse 2s ease-in-out;
+}
+
+@keyframes event-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(199, 62, 77, 0); }
+  50% { box-shadow: 0 0 20px rgba(199, 62, 77, 0.3); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GM MODE CONTROLS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.gm-controls {
+  margin: var(--space-lg) 0;
+  padding: var(--space-md);
+  background: linear-gradient(135deg, rgba(201, 162, 39, 0.05) 0%, rgba(26, 23, 20, 0.8) 100%);
+  border: 1px solid rgba(201, 162, 39, 0.15);
+  border-radius: 4px;
+}
+
+.gm-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  cursor: pointer;
+}
+
+.gm-toggle input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-label {
+  font-family: "Cinzel", serif;
+  font-size: 1rem;
+  color: var(--gold);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.toggle-label::before {
+  content: "";
+  width: 44px;
+  height: 24px;
+  background: var(--charcoal);
+  border: 1px solid var(--dust);
+  border-radius: 12px;
+  position: relative;
+  display: inline-block;
+  transition: all 0.3s ease;
+}
+
+.toggle-label::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  margin-top: 2px;
+}
+
+.gm-toggle input:checked + .toggle-label::before {
+  background: linear-gradient(135deg, var(--gold) 0%, var(--crimson) 100%);
+  border-color: var(--gold);
+  box-shadow: var(--glow-gold);
+}
+
+.gm-toggle input:checked + .toggle-label::after {
+  transform: translateX(20px);
+  background: var(--parchment);
+}
+
+.toggle-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-left: calc(44px + var(--space-sm));
+}
+
+.gm-settings {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid rgba(201, 162, 39, 0.1);
+  animation: reveal 0.3s ease;
+}
+
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.gm-settings select {
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--charcoal);
+  border: 1px solid var(--dust);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: "Crimson Pro", Georgia, serif;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.gm-settings select:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.15);
+}
+
+.gm-badge {
+  color: var(--gold) !important;
+  font-size: 0.85rem;
+  animation: gm-glow 2s ease-in-out infinite;
+}
+
+@keyframes gm-glow {
+  0%, 100% { text-shadow: 0 0 5px rgba(201, 162, 39, 0.3); }
+  50% { text-shadow: 0 0 15px rgba(201, 162, 39, 0.6); }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    EMPTY STATE
    ═══════════════════════════════════════════════════════════════════════════ */

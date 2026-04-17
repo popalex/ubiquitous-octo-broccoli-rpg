@@ -4,9 +4,10 @@ Hybrid roleplay chat backend built with FastAPI, PostgreSQL, pgvector, Alembic, 
 
 Default mode is Ollama-first and Docker Compose now runs Ollama inside the stack:
 
-- Actor replies: Ollama
-- Memory extraction and summaries: Ollama
-- Embeddings: Ollama
+- Actor replies: Ollama (llama3.1:8b)
+- Game Master (narration, events, NPCs): Ollama (llama3.1:8b)
+- Memory extraction and summaries: Ollama (phi3:mini)
+- Embeddings: Ollama (nomic-embed-text)
 - OpenAI: optional fallback only
 
 ## Stack
@@ -27,13 +28,33 @@ cp .env.sample .env
 
 Defaults are already set up for Docker Compose to run Ollama locally in a container.
 
+### Dev Mode (Single Model)
+
+If you're low on RAM, enable dev mode to use a single smaller model for all LLM tasks:
+
+```bash
+DEV_MODE=true
+DEV_MODEL_NAME=llama3.2:3b
+```
+
+This overrides actor, memory, and GM models to all use the same model.
+
+### Production Mode (Multi-Model)
+
+For best quality, use separate models optimized for each task:
+
+- `ACTOR_MODEL_NAME=llama3.1:8b` - creative character dialogue
+- `MEMORY_MODEL_NAME=phi3:mini` - precise fact extraction and summaries
+- `GM_MODEL_NAME=llama3.1:8b` - world narration and events
+
 Important:
 
 - `OLLAMA_BASE_URL` should stay `http://ollama:11434` when the API runs inside Docker Compose.
-- The first startup auto-pulls the default small models:
-  - `llama3.2:3b`
-  - `nomic-embed-text`
-- If you change `ACTOR_MODEL_NAME`, `MEMORY_MODEL_NAME`, or `EMBEDDING_MODEL_NAME`, the init container will pull those instead.
+- The first startup auto-pulls the configured models:
+  - `llama3.1:8b` (actor + GM)
+  - `phi3:mini` (memory)
+  - `nomic-embed-text` (embeddings)
+- In dev mode, only the single dev model + embeddings are pulled.
 
 OpenAI is optional. If you want to switch providers later, set:
 
@@ -41,9 +62,11 @@ OpenAI is optional. If you want to switch providers later, set:
 ACTOR_PROVIDER=openai
 MEMORY_PROVIDER=openai
 EMBEDDING_PROVIDER=openai
+GM_PROVIDER=openai
 OPENAI_API_KEY=your_key_here
 ACTOR_MODEL_NAME=gpt-4o-mini
 MEMORY_MODEL_NAME=gpt-4o-mini
+GM_MODEL_NAME=gpt-4o-mini
 EMBEDDING_MODEL_NAME=text-embedding-3-small
 EMBEDDING_DIMENSION=768
 ```
@@ -174,3 +197,23 @@ curl http://localhost:8000/session/SESSION_ID/memory
 - Retrieval ranking uses `score = 0.6 * semantic + 0.25 * recency + 0.15 * importance`.
 - If first startup looks slow, check `docker compose logs -f ollama-init` to watch model pulls complete.
 - If `/chat` returns a provider error, check `docker compose ps` and `docker compose logs ollama ollama-init api`.
+
+## Game Master Mode
+
+Enable GM mode when starting a session to get:
+
+- **Scene narration** - atmospheric descriptions before/after character dialogue
+- **Dynamic events** - random encounters, weather changes, NPC arrivals
+- **NPC dialogue** - GM-controlled side characters
+- **Scene transitions** - location and time changes with narrative bridges
+
+GM mode settings:
+
+```bash
+GM_TEMPERATURE=0.8           # Higher for creative narration
+GM_MAX_OUTPUT_TOKENS=800     # Longer for scene descriptions
+EVENT_CHECK_INTERVAL=3       # Check for events every N turns
+EVENT_PROBABILITY=0.4        # 40% chance when checked
+```
+
+The frontend UI has a GM toggle in the session setup form.

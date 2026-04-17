@@ -36,8 +36,11 @@ services:
     entrypoint: ["/bin/sh"]
     environment:
       OLLAMA_HOST: http://ollama:11434
-      ACTOR_MODEL_NAME: ${ACTOR_MODEL_NAME:-llama3.2:3b}
-      MEMORY_MODEL_NAME: ${MEMORY_MODEL_NAME:-llama3.2:3b}
+      DEV_MODE: ${DEV_MODE:-false}
+      DEV_MODEL_NAME: ${DEV_MODEL_NAME:-llama3.2:3b}
+      ACTOR_MODEL_NAME: ${ACTOR_MODEL_NAME:-llama3.1:8b}
+      MEMORY_MODEL_NAME: ${MEMORY_MODEL_NAME:-phi3:mini}
+      GM_MODEL_NAME: ${GM_MODEL_NAME:-llama3.1:8b}
       EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-nomic-embed-text}
     depends_on:
       ollama:
@@ -50,11 +53,22 @@ services:
       - |
         set -e
         until ollama list >/dev/null 2>&1; do sleep 2; done
+        # In dev mode, only pull the single dev model
+        if [ "$$DEV_MODE" = "true" ]; then
+          echo "DEV MODE: pulling single model $$DEV_MODEL_NAME"
+          ollama pull $$DEV_MODEL_NAME
+          ollama pull $$EMBEDDING_MODEL_NAME
+          exit 0
+        fi
+        # Production: pull all unique models
         ollama pull $$ACTOR_MODEL_NAME
         if [ "$$MEMORY_MODEL_NAME" != "$$ACTOR_MODEL_NAME" ]; then
           ollama pull $$MEMORY_MODEL_NAME
         fi
-        if [ "$$EMBEDDING_MODEL_NAME" != "$$ACTOR_MODEL_NAME" ] && [ "$$EMBEDDING_MODEL_NAME" != "$$MEMORY_MODEL_NAME" ]; then
+        if [ "$$GM_MODEL_NAME" != "$$ACTOR_MODEL_NAME" ] && [ "$$GM_MODEL_NAME" != "$$MEMORY_MODEL_NAME" ]; then
+          ollama pull $$GM_MODEL_NAME
+        fi
+        if [ "$$EMBEDDING_MODEL_NAME" != "$$ACTOR_MODEL_NAME" ] && [ "$$EMBEDDING_MODEL_NAME" != "$$MEMORY_MODEL_NAME" ] && [ "$$EMBEDDING_MODEL_NAME" != "$$GM_MODEL_NAME" ]; then
           ollama pull $$EMBEDDING_MODEL_NAME
         fi
 
@@ -69,22 +83,41 @@ services:
       API_HOST: ${API_HOST:-0.0.0.0}
       API_PORT: ${API_PORT:-8000}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://postgres:postgres@postgres:5432/roleplay}
+      # Dev mode: use single model to save RAM
+      DEV_MODE: ${DEV_MODE:-false}
+      DEV_MODEL_NAME: ${DEV_MODEL_NAME:-llama3.2:3b}
+      # Providers
       ACTOR_PROVIDER: ${ACTOR_PROVIDER:-ollama}
       MEMORY_PROVIDER: ${MEMORY_PROVIDER:-ollama}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-ollama}
-      ACTOR_MODEL_NAME: ${ACTOR_MODEL_NAME:-llama3.2:3b}
-      MEMORY_MODEL_NAME: ${MEMORY_MODEL_NAME:-llama3.2:3b}
+      GM_PROVIDER: ${GM_PROVIDER:-ollama}
+      # Models
+      ACTOR_MODEL_NAME: ${ACTOR_MODEL_NAME:-llama3.1:8b}
+      MEMORY_MODEL_NAME: ${MEMORY_MODEL_NAME:-phi3:mini}
+      GM_MODEL_NAME: ${GM_MODEL_NAME:-llama3.1:8b}
       EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-nomic-embed-text}
       EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-768}
+      # External providers
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      # Retrieval settings
       RETRIEVAL_TOP_K: ${RETRIEVAL_TOP_K:-8}
       RETRIEVAL_CANDIDATE_POOL: ${RETRIEVAL_CANDIDATE_POOL:-20}
       RECENCY_HALF_LIFE_HOURS: ${RECENCY_HALF_LIFE_HOURS:-72}
       MEMORY_SUMMARY_INTERVAL: ${MEMORY_SUMMARY_INTERVAL:-6}
+      # Token budgets
       ACTOR_MAX_INPUT_TOKENS: ${ACTOR_MAX_INPUT_TOKENS:-6000}
       ACTOR_RESERVED_OUTPUT_TOKENS: ${ACTOR_RESERVED_OUTPUT_TOKENS:-500}
+      # Temperature settings
+      ACTOR_TEMPERATURE: ${ACTOR_TEMPERATURE:-0.7}
+      CONTINUITY_TEMPERATURE: ${CONTINUITY_TEMPERATURE:-0.2}
+      GM_TEMPERATURE: ${GM_TEMPERATURE:-0.8}
+      GM_MAX_OUTPUT_TOKENS: ${GM_MAX_OUTPUT_TOKENS:-800}
+      GM_NARRATION_MAX_TOKENS: ${GM_NARRATION_MAX_TOKENS:-150}
+      # GM event settings
+      EVENT_CHECK_INTERVAL: ${EVENT_CHECK_INTERVAL:-3}
+      EVENT_PROBABILITY: ${EVENT_PROBABILITY:-0.4}
     depends_on:
       postgres:
         condition: service_healthy

@@ -13,8 +13,9 @@ from app.config import Settings, get_settings
 from app.models import CharacterCard, Session as ChatSession, Turn, WorldState
 from app.prompts import ACTOR_SYSTEM_PROMPT
 from app.providers.base import ProviderError, ProviderMessage, build_provider
-from app.schemas import ChatResponse, RetrievedMemoryItem
+from app.schemas import ChatResponse, GMChatResponse, GMEventGenerateResponse, RetrievedMemoryItem
 from app.services.continuity import ContinuityService
+from app.services.game_master import GameMasterService
 from app.services.memory import MemoryService
 from app.services.continuity import ContinuityResult
 from app.services.retrieval import RetrievalService
@@ -29,9 +30,11 @@ class OrchestratorService:
         self.actor_provider = build_provider(self.settings.actor_provider, self.settings.actor_model_name, self.settings)
         self.memory_provider = build_provider(self.settings.memory_provider, self.settings.memory_model_name, self.settings)
         self.embedding_provider = build_provider(self.settings.embedding_provider, self.settings.embedding_model_name, self.settings)
+        self.gm_provider = build_provider(self.settings.gm_provider, self.settings.gm_model_name, self.settings)
         self.retrieval = RetrievalService(self.embedding_provider, self.settings)
         self.memory = MemoryService(self.memory_provider, self.embedding_provider, self.settings)
         self.continuity = ContinuityService(self.memory_provider)
+        self.game_master = GameMasterService(self.gm_provider, self.settings)
 
     async def chat(self, db: Session, session_id: str, user_message: str) -> ChatResponse:
         session = db.scalar(
@@ -73,7 +76,7 @@ class OrchestratorService:
                 draft_reply=draft_reply,
             )
         except ProviderError as exc:
-            logger.warning("continuity check skipped for session=%s: %s", session.id, exc)
+            logger.exception("continuity check skipped for session=%s", session.id)
             continuity = ContinuityResult(final_reply=draft_reply, applied=False, issues=[])
 
         next_user_index = session.turn_count + 1
@@ -104,12 +107,192 @@ class OrchestratorService:
         try:
             await self.memory.maybe_refresh(db, session)
         except ProviderError as exc:
-            logger.warning("memory refresh skipped for session=%s: %s", session.id, exc)
+            logger.exception("memory refresh skipped for session=%s", session.id)
         logger.info("chat session=%s turn_count=%s continuity_applied=%s", session.id, session.turn_count, continuity.applied)
 
         return ChatResponse(
             session_id=session.id,
             reply=continuity.final_reply,
+            continuity_applied=continuity.applied,
+            continuity_issues=continuity.issues,
+            retrieved_memories=[
+                RetrievedMemoryItem(
+                    id=item.id,
+                    kind=item.kind,
+                    content=item.content,
+                    weighted_score=item.weighted_score,
+                    semantic_score=item.semantic_score,
+                    recency_score=item.recency_score,
+                    importance=item.importance,
+                )
+                for item in retrieved
+            ],
+        )
+
+    async def gm_chat(
+        self,
+        db: Session,
+        session_id: str,
+        user_message: str,
+        location: str | None = None,
+        time_of_day: str | None = None,
+    ) -> GMChatResponse:
+        """
+        GM-driven chat that wraps character interaction with world narration.
+        
+        Flow:
+        1. Check for events
+        2. Generate pre-narration (scene setting based on player action)
+        3. Get character response (via normal chat flow)
+        4. Generate post-narration (world reaction/consequences)
+        5. Potentially inject triggered events
+        """
+        session = db.scalar(
+            select(ChatSession)
+            .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
+            .where(ChatSession.id == session_id)
+        )
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found.")
+
+        # Retrieve memories and recent turns for context
+        retrieved = await self.retrieval.retrieve(db, session, user_message)
+        recent_turns = db.scalars(
+            select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
+        ).all()
+        recent_turns = list(reversed(recent_turns))
+        recent_events = self._recent_turns_text(recent_turns[-4:]) if recent_turns else ""
+
+        # Check for event trigger
+        event_check = await self.game_master.check_for_event(
+            db,
+            session,
+            location=location or "unknown",
+            time_of_day=time_of_day or "unknown",
+        )
+
+        # Generate pre-narration (scene setting)
+        pre_narration = None
+        try:
+            pre_narration = await self.game_master.generate_narration(
+                world_state=session.world_state,
+                recent_events=recent_events,
+                player_action=user_message,
+                scene_context=location or "",
+            )
+        except ProviderError as exc:
+            logger.exception("Pre-narration failed for session=%s", session.id)
+
+        # Get character response via normal flow
+        context_packet = self._build_context_packet(session, recent_turns, retrieved)
+        
+        # Include GM narration in context if available
+        if pre_narration:
+            context_packet = f"[Scene Narration]\n{pre_narration}\n\n{context_packet}"
+
+        system_prompt = ACTOR_SYSTEM_PROMPT.format(
+            character_name=session.character_card.name,
+            character_description=session.character_card.description,
+            style_guide=session.character_card.style_guide or "Stay grounded, sensory, and concise.",
+            hard_rules=self._hard_rules_text(session.character_card, session.world_state),
+        )
+
+        draft_reply = await self.actor_provider.generate_text(
+            [
+                ProviderMessage(role="system", content=system_prompt),
+                ProviderMessage(role="user", content=f"{context_packet}\n\nCurrent user message:\n{user_message}"),
+            ],
+            temperature=self.settings.actor_temperature,
+            max_tokens=self.settings.actor_reserved_output_tokens,
+        )
+
+        # Continuity check
+        try:
+            continuity = await self.continuity.validate(
+                hard_rules=self._hard_rules_text(session.character_card, session.world_state),
+                world_canon=session.world_state.canon if session.world_state else "",
+                recent_transcript=self._recent_turns_text(recent_turns),
+                user_message=user_message,
+                draft_reply=draft_reply,
+            )
+        except ProviderError as exc:
+            logger.exception("continuity check skipped for session=%s", session.id)
+            continuity = ContinuityResult(final_reply=draft_reply, applied=False, issues=[])
+
+        # Generate event if triggered
+        event_response = None
+        post_narration = None
+        if event_check.should_trigger and event_check.event_seed:
+            try:
+                generated_event = await self.game_master.generate_event(
+                    world_state=session.world_state,
+                    event_seed=event_check.event_seed,
+                    event_type=event_check.event_type,
+                    urgency=event_check.urgency,
+                    player_actions=user_message,
+                )
+                event_response = GMEventGenerateResponse(
+                    event_type=generated_event.event_type,
+                    urgency=generated_event.urgency,
+                    description=generated_event.description,
+                    npcs_involved=generated_event.npcs_involved,
+                )
+                # Use event description as post-narration
+                post_narration = generated_event.description
+            except ProviderError as exc:
+                logger.exception("Event generation failed for session=%s", session.id)
+
+        # Persist turns
+        next_user_index = session.turn_count + 1
+        next_actor_index = session.turn_count + 2
+        
+        # Build full assistant content including GM narration
+        full_assistant_content = continuity.final_reply
+        if post_narration:
+            full_assistant_content = f"{continuity.final_reply}\n\n---\n\n{post_narration}"
+
+        db.add_all(
+            [
+                Turn(
+                    session_id=session.id,
+                    turn_index=next_user_index,
+                    role="user",
+                    content=user_message,
+                    token_estimate=self._estimate_tokens(user_message),
+                ),
+                Turn(
+                    session_id=session.id,
+                    turn_index=next_actor_index,
+                    role="assistant",
+                    content=full_assistant_content,
+                    token_estimate=self._estimate_tokens(full_assistant_content),
+                    continuity_notes="\n".join(continuity.issues) if continuity.issues else None,
+                ),
+            ]
+        )
+        session.turn_count = next_actor_index
+        db.commit()
+        db.refresh(session)
+
+        # Memory refresh
+        try:
+            await self.memory.maybe_refresh(db, session)
+        except ProviderError as exc:
+            logger.exception("memory refresh skipped for session=%s", session.id)
+
+        logger.info(
+            "gm_chat session=%s turn_count=%s event_triggered=%s",
+            session.id,
+            session.turn_count,
+            event_check.should_trigger,
+        )
+
+        return GMChatResponse(
+            session_id=session.id,
+            pre_narration=pre_narration,
+            character_reply=continuity.final_reply,
+            post_narration=post_narration,
+            event=event_response,
             continuity_applied=continuity.applied,
             continuity_issues=continuity.issues,
             retrieved_memories=[
@@ -168,6 +351,7 @@ class OrchestratorService:
                 full_reply_parts.append(chunk)
                 yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
         except ProviderError as exc:
+            logger.exception("chat_stream failed for session=%s", session_id)
             yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
             return
 
@@ -202,7 +386,7 @@ class OrchestratorService:
         try:
             await self.memory.maybe_refresh(db, session)
         except ProviderError as exc:
-            logger.warning("memory refresh skipped for session=%s: %s", session.id, exc)
+            logger.exception("memory refresh skipped for session=%s", session.id)
 
         logger.info("chat_stream session=%s turn_count=%s", session.id, session.turn_count)
 

@@ -52,12 +52,33 @@ type RetrievedMemory = {
 
 type ChatMessage = {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "narrator";
   content: string;
+  messageType?: "chat" | "pre_narration" | "post_narration" | "event";
+};
+
+// GM Mode Types
+type GMEvent = {
+  event_type: string;
+  urgency: string;
+  description: string;
+  npcs_involved: string[];
+};
+
+type GMChatResponse = {
+  session_id: string;
+  pre_narration: string | null;
+  character_reply: string;
+  post_narration: string | null;
+  event: GMEvent | null;
+  continuity_applied: boolean;
+  continuity_issues: string[];
+  retrieved_memories: RetrievedMemory[];
 };
 
 const storageKeys = {
   characterCardId: "small-rpg:character-card-id",
+  gmEnabled: "small-rpg:gm-enabled",
   worldStateId: "small-rpg:world-state-id",
   sessionId: "small-rpg:session-id",
   sessionTitle: "small-rpg:session-title",
@@ -123,6 +144,12 @@ export default function App() {
     sessionId: localStorage.getItem(storageKeys.sessionId) || "",
   });
 
+  // GM Mode state
+  const [gmEnabled, setGmEnabled] = useState(localStorage.getItem(storageKeys.gmEnabled) === "true");
+  const [currentLocation, setCurrentLocation] = useState("");
+  const [timeOfDay, setTimeOfDay] = useState("morning");
+  const [lastEvent, setLastEvent] = useState<GMEvent | null>(null);
+
   useEffect(() => {
     const template = templates.find((item) => item.id === selectedTemplateId) || templates[0];
     setForm({ ...template.characterLoad });
@@ -151,7 +178,8 @@ export default function App() {
     localStorage.setItem(storageKeys.worldStateId, ids.worldStateId);
     localStorage.setItem(storageKeys.sessionId, ids.sessionId);
     localStorage.setItem(storageKeys.sessionTitle, sessionTitle);
-  }, [ids, sessionTitle]);
+    localStorage.setItem(storageKeys.gmEnabled, String(gmEnabled));
+  }, [ids, sessionTitle, gmEnabled]);
 
   async function refreshMemory(sessionId: string) {
     const nextMemory = await api<SessionMemory>(`/session/${sessionId}/memory`);
@@ -196,20 +224,28 @@ export default function App() {
       const payload = await api<{
         session_id: string;
         turn_count: number;
+        gm_enabled: boolean;
+        current_location: string | null;
+        time_of_day: string | null;
       }>("/session/init", {
         method: "POST",
         body: JSON.stringify({
           character_card_id: ids.characterCardId,
           world_state_id: ids.worldStateId || null,
           title: sessionTitle || null,
+          gm_enabled: gmEnabled,
+          current_location: currentLocation || null,
+          time_of_day: timeOfDay || null,
         }),
       });
       setIds((current) => ({ ...current, sessionId: payload.session_id }));
       setChatMessages([]);
       setRetrievedMemories([]);
       setContinuityIssues([]);
+      setLastEvent(null);
       await refreshMemory(payload.session_id);
-      setStatusText(`Session ready. Turn count: ${payload.turn_count}.`);
+      const modeLabel = gmEnabled ? "GM Mode" : "Standard";
+      setStatusText(`Session ready (${modeLabel}). Turn count: ${payload.turn_count}.`);
     } catch (error) {
       setStatusText(error instanceof Error ? error.message : "Failed to start session.");
     } finally {
@@ -233,15 +269,80 @@ export default function App() {
       role: "user",
       content: currentInput,
     };
-    const assistantMessageId = crypto.randomUUID();
 
-    setChatMessages((current) => [
-      ...current,
-      userMessage,
-      { id: assistantMessageId, role: "assistant", content: "" },
-    ]);
+    setChatMessages((current) => [...current, userMessage]);
     setChatInput("");
     setIsBusy(true);
+
+    // Use GM mode endpoint if enabled
+    if (gmEnabled) {
+      setStatusText("The Game Master weaves the tale...");
+      try {
+        const response = await api<GMChatResponse>("/gm/chat", {
+          method: "POST",
+          body: JSON.stringify({
+            session_id: ids.sessionId,
+            user_message: currentInput,
+            gm_mode: true,
+            location: currentLocation || null,
+            time_of_day: timeOfDay || null,
+          }),
+        });
+
+        const newMessages: ChatMessage[] = [];
+
+        // Add pre-narration from GM
+        if (response.pre_narration) {
+          newMessages.push({
+            id: crypto.randomUUID(),
+            role: "narrator",
+            content: response.pre_narration,
+            messageType: "pre_narration",
+          });
+        }
+
+        // Add character reply
+        newMessages.push({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: response.character_reply,
+          messageType: "chat",
+        });
+
+        // Add post-narration/event from GM
+        if (response.post_narration) {
+          newMessages.push({
+            id: crypto.randomUUID(),
+            role: "narrator",
+            content: response.post_narration,
+            messageType: response.event ? "event" : "post_narration",
+          });
+        }
+
+        setChatMessages((current) => [...current, ...newMessages]);
+        setRetrievedMemories(response.retrieved_memories);
+        setContinuityIssues(response.continuity_issues);
+        if (response.event) {
+          setLastEvent(response.event);
+        }
+        await refreshMemory(ids.sessionId);
+        setStatusText(response.event ? `Event triggered: ${response.event.event_type}` : "The tale unfolds...");
+      } catch (error) {
+        setChatMessages((current) => current.filter((item) => item.id !== userMessage.id));
+        setChatInput(currentInput);
+        setStatusText(error instanceof Error ? error.message : "GM chat request failed.");
+      } finally {
+        setIsBusy(false);
+      }
+      return;
+    }
+
+    // Standard streaming chat (non-GM mode)
+    const assistantMessageId = crypto.randomUUID();
+    setChatMessages((current) => [
+      ...current,
+      { id: assistantMessageId, role: "assistant", content: "" },
+    ]);
     setStatusText("Generating in-character reply...");
 
     try {
@@ -458,6 +559,47 @@ export default function App() {
               ))}
             </div>
 
+            {/* GM Mode Controls */}
+            <div className="gm-controls">
+              <label className="gm-toggle">
+                <input
+                  type="checkbox"
+                  checked={gmEnabled}
+                  onChange={(e) => setGmEnabled(e.target.checked)}
+                />
+                <span className="toggle-label">✧ Game Master Mode</span>
+                <span className="toggle-hint">{gmEnabled ? "World narration & events active" : "Character-only mode"}</span>
+              </label>
+
+              {gmEnabled && (
+                <div className="gm-settings">
+                  <div className="form-row">
+                    <label>
+                      Current Location
+                      <input
+                        placeholder="Where in the world..."
+                        value={currentLocation}
+                        onChange={(e) => setCurrentLocation(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Time of Day
+                      <select value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)}>
+                        <option value="dawn">Dawn</option>
+                        <option value="morning">Morning</option>
+                        <option value="midday">Midday</option>
+                        <option value="afternoon">Afternoon</option>
+                        <option value="dusk">Dusk</option>
+                        <option value="evening">Evening</option>
+                        <option value="night">Night</option>
+                        <option value="midnight">Midnight</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="button-row">
               <button className="btn btn-primary" type="submit" disabled={isBusy}>
                 ⚔ Summon Character
@@ -491,6 +633,12 @@ export default function App() {
               <span className="meta-label">Realm</span>
               <strong>{form.world_name || "—"}</strong>
             </div>
+            {gmEnabled && (
+              <div>
+                <span className="meta-label">Mode</span>
+                <strong className="gm-badge">✧ GM</strong>
+              </div>
+            )}
           </div>
 
           <div className="chat-log">
@@ -501,8 +649,17 @@ export default function App() {
               </div>
             ) : (
               chatMessages.map((message) => (
-                <article key={message.id} className={`message message-${message.role}`}>
-                  <div className="message-role">{message.role === "user" ? "You" : form.name}</div>
+                <article
+                  key={message.id}
+                  className={`message message-${message.role}${message.messageType ? ` message-type-${message.messageType}` : ""}`}
+                >
+                  <div className="message-role">
+                    {message.role === "user"
+                      ? "You"
+                      : message.role === "narrator"
+                        ? "✧ Game Master"
+                        : form.name}
+                  </div>
                   <p>{message.content}</p>
                 </article>
               ))

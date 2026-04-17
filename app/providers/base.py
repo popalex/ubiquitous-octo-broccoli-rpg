@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 
 from app.config import Settings, get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class ProviderError(RuntimeError):
@@ -66,6 +69,7 @@ class BaseModelProvider(ABC):
         try:
             return json.loads(raw_text)
         except json.JSONDecodeError as exc:
+            logger.exception("Invalid JSON from %s: %s", self.__class__.__name__, raw_text[:200])
             raise ProviderError(f"{self.__class__.__name__} returned invalid JSON: {raw_text}") from exc
 
 

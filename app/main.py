@@ -5,19 +5,52 @@ import logging
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.db import get_db
 from app.models import CharacterCard, EpisodeSummary, MemoryFact, RelationshipState, Session as ChatSession, WorldState
-from app.schemas import CharacterLoadRequest, CharacterLoadResponse, ChatRequest, ChatResponse, EpisodeSummaryResponse, HealthResponse, MemoryFactResponse, RelationshipStateResponse, SessionInitRequest, SessionInitResponse, SessionMemoryResponse
+from app.schemas import (
+    CharacterLoadRequest,
+    CharacterLoadResponse,
+    ChatRequest,
+    ChatResponse,
+    EpisodeSummaryResponse,
+    GMChatRequest,
+    GMChatResponse,
+    GMEventCheckRequest,
+    GMEventCheckResponse,
+    GMEventGenerateRequest,
+    GMEventGenerateResponse,
+    GMNarrationRequest,
+    GMNarrationResponse,
+    GMSceneTransitionRequest,
+    GMSceneTransitionResponse,
+    HealthResponse,
+    MemoryFactResponse,
+    NPCDialogueRequest,
+    NPCDialogueResponse,
+    RelationshipStateResponse,
+    SessionInitRequest,
+    SessionInitResponse,
+    SessionMemoryResponse,
+)
 from app.providers.base import ProviderError
 from app.services.orchestrator import get_orchestrator
+from app.config import get_settings
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="small-rpg-gpt")
+
+# Log startup configuration
+_settings = get_settings()
+if _settings.dev_mode:
+    logger.info("+ DEV MODE ENABLED - model: %s, timeout: %.0fs", _settings.dev_model_name, _settings.request_timeout_seconds)
+else:
+    logger.info("+ Production mode - Actor: %s, Memory: %s, GM: %s",
+                _settings.actor_model_name, _settings.memory_model_name, _settings.gm_model_name)
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -88,6 +121,9 @@ async def init_session(payload: SessionInitRequest, db: Session = Depends(get_db
         character_card_id=character.id,
         world_state_id=world.id if world else None,
         title=payload.title,
+        gm_enabled=payload.gm_enabled,
+        current_location=payload.current_location,
+        time_of_day=payload.time_of_day,
     )
     db.add(session)
     db.commit()
@@ -99,6 +135,9 @@ async def init_session(payload: SessionInitRequest, db: Session = Depends(get_db
         world_state_id=session.world_state_id,
         title=session.title,
         turn_count=session.turn_count,
+        gm_enabled=session.gm_enabled,
+        current_location=session.current_location,
+        time_of_day=session.time_of_day,
     )
 
 
@@ -111,6 +150,7 @@ async def chat(
         orchestrator = get_orchestrator()
         return await orchestrator.chat(db, payload.session_id, payload.user_message)
     except (RuntimeError, ProviderError) as exc:
+        logger.exception("chat failed for session=%s", payload.session_id)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
@@ -148,3 +188,203 @@ async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> 
         episode_summaries=[EpisodeSummaryResponse.model_validate(s) for s in summaries],
         relationships=[RelationshipStateResponse.model_validate(r) for r in relationships],
     )
+
+
+# =============================================================================
+# GAME MASTER ENDPOINTS
+# =============================================================================
+
+
+@app.post("/gm/chat", response_model=GMChatResponse)
+async def gm_chat(
+    payload: GMChatRequest,
+    db: Session = Depends(get_db),
+) -> GMChatResponse:
+    """
+    GM-driven chat with narration and event generation.
+    
+    Wraps the character interaction with world narration and potentially
+    triggered events for a richer gameplay experience.
+    """
+    try:
+        orchestrator = get_orchestrator()
+        return await orchestrator.gm_chat(
+            db,
+            payload.session_id,
+            payload.user_message,
+            location=payload.location,
+            time_of_day=payload.time_of_day,
+        )
+    except (RuntimeError, ProviderError) as exc:
+        logger.exception("gm_chat failed for session=%s", payload.session_id)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/gm/narration", response_model=GMNarrationResponse)
+async def gm_narration(
+    payload: GMNarrationRequest,
+    db: Session = Depends(get_db),
+) -> GMNarrationResponse:
+    """Generate standalone GM narration for a scene."""
+    from sqlalchemy import select
+    session = db.scalar(
+        select(ChatSession)
+        .options(joinedload(ChatSession.world_state))
+        .where(ChatSession.id == payload.session_id)
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    try:
+        orchestrator = get_orchestrator()
+        narration = await orchestrator.game_master.generate_narration(
+            world_state=session.world_state,
+            recent_events="",  # Could be populated from recent turns if needed
+            player_action=payload.player_action,
+            scene_context=payload.scene_context or "",
+        )
+        return GMNarrationResponse(
+            session_id=payload.session_id,
+            narration=narration,
+        )
+    except ProviderError as exc:
+        logger.exception("gm_narration failed for session=%s", payload.session_id)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/gm/event/check", response_model=GMEventCheckResponse)
+async def gm_event_check(
+    payload: GMEventCheckRequest,
+    db: Session = Depends(get_db),
+) -> GMEventCheckResponse:
+    """Check if an event should trigger in the current game state."""
+    from sqlalchemy import select
+    session = db.scalar(
+        select(ChatSession)
+        .options(joinedload(ChatSession.world_state))
+        .where(ChatSession.id == payload.session_id)
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    try:
+        orchestrator = get_orchestrator()
+        result = await orchestrator.game_master.check_for_event(
+            db,
+            session,
+            location=payload.location,
+            time_of_day=payload.time_of_day,
+        )
+        return GMEventCheckResponse(
+            should_trigger=result.should_trigger,
+            event_type=result.event_type,
+            event_seed=result.event_seed,
+            urgency=result.urgency,
+            reasoning=result.reasoning,
+        )
+    except ProviderError as exc:
+        logger.exception("gm_event_check failed for session=%s", payload.session_id)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/gm/event/generate", response_model=GMEventGenerateResponse)
+async def gm_event_generate(
+    payload: GMEventGenerateRequest,
+    db: Session = Depends(get_db),
+) -> GMEventGenerateResponse:
+    """Generate a full event narrative from a seed."""
+    from sqlalchemy import select
+    session = db.scalar(
+        select(ChatSession)
+        .options(joinedload(ChatSession.world_state))
+        .where(ChatSession.id == payload.session_id)
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    try:
+        orchestrator = get_orchestrator()
+        event = await orchestrator.game_master.generate_event(
+            world_state=session.world_state,
+            event_seed=payload.event_seed,
+            event_type=payload.event_type,
+            urgency=payload.urgency,
+            player_actions="",  # Could be populated from recent turns
+        )
+        return GMEventGenerateResponse(
+            event_type=event.event_type,
+            urgency=event.urgency,
+            description=event.description,
+            npcs_involved=event.npcs_involved,
+        )
+    except ProviderError as exc:
+        logger.exception("gm_event_generate failed for session=%s", payload.session_id)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/gm/scene/transition", response_model=GMSceneTransitionResponse)
+async def gm_scene_transition(
+    payload: GMSceneTransitionRequest,
+    db: Session = Depends(get_db),
+) -> GMSceneTransitionResponse:
+    """Generate narration for a scene transition."""
+    from sqlalchemy import select
+    session = db.scalar(
+        select(ChatSession)
+        .options(joinedload(ChatSession.world_state))
+        .where(ChatSession.id == payload.session_id)
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    try:
+        orchestrator = get_orchestrator()
+        result = await orchestrator.game_master.generate_scene_transition(
+            world_state=session.world_state,
+            previous_scene=payload.previous_scene,
+            transition_type=payload.transition_type,
+            destination=payload.destination,
+        )
+        return GMSceneTransitionResponse(
+            narration=result.narration,
+            time_passed=result.time_passed,
+            new_scene_elements=result.new_scene_elements,
+        )
+    except ProviderError as exc:
+        logger.exception("gm_scene_transition failed for session=%s", payload.session_id)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/gm/npc/dialogue", response_model=NPCDialogueResponse)
+async def gm_npc_dialogue(
+    payload: NPCDialogueRequest,
+    db: Session = Depends(get_db),
+) -> NPCDialogueResponse:
+    """Generate dialogue for a specific NPC."""
+    from sqlalchemy import select
+    session = db.scalar(
+        select(ChatSession)
+        .options(joinedload(ChatSession.world_state))
+        .where(ChatSession.id == payload.session_id)
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    try:
+        orchestrator = get_orchestrator()
+        dialogue = await orchestrator.game_master.generate_npc_dialogue(
+            world_state=session.world_state,
+            npc_name=payload.npc_name,
+            npc_description=payload.npc_description,
+            npc_disposition=payload.npc_disposition,
+            npc_goal=payload.npc_goal,
+            conversation_context="",  # Could be populated from recent turns
+            player_statement=payload.player_statement,
+        )
+        return NPCDialogueResponse(
+            npc_name=payload.npc_name,
+            dialogue=dialogue,
+        )
+    except ProviderError as exc:
+        logger.exception("gm_npc_dialogue failed for session=%s npc=%s", payload.session_id, payload.npc_name)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
