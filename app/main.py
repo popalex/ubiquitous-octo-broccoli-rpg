@@ -55,9 +55,10 @@ else:
 
 @app.get("/health", response_model=HealthResponse)
 async def health(db: Session = Depends(get_db)) -> HealthResponse:
+    settings = get_settings()
     try:
         db.execute(text("SELECT 1"))
-        return HealthResponse(status="ok", database="ok")
+        return HealthResponse(status="ok", database="ok", mode="DEV" if settings.dev_mode else "PROD")
     except Exception as exc:  # pragma: no cover
         logger.exception("healthcheck failed")
         raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc

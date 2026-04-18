@@ -62,7 +62,7 @@ export default function App() {
         const nextHealth = await api<Health>("/health");
         setHealth(nextHealth);
       } catch {
-        setHealth({ status: "error", database: "error" });
+        setHealth({ status: "error", database: "error", mode: "unknown" });
       }
     };
 
@@ -187,6 +187,7 @@ export default function App() {
         <div className="status-strip">
           <div className={`pill ${health?.status === "ok" ? "ok" : "warn"}`}>Realm {health?.status || "..."}</div>
           <div className={`pill ${health?.database === "ok" ? "ok" : "warn"}`}>Archive {health?.database || "..."}</div>
+          <div className={`pill ${health?.mode === "DEV" ? "warn" : "ok"}`}>{health?.mode || "..."}</div>
           <div className="pill neutral">Local Models</div>
           <div className="pill neutral">Ollama</div>
         </div>

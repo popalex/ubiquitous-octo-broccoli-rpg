@@ -104,6 +104,7 @@ class SessionMemoryResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     database: str
+    mode: str
 
 
 # =============================================================================

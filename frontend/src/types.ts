@@ -1,6 +1,7 @@
 export type Health = {
   status: string;
   database: string;
+  mode: string;
 };
 
 export type CharacterLoadPayload = {
