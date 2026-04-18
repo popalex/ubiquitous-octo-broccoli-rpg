@@ -48,7 +48,7 @@ export function CharacterPanel({
     templates.find((item) => item.id === selectedTemplateId) || templates[0];
 
   return (
-    <section className="panel panel-left">
+    <section className="panel codex-panel">
       <div className="panel-header">
         <p className="eyebrow">Character Codex</p>
         <h2>Choose Your Path</h2>

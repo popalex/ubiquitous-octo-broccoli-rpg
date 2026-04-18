@@ -232,6 +232,9 @@ export default function App() {
   const selectedTemplate =
     allTemplates.find((item) => item.id === selectedTemplateId) || allTemplates[0];
 
+  // Wizard phase: "codex" = character setup, "chronicle" = active play
+  const phase = ids.sessionId ? "chronicle" : "codex";
+
   return (
     <div className="shell">
       <div className="ambient ambient-left" />
@@ -240,10 +243,21 @@ export default function App() {
         <div>
           <button className="back-to-vault" onClick={() => navigate("/")}>← Vault</button>
           <p className="eyebrow">Arcane Chronicle</p>
-          <h1>✦ Roleplay Session Console</h1>
-          <p className="lede">
-            Craft your character, weave your story, and watch memories form across the tapestry of your adventure.
-          </p>
+          {phase === "codex" ? (
+            <>
+              <h1>✦ Character Codex</h1>
+              <p className="lede">
+                Craft your character, choose your world, and prepare for the adventure ahead.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1>✦ Live Chronicle</h1>
+              <p className="lede">
+                Your story unfolds — speak and the world responds.
+              </p>
+            </>
+          )}
         </div>
         <div className="status-strip">
           <div className={`pill ${health?.status === "ok" ? "ok" : "warn"}`}>Realm {health?.status || "..."}</div>
@@ -254,44 +268,73 @@ export default function App() {
         </div>
       </header>
 
-      <main className="dashboard">
-        <CharacterPanel
-          templates={allTemplates}
-          form={form}
-          setForm={setForm}
-          selectedTemplateId={selectedTemplateId}
-          setSelectedTemplateId={setSelectedTemplateId}
-          sessionTitle={sessionTitle}
-          setSessionTitle={setSessionTitle}
-          isBusy={isBusy}
-          gmEnabled={gmEnabled}
-          setGmEnabled={setGmEnabled}
-          currentLocation={currentLocation}
-          setCurrentLocation={setCurrentLocation}
-          timeOfDay={timeOfDay}
-          setTimeOfDay={setTimeOfDay}
-          onLoadCharacter={handleLoadCharacter}
-          onStartSession={handleStartSession}
-          onLoadOpening={() => setChatInput(selectedTemplate.starterUserPrompt)}
-        />
-        <ChatPanel
-          chatMessages={chatMessages}
-          chatInput={chatInput}
-          setChatInput={setChatInput}
-          isBusy={isBusy}
-          sessionId={ids.sessionId}
-          characterName={form.name}
-          worldName={form.world_name}
-          gmEnabled={gmEnabled}
-          statusText={statusText}
-          onSendChat={handleSendChat}
-        />
-        <MemoryPanel
-          retrievedMemories={retrievedMemories}
-          continuityIssues={continuityIssues}
-          memory={memory}
-        />
-      </main>
+      {phase === "codex" && (
+        <main className="codex-stage">
+          <CharacterPanel
+            templates={allTemplates}
+            form={form}
+            setForm={setForm}
+            selectedTemplateId={selectedTemplateId}
+            setSelectedTemplateId={setSelectedTemplateId}
+            sessionTitle={sessionTitle}
+            setSessionTitle={setSessionTitle}
+            isBusy={isBusy}
+            gmEnabled={gmEnabled}
+            setGmEnabled={setGmEnabled}
+            currentLocation={currentLocation}
+            setCurrentLocation={setCurrentLocation}
+            timeOfDay={timeOfDay}
+            setTimeOfDay={setTimeOfDay}
+            onLoadCharacter={handleLoadCharacter}
+            onStartSession={handleStartSession}
+            onLoadOpening={() => setChatInput(selectedTemplate.starterUserPrompt)}
+          />
+        </main>
+      )}
+
+      {phase === "chronicle" && (
+        <>
+          <div className="chronicle-summary-bar">
+            <div className="summary-item">
+              <span className="meta-label">Protagonist</span>
+              <strong>{form.name || "—"}</strong>
+            </div>
+            <div className="summary-item">
+              <span className="meta-label">Realm</span>
+              <strong>{form.world_name || "—"}</strong>
+            </div>
+            {gmEnabled && (
+              <div className="summary-item">
+                <span className="meta-label">Location</span>
+                <strong>{currentLocation || "—"}</strong>
+              </div>
+            )}
+            <div className="summary-item">
+              <span className="meta-label">Mode</span>
+              <strong>{gmEnabled ? "✧ Game Master" : "Standard"}</strong>
+            </div>
+          </div>
+          <main className="dashboard dashboard-chronicle">
+            <ChatPanel
+              chatMessages={chatMessages}
+              chatInput={chatInput}
+              setChatInput={setChatInput}
+              isBusy={isBusy}
+              sessionId={ids.sessionId}
+              characterName={form.name}
+              worldName={form.world_name}
+              gmEnabled={gmEnabled}
+              statusText={statusText}
+              onSendChat={handleSendChat}
+            />
+            <MemoryPanel
+              retrievedMemories={retrievedMemories}
+              continuityIssues={continuityIssues}
+              memory={memory}
+            />
+          </main>
+        </>
+      )}
     </div>
   );
 }
