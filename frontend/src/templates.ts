@@ -7,6 +7,7 @@ export type RoleplayTemplate = {
   tags: string[];
   sessionTitle: string;
   starterUserPrompt: string;
+  startingLocation?: string;
   characterLoad: {
     name: string;
     description: string;
@@ -29,6 +30,7 @@ export const templates: RoleplayTemplate[] = [
     tags: ["starter", "canon-heavy", "memory-friendly"],
     sessionTitle: "Harbor opening scene",
     starterUserPrompt: "Rowan, what do the blue lanterns mean tonight?",
+    startingLocation: "Glass Harbor docks",
     characterLoad: {
       name: "Guide Rowan",
       description:
@@ -62,6 +64,7 @@ export const templates: RoleplayTemplate[] = [
     tags: ["detective", "continuity-heavy", "clue-tracking"],
     sessionTitle: "The canal murder",
     starterUserPrompt: "Vale, who had access to the floodgate keys last night?",
+    startingLocation: "Blackwater Reach canal district",
     characterLoad: {
       name: "Inspector Vale",
       description:
@@ -95,6 +98,7 @@ export const templates: RoleplayTemplate[] = [
     tags: ["politics", "relationships", "canon-heavy"],
     sessionTitle: "Before the midnight audience",
     starterUserPrompt: "Lady Sable, which house is most likely to betray the treaty first?",
+    startingLocation: "The Court of Ash, grand audience hall",
     characterLoad: {
       name: "Lady Sable",
       description:
@@ -128,6 +132,7 @@ export const templates: RoleplayTemplate[] = [
     tags: ["hard-rules", "systems", "ship-ops"],
     sessionTitle: "Recovery orbit",
     starterUserPrompt: "Morrow-7, summarize current damage and our safest recovery window.",
+    startingLocation: "Survey Vessel Ibis, bridge",
     characterLoad: {
       name: "Morrow-7",
       description:
@@ -161,6 +166,7 @@ export const templates: RoleplayTemplate[] = [
     tags: ["factions", "debts", "durable-facts"],
     sessionTitle: "Dust and debt",
     starterUserPrompt: "Mara, which of the town factions is most likely to come after us first?",
+    startingLocation: "Red Mesa saloon",
     characterLoad: {
       name: "Mara Flint",
       description:
@@ -193,6 +199,7 @@ export const templates: RoleplayTemplate[] = [
     tags: ["social", "summary-friendly", "npc-web"],
     sessionTitle: "An evening at the inn",
     starterUserPrompt: "Tomas, who in the village should I trust least tonight?",
+    startingLocation: "Moss Hollow inn",
     characterLoad: {
       name: "Tomas Alder",
       description:

@@ -52,6 +52,7 @@ export default function App() {
     setForm({ ...template.characterLoad });
     setSessionTitle(template.sessionTitle);
     setChatInput(template.starterUserPrompt);
+    setCurrentLocation(template.startingLocation || "");
     localStorage.setItem(storageKeys.selectedTemplate, template.id);
   }, [selectedTemplateId, allTemplates]);
 
