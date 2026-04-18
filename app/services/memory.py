@@ -38,10 +38,16 @@ class MemoryService:
     # Prevents overwhelming the LLM when last_summarized_turn falls behind.
     _MAX_TURNS_PER_SUMMARY = 20
 
-    async def maybe_refresh(self, db: Session, session: ChatSession) -> MemoryRefreshResult:
+    async def maybe_refresh(
+        self, db: Session, session: ChatSession, *, force: bool = False,
+    ) -> MemoryRefreshResult:
         turns_since_last = session.turn_count - session.last_summarized_turn
-        if session.turn_count == 0 or turns_since_last < self.settings.memory_summary_interval:
-            return MemoryRefreshResult(summary_created=False, facts_written=0, relationships_written=0)
+        if not force:
+            if session.turn_count == 0 or turns_since_last < self.settings.memory_summary_interval:
+                return MemoryRefreshResult(summary_created=False, facts_written=0, relationships_written=0)
+        else:
+            if session.turn_count == 0 or turns_since_last == 0:
+                return MemoryRefreshResult(summary_created=False, facts_written=0, relationships_written=0)
 
         turns = db.scalars(
             select(Turn)

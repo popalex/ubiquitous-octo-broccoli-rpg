@@ -279,8 +279,27 @@ async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> 
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
 
-    facts = db.query(MemoryFact).filter(MemoryFact.session_id == session_id).order_by(MemoryFact.created_at.desc()).all()
     summaries = db.query(EpisodeSummary).filter(EpisodeSummary.session_id == session_id).order_by(EpisodeSummary.created_at.desc()).all()
+
+    # If no summaries exist but there are unsummarized turns, backfill now.
+    if not summaries and session.turn_count > session.last_summarized_turn:
+        logger.info(
+            "backfill_summary START session=%s turn_count=%s last_summarized=%s",
+            session_id, session.turn_count, session.last_summarized_turn,
+        )
+        try:
+            orchestrator = get_orchestrator()
+            result = await orchestrator.memory.maybe_refresh(db, session, force=True)
+            db.refresh(session)
+            summaries = db.query(EpisodeSummary).filter(EpisodeSummary.session_id == session_id).order_by(EpisodeSummary.created_at.desc()).all()
+            logger.info(
+                "backfill_summary DONE session=%s summary_created=%s facts=%s relationships=%s summaries_now=%s",
+                session_id, result.summary_created, result.facts_written, result.relationships_written, len(summaries),
+            )
+        except Exception:
+            logger.exception("backfill summary failed for session=%s", session_id)
+
+    facts = db.query(MemoryFact).filter(MemoryFact.session_id == session_id).order_by(MemoryFact.created_at.desc()).all()
     relationships = db.query(RelationshipState).filter(RelationshipState.session_id == session_id).order_by(RelationshipState.updated_at.desc()).all()
 
     return SessionMemoryResponse(
