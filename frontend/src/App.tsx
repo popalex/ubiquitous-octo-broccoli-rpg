@@ -97,10 +97,12 @@ export default function App() {
 
         // Load memory separately — may be slow if it needs to backfill summaries.
         try {
+          setStatusText("Updating memory scrolls…");
           const mem = await api<SessionMemory>(`/session/${routeSessionId}/memory`);
           setMemory(mem);
+          setStatusText(`Chronicle resumed (${detail.gm_enabled ? "GM Mode" : "Standard"}). ${detail.turn_count} turns recorded.`);
         } catch {
-          setStatusText(`Chronicle loaded. Memory is still syncing…`);
+          setStatusText("Chronicle loaded. Memory is still syncing…");
         }
       } catch (err) {
         setStatusText(err instanceof Error ? err.message : "Failed to load chronicle.");

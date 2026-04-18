@@ -124,6 +124,8 @@ async function sendGMStream({
               ]);
               setStatusText("Character responds...");
             }
+          } else if (event.type === "phase" && event.phase === "summarizing") {
+            setStatusText("Updating memory scrolls…");
           } else if (event.type === "pre_narration_chunk") {
             hasPreNarration = true;
             setChatMessages((current) =>
@@ -250,6 +252,8 @@ async function sendStandardStream({
                   : msg
               )
             );
+          } else if (event.type === "phase" && event.phase === "summarizing") {
+            setStatusText("Updating memory scrolls…");
           } else if (event.type === "memories") {
             setRetrievedMemories(event.memories as RetrievedMemory[]);
           } else if (event.type === "error") {

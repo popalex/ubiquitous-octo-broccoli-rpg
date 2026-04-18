@@ -517,7 +517,8 @@ class OrchestratorService:
         db.commit()
         db.refresh(session)
 
-        # Memory refresh (non-blocking)
+        # Memory refresh
+        yield f"data: {json.dumps({'type': 'phase', 'phase': 'summarizing'})}\n\n"
         try:
             await self.memory.maybe_refresh(db, session)
         except ProviderError as exc:
@@ -602,7 +603,8 @@ class OrchestratorService:
         db.commit()
         db.refresh(session)
 
-        # Trigger memory refresh in background (non-blocking)
+        # Memory refresh
+        yield f"data: {json.dumps({'type': 'phase', 'phase': 'summarizing'})}\n\n"
         try:
             await self.memory.maybe_refresh(db, session)
         except ProviderError as exc:
