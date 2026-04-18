@@ -15,8 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Build Docker image
-      run: docker build -t fa .
+    - name: Build backend Docker image
+      run: docker build -f Dockerfile.backend -t fa-backend .
+    - name: Build frontend Docker image
+      run: docker build -f Dockerfile.frontend --target prod -t fa-frontend .
 
   build:
     runs-on: ubuntu-latest

@@ -1,0 +1,28 @@
+# docker-compose.override.yml
+# Automatically loaded by `docker compose up` alongside docker-compose.yml.
+# Switches the frontend to the Vite dev server with hot-reload and source mounts.
+#
+# To switch to prod: comment out the "dev" block and uncomment the "prod" block.
+
+services:
+  frontend:
+    # ── dev (Vite HMR) ──────────────────────────────────────
+    build:
+      target: dev
+    environment:
+      VITE_API_PROXY_TARGET: http://api:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173"]
+
+    # ── prod (nginx) ────────────────────────────────────────
+    # build:
+    #   target: prod
+    # ports:
+    #   - "5173:80"
+    # healthcheck:
+    #   test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80"]
