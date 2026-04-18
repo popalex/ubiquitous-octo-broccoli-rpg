@@ -243,35 +243,56 @@ class OrchestratorService:
             except ProviderError as exc:
                 logger.exception("Event generation failed for session=%s", session.id)
 
-        # Persist turns
-        next_user_index = session.turn_count + 1
-        next_actor_index = session.turn_count + 2
+        # Persist turns (include pre-narration as GM turn for memory extraction)
+        turns_to_add: list[Turn] = []
+        current_index = session.turn_count
         
-        # Build full assistant content including GM narration
+        # Store pre-narration as a separate GM turn if present
+        if pre_narration:
+            current_index += 1
+            turns_to_add.append(
+                Turn(
+                    session_id=session.id,
+                    turn_index=current_index,
+                    role="assistant",
+                    content=f"[Scene Narration]\n{pre_narration}",
+                    token_estimate=self._estimate_tokens(pre_narration),
+                    turn_type="gm_narration",
+                )
+            )
+        
+        # User turn
+        current_index += 1
+        turns_to_add.append(
+            Turn(
+                session_id=session.id,
+                turn_index=current_index,
+                role="user",
+                content=user_message,
+                token_estimate=self._estimate_tokens(user_message),
+            )
+        )
+        
+        # Build full assistant content including post-narration
         full_assistant_content = continuity.final_reply
         if post_narration:
             full_assistant_content = f"{continuity.final_reply}\n\n---\n\n{post_narration}"
 
-        db.add_all(
-            [
-                Turn(
-                    session_id=session.id,
-                    turn_index=next_user_index,
-                    role="user",
-                    content=user_message,
-                    token_estimate=self._estimate_tokens(user_message),
-                ),
-                Turn(
-                    session_id=session.id,
-                    turn_index=next_actor_index,
-                    role="assistant",
-                    content=full_assistant_content,
-                    token_estimate=self._estimate_tokens(full_assistant_content),
-                    continuity_notes="\n".join(continuity.issues) if continuity.issues else None,
-                ),
-            ]
+        # Assistant turn
+        current_index += 1
+        turns_to_add.append(
+            Turn(
+                session_id=session.id,
+                turn_index=current_index,
+                role="assistant",
+                content=full_assistant_content,
+                token_estimate=self._estimate_tokens(full_assistant_content),
+                continuity_notes="\n".join(continuity.issues) if continuity.issues else None,
+            )
         )
-        session.turn_count = next_actor_index
+        
+        db.add_all(turns_to_add)
+        session.turn_count = current_index
         db.commit()
         db.refresh(session)
 
@@ -444,33 +465,55 @@ class OrchestratorService:
             except ProviderError as exc:
                 logger.exception("Event generation failed for session=%s", session.id)
 
-        # Persist turns
-        next_user_index = session.turn_count + 1
-        next_actor_index = session.turn_count + 2
+        # Persist turns (include pre-narration as GM turn for memory extraction)
+        turns_to_add: list[Turn] = []
+        current_index = session.turn_count
         
+        # Store pre-narration as a separate GM turn if present
+        if pre_narration:
+            current_index += 1
+            turns_to_add.append(
+                Turn(
+                    session_id=session.id,
+                    turn_index=current_index,
+                    role="assistant",
+                    content=f"[Scene Narration]\n{pre_narration}",
+                    token_estimate=self._estimate_tokens(pre_narration),
+                    turn_type="gm_narration",
+                )
+            )
+        
+        # User turn
+        current_index += 1
+        turns_to_add.append(
+            Turn(
+                session_id=session.id,
+                turn_index=current_index,
+                role="user",
+                content=user_message,
+                token_estimate=self._estimate_tokens(user_message),
+            )
+        )
+        
+        # Build full assistant content including post-narration
         full_assistant_content = character_reply
         if post_narration:
             full_assistant_content = f"{character_reply}\n\n---\n\n{post_narration}"
 
-        db.add_all(
-            [
-                Turn(
-                    session_id=session.id,
-                    turn_index=next_user_index,
-                    role="user",
-                    content=user_message,
-                    token_estimate=self._estimate_tokens(user_message),
-                ),
-                Turn(
-                    session_id=session.id,
-                    turn_index=next_actor_index,
-                    role="assistant",
-                    content=full_assistant_content,
-                    token_estimate=self._estimate_tokens(full_assistant_content),
-                ),
-            ]
+        # Assistant turn
+        current_index += 1
+        turns_to_add.append(
+            Turn(
+                session_id=session.id,
+                turn_index=current_index,
+                role="assistant",
+                content=full_assistant_content,
+                token_estimate=self._estimate_tokens(full_assistant_content),
+            )
         )
-        session.turn_count = next_actor_index
+        
+        db.add_all(turns_to_add)
+        session.turn_count = current_index
         db.commit()
         db.refresh(session)
 
