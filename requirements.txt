@@ -1,5 +1,5 @@
 alembic==1.18.0
-fastapi==0.118.0
+fastapi==0.136.0
 httpx==0.28.1
 openai==1.109.1
 pgvector==0.4.1
