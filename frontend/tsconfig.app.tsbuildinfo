@@ -1,1 +1,1 @@
-{"root":["./src/App.tsx","./src/main.tsx","./src/templates.ts"],"version":"5.9.3"}
+{"root":["./src/App.tsx","./src/api.ts","./src/chat.ts","./src/main.tsx","./src/templates.ts","./src/types.ts","./src/components/CharacterPanel.tsx","./src/components/ChatPanel.tsx","./src/components/MemoryPanel.tsx"],"version":"5.9.3"}

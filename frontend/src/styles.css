@@ -893,6 +893,7 @@ input:disabled {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+  position: relative;
 }
 
 .toggle-label::before {
@@ -911,12 +912,13 @@ input:disabled {
   content: "";
   position: absolute;
   left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
   width: 20px;
   height: 20px;
   background: var(--text-muted);
   border-radius: 50%;
   transition: all 0.3s ease;
-  margin-top: 2px;
 }
 
 .gm-toggle input:checked + .toggle-label::before {
@@ -926,7 +928,7 @@ input:disabled {
 }
 
 .gm-toggle input:checked + .toggle-label::after {
-  transform: translateX(20px);
+  transform: translateX(20px) translateY(-50%);
   background: var(--parchment);
 }
 
