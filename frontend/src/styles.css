@@ -1503,6 +1503,13 @@ textarea:focus-visible {
   max-width: 30rem;
 }
 
+.hub-empty-btn {
+  margin-top: var(--space-lg);
+  padding: 1.2rem 3rem;
+  font-size: 1.15rem;
+  letter-spacing: 0.1em;
+}
+
 /* Chronicle card grid */
 .hub-grid {
   display: grid;

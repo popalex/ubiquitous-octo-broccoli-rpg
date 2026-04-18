@@ -60,9 +60,11 @@ export function ChronicleHub() {
             Each chronicle is a living record — choose one to continue your story, or open a new tome.
           </p>
         </div>
-        <button className="btn-primary hub-new-btn" onClick={() => navigate("/chronicle/new")}>
-          <span className="btn-rune">✦</span> Open New Chronicle
-        </button>
+        {chronicles.length > 0 && (
+          <button className="btn-primary hub-new-btn" onClick={() => navigate("/chronicle/new")}>
+            <span className="btn-rune">✦</span> Open New Chronicle
+          </button>
+        )}
       </header>
 
       <main className="hub-main">
@@ -85,7 +87,7 @@ export function ChronicleHub() {
             <div className="hub-empty-icon">📜</div>
             <h2>The vault is empty</h2>
             <p>No chronicles have been written yet. Begin a new adventure.</p>
-            <button className="btn-primary" onClick={() => navigate("/chronicle/new")}>
+            <button className="btn-primary hub-empty-btn" onClick={() => navigate("/chronicle/new")}>
               <span className="btn-rune">✦</span> Open New Chronicle
             </button>
           </div>
