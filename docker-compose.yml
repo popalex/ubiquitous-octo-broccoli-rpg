@@ -38,9 +38,9 @@ services:
       OLLAMA_HOST: http://ollama:11434
       DEV_MODE: ${DEV_MODE:-false}
       DEV_MODEL_NAME: ${DEV_MODEL_NAME:-llama3.2:3b}
-      ACTOR_MODEL_NAME: ${ACTOR_MODEL_NAME:-llama3.2:8b}
+      ACTOR_MODEL_NAME: ${ACTOR_MODEL_NAME:-llama3.1:8b}
       MEMORY_MODEL_NAME: ${MEMORY_MODEL_NAME:-phi3:mini}
-      GM_MODEL_NAME: ${GM_MODEL_NAME:-llama3.2:8b}
+      GM_MODEL_NAME: ${GM_MODEL_NAME:-llama3.1:8b}
       EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-nomic-embed-text}
     depends_on:
       ollama:
@@ -57,20 +57,26 @@ services:
         if [ "$$DEV_MODE" = "true" ]; then
           echo "DEV MODE: pulling single model $$DEV_MODEL_NAME"
           ollama pull $$DEV_MODEL_NAME
+          echo "Pulling embedding model $$EMBEDDING_MODEL_NAME"
           ollama pull $$EMBEDDING_MODEL_NAME
           exit 0
         fi
         # Production: pull all unique models
+        echo "Pulling actor model $$ACTOR_MODEL_NAME"
         ollama pull $$ACTOR_MODEL_NAME
         if [ "$$MEMORY_MODEL_NAME" != "$$ACTOR_MODEL_NAME" ]; then
+          echo "Pulling memory model $$MEMORY_MODEL_NAME"
           ollama pull $$MEMORY_MODEL_NAME
         fi
         if [ "$$GM_MODEL_NAME" != "$$ACTOR_MODEL_NAME" ] && [ "$$GM_MODEL_NAME" != "$$MEMORY_MODEL_NAME" ]; then
+          echo "Pulling GM model $$GM_MODEL_NAME"
           ollama pull $$GM_MODEL_NAME
         fi
         if [ "$$EMBEDDING_MODEL_NAME" != "$$ACTOR_MODEL_NAME" ] && [ "$$EMBEDDING_MODEL_NAME" != "$$MEMORY_MODEL_NAME" ] && [ "$$EMBEDDING_MODEL_NAME" != "$$GM_MODEL_NAME" ]; then
+          echo "Pulling embedding model $$EMBEDDING_MODEL_NAME"
           ollama pull $$EMBEDDING_MODEL_NAME
         fi
+        echo "All models pulled successfully"
 
   api:
     build:
@@ -92,9 +98,9 @@ services:
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-ollama}
       GM_PROVIDER: ${GM_PROVIDER:-ollama}
       # Models
-      ACTOR_MODEL_NAME: ${ACTOR_MODEL_NAME:-llama3.2:8b}
+      ACTOR_MODEL_NAME: ${ACTOR_MODEL_NAME:-llama3.1:8b}
       MEMORY_MODEL_NAME: ${MEMORY_MODEL_NAME:-phi3:mini}
-      GM_MODEL_NAME: ${GM_MODEL_NAME:-llama3.2:8b}
+      GM_MODEL_NAME: ${GM_MODEL_NAME:-llama3.1:8b}
       EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-nomic-embed-text}
       EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-768}
       # External providers
