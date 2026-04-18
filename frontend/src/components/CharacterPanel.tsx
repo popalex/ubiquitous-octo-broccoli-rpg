@@ -1,11 +1,12 @@
 import type { FormEvent } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
-import { templates } from "../templates";
+import type { RoleplayTemplate } from "../templates";
 import { listToText, textToList } from "../api";
 import type { CharacterLoadPayload } from "../types";
 
 type Props = {
+  templates: RoleplayTemplate[];
   form: CharacterLoadPayload;
   setForm: Dispatch<SetStateAction<CharacterLoadPayload>>;
   selectedTemplateId: string;
@@ -25,6 +26,7 @@ type Props = {
 };
 
 export function CharacterPanel({
+  templates,
   form,
   setForm,
   selectedTemplateId,

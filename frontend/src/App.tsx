@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 
-import { templates } from "./templates";
+import { templates as baseTemplates } from "./templates";
+import { loadAllTemplates } from "./loadTemplates";
 import { api, storageKeys, createInitialForm } from "./api";
 import { sendChat } from "./chat";
 import { CharacterPanel } from "./components/CharacterPanel";
@@ -16,14 +17,15 @@ import type {
 } from "./types";
 
 export default function App() {
+  const [allTemplates, setAllTemplates] = useState(baseTemplates);
   const [selectedTemplateId, setSelectedTemplateId] = useState(
-    localStorage.getItem(storageKeys.selectedTemplate) || templates[0].id,
+    localStorage.getItem(storageKeys.selectedTemplate) || baseTemplates[0].id,
   );
   const [form, setForm] = useState<CharacterLoadPayload>(createInitialForm);
   const [health, setHealth] = useState<Health | null>(null);
   const [statusText, setStatusText] = useState("Ready.");
   const [isBusy, setIsBusy] = useState(false);
-  const [sessionTitle, setSessionTitle] = useState(localStorage.getItem(storageKeys.sessionTitle) || templates[0].sessionTitle);
+  const [sessionTitle, setSessionTitle] = useState(localStorage.getItem(storageKeys.sessionTitle) || baseTemplates[0].sessionTitle);
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [retrievedMemories, setRetrievedMemories] = useState<RetrievedMemory[]>([]);
@@ -42,12 +44,16 @@ export default function App() {
   const [lastEvent, setLastEvent] = useState<GMEvent | null>(null);
 
   useEffect(() => {
-    const template = templates.find((item) => item.id === selectedTemplateId) || templates[0];
+    loadAllTemplates().then(setAllTemplates);
+  }, []);
+
+  useEffect(() => {
+    const template = allTemplates.find((item) => item.id === selectedTemplateId) || allTemplates[0];
     setForm({ ...template.characterLoad });
     setSessionTitle(template.sessionTitle);
     setChatInput(template.starterUserPrompt);
     localStorage.setItem(storageKeys.selectedTemplate, template.id);
-  }, [selectedTemplateId]);
+  }, [selectedTemplateId, allTemplates]);
 
   useEffect(() => {
     const poll = async () => {
@@ -163,7 +169,7 @@ export default function App() {
   }
 
   const selectedTemplate =
-    templates.find((item) => item.id === selectedTemplateId) || templates[0];
+    allTemplates.find((item) => item.id === selectedTemplateId) || allTemplates[0];
 
   return (
     <div className="shell">
@@ -187,6 +193,7 @@ export default function App() {
 
       <main className="dashboard">
         <CharacterPanel
+          templates={allTemplates}
           form={form}
           setForm={setForm}
           selectedTemplateId={selectedTemplateId}
