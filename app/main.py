@@ -288,7 +288,6 @@ async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> 
         db.query(EpisodeSummary).filter(EpisodeSummary.id.in_(placeholder_ids)).delete(synchronize_session="fetch")
         session.last_summarized_turn = 0
         db.commit()
-        db.refresh(session)
         summaries = [s for s in summaries if s.id not in placeholder_ids]
 
     # If no valid summaries exist but there are unsummarized turns, backfill now.
@@ -300,7 +299,6 @@ async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> 
         try:
             orchestrator = get_orchestrator()
             result = await orchestrator.memory.maybe_refresh(db, session, force=True)
-            db.refresh(session)
             summaries = db.query(EpisodeSummary).filter(EpisodeSummary.session_id == session_id).order_by(EpisodeSummary.created_at.desc()).all()
             logger.info(
                 "backfill_summary DONE session=%s summary_created=%s facts=%s relationships=%s summaries_now=%s",

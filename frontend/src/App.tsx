@@ -64,10 +64,10 @@ export default function App() {
 
     async function resumeSession() {
       try {
-        const [detail, turnsRaw, mem] = await Promise.all([
+        // Load session detail and turns first (fast, critical for display).
+        const [detail, turnsRaw] = await Promise.all([
           api<SessionDetail>(`/session/${routeSessionId}`),
           api<TurnRecord[]>(`/session/${routeSessionId}/turns`),
-          api<SessionMemory>(`/session/${routeSessionId}/memory`),
         ]);
 
         setIds({
@@ -92,9 +92,16 @@ export default function App() {
           messageType: (t.turn_type === "gm_narration" ? "pre_narration" : t.turn_type === "gm_event" ? "event" : "chat") as ChatMessage["messageType"],
         }));
         setChatMessages(restored);
-        setMemory(mem);
         setSessionResumed(true);
         setStatusText(`Chronicle resumed (${detail.gm_enabled ? "GM Mode" : "Standard"}). ${detail.turn_count} turns recorded.`);
+
+        // Load memory separately — may be slow if it needs to backfill summaries.
+        try {
+          const mem = await api<SessionMemory>(`/session/${routeSessionId}/memory`);
+          setMemory(mem);
+        } catch {
+          setStatusText(`Chronicle loaded. Memory is still syncing…`);
+        }
       } catch (err) {
         setStatusText(err instanceof Error ? err.message : "Failed to load chronicle.");
       } finally {
