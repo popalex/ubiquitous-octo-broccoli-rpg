@@ -1,3 +1,4 @@
+import ReactMarkdown from "react-markdown";
 import type { ChatMessage } from "../types";
 
 type Props = {
@@ -74,7 +75,9 @@ export function ChatPanel({
                     ? "✧ Game Master"
                     : characterName}
               </div>
-              <p>{message.content}</p>
+              <div className="message-body">
+                <ReactMarkdown>{message.content}</ReactMarkdown>
+              </div>
             </article>
           ))
         )}
