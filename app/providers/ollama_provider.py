@@ -58,7 +58,7 @@ class OllamaProvider(BaseModelProvider):
                     try:
                         chunk = json.loads(line)
                         part = chunk.get("message", {}).get("content", "")
-                        logger.info("Received chunk from Ollama: %s", part[:100])
+                        logger.debug("Received chunk from Ollama: %s", part[:100])
                         if part:
                             content_parts.append(part)
                     except json.JSONDecodeError:
