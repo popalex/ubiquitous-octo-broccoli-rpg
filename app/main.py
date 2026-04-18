@@ -281,7 +281,17 @@ async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> 
 
     summaries = db.query(EpisodeSummary).filter(EpisodeSummary.session_id == session_id).order_by(EpisodeSummary.created_at.desc()).all()
 
-    # If no summaries exist but there are unsummarized turns, backfill now.
+    # Delete broken placeholder summaries left by the old bug so we can regenerate.
+    placeholder_ids = [s.id for s in summaries if s.content.strip() == "No summary produced."]
+    if placeholder_ids:
+        logger.info("backfill_summary CLEANUP session=%s removing %s placeholder summaries", session_id, len(placeholder_ids))
+        db.query(EpisodeSummary).filter(EpisodeSummary.id.in_(placeholder_ids)).delete(synchronize_session="fetch")
+        session.last_summarized_turn = 0
+        db.commit()
+        db.refresh(session)
+        summaries = [s for s in summaries if s.id not in placeholder_ids]
+
+    # If no valid summaries exist but there are unsummarized turns, backfill now.
     if not summaries and session.turn_count > session.last_summarized_turn:
         logger.info(
             "backfill_summary START session=%s turn_count=%s last_summarized=%s",
