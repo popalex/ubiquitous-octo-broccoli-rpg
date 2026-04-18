@@ -234,11 +234,11 @@ async def get_session_turns(session_id: str, db: Session = Depends(get_db)) -> l
 
 
 @app.delete("/session/{session_id}", status_code=204)
-async def archive_session(session_id: str, db: Session = Depends(get_db)) -> None:
+async def delete_session(session_id: str, db: Session = Depends(get_db)) -> None:
     session = db.query(ChatSession).filter(ChatSession.id == session_id).one_or_none()
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
-    session.status = "archived"
+    db.delete(session)
     db.commit()
 
 

@@ -1625,6 +1625,41 @@ textarea:focus-visible {
   border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+.chronicle-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.chronicle-delete-btn {
+  background: transparent;
+  border: 1px solid rgba(139, 38, 53, 0.35);
+  color: var(--text-muted);
+  font-family: "Cinzel", serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0;
+}
+
+.chronicle-card:hover .chronicle-delete-btn {
+  opacity: 1;
+}
+
+.chronicle-delete-btn:hover:not(:disabled) {
+  color: var(--crimson-glow);
+  border-color: var(--crimson-glow);
+  background: rgba(139, 38, 53, 0.15);
+}
+
+.chronicle-delete-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .chronicle-date {
   font-family: "JetBrains Mono", monospace;
   font-size: 0.68rem;

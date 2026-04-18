@@ -9,7 +9,7 @@ export function ChronicleHub() {
   const [chronicles, setChronicles] = useState<ChronicleListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [archiving, setArchiving] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     void loadChronicles();
@@ -28,17 +28,17 @@ export function ChronicleHub() {
     }
   }
 
-  async function handleArchive(id: string, e: React.MouseEvent) {
+  async function handleDelete(id: string, e: React.MouseEvent) {
     e.stopPropagation();
-    if (!confirm("Seal this chronicle into the archive? It will no longer appear in the vault.")) return;
-    setArchiving(id);
+    if (!confirm("Permanently delete this chronicle? This cannot be undone.")) return;
+    setDeleting(id);
     try {
       await api(`/session/${id}`, { method: "DELETE" });
       setChronicles((prev) => prev.filter((c) => c.id !== id));
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to archive chronicle.");
+      alert(err instanceof Error ? err.message : "Failed to delete chronicle.");
     } finally {
-      setArchiving(null);
+      setDeleting(null);
     }
   }
 
@@ -107,14 +107,6 @@ export function ChronicleHub() {
                     {c.gm_enabled && <span className="badge badge-gm">GM</span>}
                     <span className="badge badge-turns">{c.turn_count} turns</span>
                   </div>
-                  <button
-                    className="chronicle-archive-btn"
-                    title="Seal to archive"
-                    disabled={archiving === c.id}
-                    onClick={(e) => void handleArchive(c.id, e)}
-                  >
-                    {archiving === c.id ? "…" : "✕"}
-                  </button>
                 </div>
 
                 <h3 className="chronicle-title">{c.title || "Untitled Chronicle"}</h3>
@@ -140,7 +132,16 @@ export function ChronicleHub() {
 
                 <footer className="chronicle-card-footer">
                   <span className="chronicle-date">Last played {formatDate(c.updated_at)}</span>
-                  <span className="chronicle-resume">Continue →</span>
+                  <div className="chronicle-footer-actions">
+                    <button
+                      className="chronicle-delete-btn"
+                      disabled={deleting === c.id}
+                      onClick={(e) => void handleDelete(c.id, e)}
+                    >
+                      {deleting === c.id ? "…" : "Delete"}
+                    </button>
+                    <span className="chronicle-resume">Continue →</span>
+                  </div>
                 </footer>
               </article>
             ))}

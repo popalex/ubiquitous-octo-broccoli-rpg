@@ -146,6 +146,52 @@ async def test_init_session_invalid_character_card_returns_404(async_client: Asy
 
 
 # ===========================================================================
+# Session delete
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_delete_session_returns_204(async_client: AsyncClient) -> None:
+    session = SessionFactory()
+
+    response = await async_client.delete(f"/session/{session.id}")
+    assert response.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_delete_session_removes_from_db(
+    async_client: AsyncClient, db_session
+) -> None:
+    from app.models import Session as ChatSession
+
+    session = SessionFactory()
+    session_id = session.id
+
+    await async_client.delete(f"/session/{session_id}")
+
+    remaining = db_session.query(ChatSession).filter(ChatSession.id == session_id).one_or_none()
+    assert remaining is None
+
+
+@pytest.mark.asyncio
+async def test_delete_session_not_found_returns_404(async_client: AsyncClient) -> None:
+    response = await async_client.delete("/session/nonexistent-id")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_session_no_longer_in_list(async_client: AsyncClient) -> None:
+    session = SessionFactory()
+
+    await async_client.delete(f"/session/{session.id}")
+
+    list_response = await async_client.get("/sessions")
+    assert list_response.status_code == 200
+    ids = [s["id"] for s in list_response.json()["sessions"]]
+    assert session.id not in ids
+
+
+# ===========================================================================
 # Chat (mocked orchestrator)
 # ===========================================================================
 
