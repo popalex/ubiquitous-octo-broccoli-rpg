@@ -38,9 +38,9 @@ services:
       OLLAMA_HOST: http://ollama:11434
       DEV_MODE: ${DEV_MODE:-false}
       DEV_MODEL_NAME: ${DEV_MODEL_NAME:-llama3.2:3b}
-      ACTOR_MODEL_NAME: ${ACTOR_MODEL_NAME:-llama3.1:8b}
+      ACTOR_MODEL_NAME: ${ACTOR_MODEL_NAME:-llama3.2:8b}
       MEMORY_MODEL_NAME: ${MEMORY_MODEL_NAME:-phi3:mini}
-      GM_MODEL_NAME: ${GM_MODEL_NAME:-llama3.1:8b}
+      GM_MODEL_NAME: ${GM_MODEL_NAME:-llama3.2:8b}
       EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-nomic-embed-text}
     depends_on:
       ollama:
@@ -92,9 +92,9 @@ services:
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-ollama}
       GM_PROVIDER: ${GM_PROVIDER:-ollama}
       # Models
-      ACTOR_MODEL_NAME: ${ACTOR_MODEL_NAME:-llama3.1:8b}
+      ACTOR_MODEL_NAME: ${ACTOR_MODEL_NAME:-llama3.2:8b}
       MEMORY_MODEL_NAME: ${MEMORY_MODEL_NAME:-phi3:mini}
-      GM_MODEL_NAME: ${GM_MODEL_NAME:-llama3.1:8b}
+      GM_MODEL_NAME: ${GM_MODEL_NAME:-llama3.2:8b}
       EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-nomic-embed-text}
       EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-768}
       # External providers

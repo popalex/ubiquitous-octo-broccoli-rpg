@@ -27,10 +27,10 @@ class Settings(BaseSettings):
     embedding_provider: ProviderName = "ollama"
     gm_provider: ProviderName = "ollama"
 
-    actor_model_name: str = "llama3.1:8b"
+    actor_model_name: str = "llama3.2:8b"
     memory_model_name: str = "phi3:mini"
     embedding_model_name: str = "nomic-embed-text"
-    gm_model_name: str = "llama3.1:8b"
+    gm_model_name: str = "llama3.2:8b"
     embedding_dimension: int = 768
 
     @model_validator(mode="after")

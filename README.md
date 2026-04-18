@@ -4,8 +4,8 @@ Hybrid roleplay chat backend built with FastAPI, PostgreSQL, pgvector, Alembic, 
 
 Default mode is Ollama-first and Docker Compose now runs Ollama inside the stack:
 
-- Actor replies: Ollama (llama3.1:8b)
-- Game Master (narration, events, NPCs): Ollama (llama3.1:8b)
+- Actor replies: Ollama (llama3.2:8b)
+- Game Master (narration, events, NPCs): Ollama (llama3.2:8b)
 - Memory extraction and summaries: Ollama (phi3:mini)
 - Embeddings: Ollama (nomic-embed-text)
 - OpenAI: optional fallback only
@@ -43,15 +43,15 @@ This overrides actor, memory, and GM models to all use the same model.
 
 For best quality, use separate models optimized for each task:
 
-- `ACTOR_MODEL_NAME=llama3.1:8b` - creative character dialogue
+- `ACTOR_MODEL_NAME=llama3.2:8b` - creative character dialogue
 - `MEMORY_MODEL_NAME=phi3:mini` - precise fact extraction and summaries
-- `GM_MODEL_NAME=llama3.1:8b` - world narration and events
+- `GM_MODEL_NAME=llama3.2:8b` - world narration and events
 
 Important:
 
 - `OLLAMA_BASE_URL` should stay `http://ollama:11434` when the API runs inside Docker Compose.
 - The first startup auto-pulls the configured models:
-  - `llama3.1:8b` (actor + GM)
+  - `llama3.2:8b` (actor + GM)
   - `phi3:mini` (memory)
   - `nomic-embed-text` (embeddings)
 - In dev mode, only the single dev model + embeddings are pulled.
