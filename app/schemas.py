@@ -101,6 +101,48 @@ class SessionMemoryResponse(BaseModel):
     relationships: list[RelationshipStateResponse]
 
 
+class TurnResponse(ORMModel):
+    turn_index: int
+    role: str
+    content: str
+    turn_type: str
+
+
+class SessionListItem(BaseModel):
+    id: str
+    title: str | None
+    status: str
+    gm_enabled: bool
+    turn_count: int
+    created_at: datetime
+    updated_at: datetime
+    character_card_id: str
+    world_state_id: str | None
+    character_name: str | None
+    world_name: str | None
+    summary: str | None
+
+
+class SessionListResponse(BaseModel):
+    sessions: list[SessionListItem]
+
+
+class SessionDetailResponse(BaseModel):
+    id: str
+    title: str | None
+    status: str
+    gm_enabled: bool
+    turn_count: int
+    created_at: datetime
+    updated_at: datetime
+    character_card_id: str
+    world_state_id: str | None
+    character_name: str | None
+    world_name: str | None
+    current_location: str | None
+    time_of_day: str | None
+
+
 class HealthResponse(BaseModel):
     status: str
     database: str

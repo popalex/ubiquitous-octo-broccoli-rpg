@@ -8,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
 
 from app.db import get_db
-from app.models import CharacterCard, EpisodeSummary, MemoryFact, RelationshipState, Session as ChatSession, WorldState
+from app.models import CharacterCard, EpisodeSummary, MemoryFact, RelationshipState, Session as ChatSession, Turn, WorldState
 from app.schemas import (
     CharacterLoadRequest,
     CharacterLoadResponse,
@@ -30,9 +30,13 @@ from app.schemas import (
     NPCDialogueRequest,
     NPCDialogueResponse,
     RelationshipStateResponse,
+    SessionDetailResponse,
     SessionInitRequest,
     SessionInitResponse,
+    SessionListItem,
+    SessionListResponse,
     SessionMemoryResponse,
+    TurnResponse,
 )
 from app.providers.base import ProviderError
 from app.services.orchestrator import get_orchestrator
@@ -140,6 +144,102 @@ async def init_session(payload: SessionInitRequest, db: Session = Depends(get_db
         current_location=session.current_location,
         time_of_day=session.time_of_day,
     )
+
+
+@app.get("/sessions", response_model=SessionListResponse)
+async def list_sessions(db: Session = Depends(get_db)) -> SessionListResponse:
+    sessions = (
+        db.query(ChatSession)
+        .filter(ChatSession.status != "archived")
+        .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
+        .order_by(ChatSession.updated_at.desc())
+        .all()
+    )
+    items = []
+    for s in sessions:
+        latest_summary = (
+            db.query(EpisodeSummary)
+            .filter(EpisodeSummary.session_id == s.id)
+            .order_by(EpisodeSummary.created_at.desc())
+            .first()
+        )
+        summary: str | None = None
+        if latest_summary:
+            summary = latest_summary.content[:200]
+        else:
+            last_turn = (
+                db.query(Turn)
+                .filter(Turn.session_id == s.id, Turn.role == "assistant")
+                .order_by(Turn.turn_index.desc())
+                .first()
+            )
+            if last_turn:
+                summary = last_turn.content[:200]
+        items.append(SessionListItem(
+            id=s.id,
+            title=s.title,
+            status=s.status,
+            gm_enabled=s.gm_enabled,
+            turn_count=s.turn_count,
+            created_at=s.created_at,
+            updated_at=s.updated_at,
+            character_card_id=s.character_card_id,
+            world_state_id=s.world_state_id,
+            character_name=s.character_card.name if s.character_card else None,
+            world_name=s.world_state.name if s.world_state else None,
+            summary=summary,
+        ))
+    return SessionListResponse(sessions=items)
+
+
+@app.get("/session/{session_id}", response_model=SessionDetailResponse)
+async def get_session(session_id: str, db: Session = Depends(get_db)) -> SessionDetailResponse:
+    session = (
+        db.query(ChatSession)
+        .filter(ChatSession.id == session_id)
+        .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
+        .one_or_none()
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return SessionDetailResponse(
+        id=session.id,
+        title=session.title,
+        status=session.status,
+        gm_enabled=session.gm_enabled,
+        turn_count=session.turn_count,
+        created_at=session.created_at,
+        updated_at=session.updated_at,
+        character_card_id=session.character_card_id,
+        world_state_id=session.world_state_id,
+        character_name=session.character_card.name if session.character_card else None,
+        world_name=session.world_state.name if session.world_state else None,
+        current_location=session.current_location,
+        time_of_day=session.time_of_day,
+    )
+
+
+@app.get("/session/{session_id}/turns", response_model=list[TurnResponse])
+async def get_session_turns(session_id: str, db: Session = Depends(get_db)) -> list[TurnResponse]:
+    session = db.query(ChatSession).filter(ChatSession.id == session_id).one_or_none()
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    turns = (
+        db.query(Turn)
+        .filter(Turn.session_id == session_id)
+        .order_by(Turn.turn_index.asc())
+        .all()
+    )
+    return [TurnResponse.model_validate(t) for t in turns]
+
+
+@app.delete("/session/{session_id}", status_code=204)
+async def archive_session(session_id: str, db: Session = Depends(get_db)) -> None:
+    session = db.query(ChatSession).filter(ChatSession.id == session_id).one_or_none()
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    session.status = "archived"
+    db.commit()
 
 
 @app.post("/chat", response_model=ChatResponse)

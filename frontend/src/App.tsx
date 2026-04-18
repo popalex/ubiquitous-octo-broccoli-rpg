@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { templates as baseTemplates } from "./templates";
 import { loadAllTemplates } from "./loadTemplates";
@@ -13,10 +14,18 @@ import type {
   GMEvent,
   Health,
   RetrievedMemory,
+  SessionDetail,
   SessionMemory,
+  TurnRecord,
 } from "./types";
 
 export default function App() {
+  const { sessionId: routeSessionId } = useParams<{ sessionId: string }>();
+  const navigate = useNavigate();
+
+  // When arriving at an existing chronicle, skip template auto-fill from the start
+  const [sessionResumed, setSessionResumed] = useState(!!routeSessionId);
+
   const [allTemplates, setAllTemplates] = useState(baseTemplates);
   const [selectedTemplateId, setSelectedTemplateId] = useState(
     localStorage.getItem(storageKeys.selectedTemplate) || baseTemplates[0].id,
@@ -34,7 +43,7 @@ export default function App() {
   const [ids, setIds] = useState({
     characterCardId: localStorage.getItem(storageKeys.characterCardId) || "",
     worldStateId: localStorage.getItem(storageKeys.worldStateId) || "",
-    sessionId: localStorage.getItem(storageKeys.sessionId) || "",
+    sessionId: routeSessionId || "",
   });
 
   // GM Mode state
@@ -47,14 +56,65 @@ export default function App() {
     loadAllTemplates().then(setAllTemplates);
   }, []);
 
+  // Restore existing chronicle state when a sessionId is in the URL
   useEffect(() => {
+    if (!routeSessionId) return;
+    setIsBusy(true);
+    setStatusText("Loading chronicle…");
+
+    async function resumeSession() {
+      try {
+        const [detail, turnsRaw, mem] = await Promise.all([
+          api<SessionDetail>(`/session/${routeSessionId}`),
+          api<TurnRecord[]>(`/session/${routeSessionId}/turns`),
+          api<SessionMemory>(`/session/${routeSessionId}/memory`),
+        ]);
+
+        setIds({
+          characterCardId: detail.character_card_id,
+          worldStateId: detail.world_state_id || "",
+          sessionId: detail.id,
+        });
+        setForm((prev) => ({
+          ...prev,
+          name: detail.character_name || prev.name,
+          world_name: detail.world_name || prev.world_name,
+        }));
+        if (detail.title) setSessionTitle(detail.title);
+        setGmEnabled(detail.gm_enabled);
+        if (detail.current_location) setCurrentLocation(detail.current_location);
+        if (detail.time_of_day) setTimeOfDay(detail.time_of_day);
+
+        const restored: ChatMessage[] = turnsRaw.map((t) => ({
+          id: `${t.turn_index}`,
+          role: (t.role === "user" ? "user" : t.turn_type === "gm_narration" || t.turn_type === "gm_event" ? "narrator" : "assistant") as ChatMessage["role"],
+          content: t.content,
+          messageType: (t.turn_type === "gm_narration" ? "pre_narration" : t.turn_type === "gm_event" ? "event" : "chat") as ChatMessage["messageType"],
+        }));
+        setChatMessages(restored);
+        setMemory(mem);
+        setSessionResumed(true);
+        setStatusText(`Chronicle resumed (${detail.gm_enabled ? "GM Mode" : "Standard"}). ${detail.turn_count} turns recorded.`);
+      } catch (err) {
+        setStatusText(err instanceof Error ? err.message : "Failed to load chronicle.");
+      } finally {
+        setIsBusy(false);
+      }
+    }
+
+    void resumeSession();
+  }, [routeSessionId]);
+
+  // Apply template defaults only when not resuming an existing session
+  useEffect(() => {
+    if (sessionResumed) return;
     const template = allTemplates.find((item) => item.id === selectedTemplateId) || allTemplates[0];
     setForm({ ...template.characterLoad });
     setSessionTitle(template.sessionTitle);
     setChatInput(template.starterUserPrompt);
     setCurrentLocation(template.startingLocation || "");
     localStorage.setItem(storageKeys.selectedTemplate, template.id);
-  }, [selectedTemplateId, allTemplates]);
+  }, [selectedTemplateId, allTemplates, sessionResumed]);
 
   useEffect(() => {
     const poll = async () => {
@@ -74,7 +134,6 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(storageKeys.characterCardId, ids.characterCardId);
     localStorage.setItem(storageKeys.worldStateId, ids.worldStateId);
-    localStorage.setItem(storageKeys.sessionId, ids.sessionId);
     localStorage.setItem(storageKeys.sessionTitle, sessionTitle);
     localStorage.setItem(storageKeys.gmEnabled, String(gmEnabled));
   }, [ids, sessionTitle, gmEnabled]);
@@ -144,6 +203,7 @@ export default function App() {
       await refreshMemory(payload.session_id);
       const modeLabel = gmEnabled ? "GM Mode" : "Standard";
       setStatusText(`Session ready (${modeLabel}). Turn count: ${payload.turn_count}.`);
+      navigate(`/chronicle/${payload.session_id}`, { replace: true });
     } catch (error) {
       setStatusText(error instanceof Error ? error.message : "Failed to start session.");
     } finally {
@@ -178,6 +238,7 @@ export default function App() {
       <div className="ambient ambient-right" />
       <header className="masthead">
         <div>
+          <button className="back-to-vault" onClick={() => navigate("/")}>← Vault</button>
           <p className="eyebrow">Arcane Chronicle</p>
           <h1>✦ Roleplay Session Console</h1>
           <p className="lede">

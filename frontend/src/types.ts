@@ -4,6 +4,44 @@ export type Health = {
   mode: string;
 };
 
+export type ChronicleListItem = {
+  id: string;
+  title: string | null;
+  status: string;
+  gm_enabled: boolean;
+  turn_count: number;
+  created_at: string;
+  updated_at: string;
+  character_card_id: string;
+  world_state_id: string | null;
+  character_name: string | null;
+  world_name: string | null;
+  summary: string | null;
+};
+
+export type SessionDetail = {
+  id: string;
+  title: string | null;
+  status: string;
+  gm_enabled: boolean;
+  turn_count: number;
+  created_at: string;
+  updated_at: string;
+  character_card_id: string;
+  world_state_id: string | null;
+  character_name: string | null;
+  world_name: string | null;
+  current_location: string | null;
+  time_of_day: string | null;
+};
+
+export type TurnRecord = {
+  turn_index: number;
+  role: string;
+  content: string;
+  turn_type: string;
+};
+
 export type CharacterLoadPayload = {
   name: string;
   description: string;
