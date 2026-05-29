@@ -10,6 +10,10 @@ Default mode is Ollama-first and Docker Compose now runs Ollama inside the stack
 - Embeddings: Ollama (nomic-embed-text)
 - OpenAI: optional fallback only
 
+## Prerequisites
+
+- [pnpm 9](https://pnpm.io/) (the frontend is not compatible with pnpm 10+)
+
 ## Stack
 
 - Python 3.11
@@ -18,6 +22,7 @@ Default mode is Ollama-first and Docker Compose now runs Ollama inside the stack
 - Alembic
 - PostgreSQL 16 + pgvector
 - Docker Compose
+- pnpm 9 (frontend package manager)
 - Ollama or OpenAI-compatible small models
 
 ## 1. Configure Environment
