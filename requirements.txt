@@ -1,4 +1,4 @@
-alembic==1.18.0
+alembic==1.18.4
 fastapi==0.136.0
 httpx==0.28.1
 openai==2.32.0
