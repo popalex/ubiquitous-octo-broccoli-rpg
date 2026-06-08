@@ -125,13 +125,17 @@ docker compose logs -f frontend api
 docker compose down
 ```
 
-To run the production nginx frontend instead of the Vite dev server, bypass the override file:
+To run the production nginx frontend instead of the Vite dev server, bypass the dev override:
 
 ```bash
 docker compose -f docker-compose.yml up --build
 ```
 
-With only `docker-compose.yml`, the frontend builds the `prod` target and serves the static app from nginx inside the `frontend` service. The base compose file does not publish nginx to the host by default; add a port mapping if you want to browse the production container directly.
+This builds the `prod` target and serves the static app from nginx at:
+
+```bash
+http://localhost:8080
+```
 
 If you want to run the frontend outside Docker:
 
