@@ -16,7 +16,7 @@ Default mode is Ollama-first and Docker Compose now runs Ollama inside the stack
 
 ## Stack
 
-- Python 3.11
+- Python 3.14
 - FastAPI
 - SQLAlchemy 2.x
 - Alembic
