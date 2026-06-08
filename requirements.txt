@@ -14,5 +14,5 @@ uvicorn[standard]==0.44.0
 pytest>=8.0
 pytest-asyncio>=0.23
 pytest-mock>=3.12
-factory-boy>=3.3
+factory-boy>=3.3.3
 testcontainers[postgres]>=4.9
