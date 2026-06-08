@@ -21,7 +21,7 @@ Default mode is Ollama-first and Docker Compose runs Ollama inside the stack:
 - FastAPI
 - SQLAlchemy 2.x
 - Alembic
-- PostgreSQL 16 + pgvector
+- PostgreSQL 18 + pgvector
 - Docker Compose
 - Node 24
 - pnpm 11 (frontend package manager)
