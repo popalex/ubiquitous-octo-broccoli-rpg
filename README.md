@@ -2,17 +2,18 @@
 
 Hybrid roleplay chat backend built with FastAPI, PostgreSQL, pgvector, Alembic, and Docker Compose. It routes actor generation, memory extraction, summarization, embeddings, and continuity checks through configurable small-model providers only.
 
-Default mode is Ollama-first and Docker Compose now runs Ollama inside the stack:
+Default mode is Ollama-first and Docker Compose runs Ollama inside the stack:
 
-- Actor replies: Ollama (llama3.2:8b)
-- Game Master (narration, events, NPCs): Ollama (llama3.2:8b)
+- Actor replies: Ollama (llama3.1:8b)
+- Game Master (narration, events, NPCs): Ollama (llama3.1:8b)
 - Memory extraction and summaries: Ollama (phi3:mini)
 - Embeddings: Ollama (nomic-embed-text)
 - OpenAI: optional fallback only
 
 ## Prerequisites
 
-- [pnpm 9 or 10](https://pnpm.io/)
+- Docker with Docker Compose v2
+- [pnpm 11](https://pnpm.io/) for local frontend development outside Docker
 
 ## Stack
 
@@ -22,7 +23,8 @@ Default mode is Ollama-first and Docker Compose now runs Ollama inside the stack
 - Alembic
 - PostgreSQL 16 + pgvector
 - Docker Compose
-- pnpm 9 or 10 (frontend package manager)
+- Node 24
+- pnpm 11 (frontend package manager)
 - Ollama or OpenAI-compatible small models
 
 ## 1. Configure Environment
@@ -48,15 +50,15 @@ This overrides actor, memory, and GM models to all use the same model.
 
 For best quality, use separate models optimized for each task:
 
-- `ACTOR_MODEL_NAME=llama3.2:8b` - creative character dialogue
+- `ACTOR_MODEL_NAME=llama3.1:8b` - creative character dialogue
 - `MEMORY_MODEL_NAME=phi3:mini` - precise fact extraction and summaries
-- `GM_MODEL_NAME=llama3.2:8b` - world narration and events
+- `GM_MODEL_NAME=llama3.1:8b` - world narration and events
 
 Important:
 
 - `OLLAMA_BASE_URL` should stay `http://ollama:11434` when the API runs inside Docker Compose.
 - The first startup auto-pulls the configured models:
-  - `llama3.2:8b` (actor + GM)
+  - `llama3.1:8b` (actor + GM)
   - `phi3:mini` (memory)
   - `nomic-embed-text` (embeddings)
 - In dev mode, only the single dev model + embeddings are pulled.
@@ -76,11 +78,20 @@ EMBEDDING_MODEL_NAME=text-embedding-3-small
 EMBEDDING_DIMENSION=768
 ```
 
-## 2. Start the Stack
+## 2. Start the Docker Dev Stack
 
 ```bash
 docker compose up --build
 ```
+
+Docker Compose automatically loads `docker-compose.override.yml` when it is present next to `docker-compose.yml`. In this project, that means `docker compose up --build` runs the frontend in Docker dev mode:
+
+- builds the `dev` target from `Dockerfile.frontend`
+- runs the Vite dev server with HMR
+- bind-mounts `./frontend` into the container
+- keeps container-managed dependencies in `/app/node_modules`
+- exposes the frontend at `http://localhost:5173`
+- proxies frontend `/api/*` requests to the `api` service
 
 This starts:
 
@@ -106,10 +117,27 @@ Open the UI at:
 http://localhost:5173
 ```
 
+Useful dev commands:
+
+```bash
+docker compose ps
+docker compose logs -f frontend api
+docker compose down
+```
+
+To run the production nginx frontend instead of the Vite dev server, bypass the override file:
+
+```bash
+docker compose -f docker-compose.yml up --build
+```
+
+With only `docker-compose.yml`, the frontend builds the `prod` target and serves the static app from nginx inside the `frontend` service. The base compose file does not publish nginx to the host by default; add a port mapping if you want to browse the production container directly.
+
 If you want to run the frontend outside Docker:
 
 ```bash
 cd frontend
+corepack enable
 pnpm install
 pnpm dev
 ```
