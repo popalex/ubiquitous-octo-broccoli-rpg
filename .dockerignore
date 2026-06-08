@@ -28,6 +28,9 @@ env/
 build/
 develop-eggs/
 dist/
+frontend/dist/
+frontend/node_modules/
+frontend/tsconfig.*.tsbuildinfo
 downloads/
 eggs/
 lib/
