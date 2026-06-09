@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import AsyncIterator, Sequence
 
 import httpx
 
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
-from app.telemetry import llm_span, record_llm_tokens, record_span_error, set_completion, set_prompt, tracer
+from app.telemetry import llm_latency, llm_span, record_llm_tokens, record_span_error, set_completion, set_prompt, tracer
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,7 @@ class OllamaProvider(BaseModelProvider):
         set_prompt(span, messages)
         parts: list[str] = []
         input_tokens = output_tokens = None
+        start = time.perf_counter()
         try:
             async with self.client.stream("POST", "/api/chat", json=payload) as response:
                 response.raise_for_status()
@@ -145,6 +147,10 @@ class OllamaProvider(BaseModelProvider):
             record_span_error(span, exc)
             raise
         finally:
+            llm_latency.record(
+                (time.perf_counter() - start) * 1000.0,
+                {"gen_ai.system": "ollama", "gen_ai.request.model": self.model_name},
+            )
             span.end()
 
     async def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
