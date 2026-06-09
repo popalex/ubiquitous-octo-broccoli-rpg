@@ -4,6 +4,7 @@ export default defineConfig(function (_a) {
     var mode = _a.mode;
     var env = loadEnv(mode, process.cwd(), "");
     var proxyTarget = env.VITE_API_PROXY_TARGET || "http://localhost:8000";
+    var otelTarget = env.VITE_OTEL_PROXY_TARGET || "http://localhost:4318";
     return {
         plugins: [react()],
         server: {
@@ -14,6 +15,12 @@ export default defineConfig(function (_a) {
                     target: proxyTarget,
                     changeOrigin: true,
                     rewrite: function (path) { return path.replace(/^\/api/, ""); },
+                },
+                // Browser telemetry -> OTLP/HTTP collector (same-origin to avoid CORS).
+                "/otel": {
+                    target: otelTarget,
+                    changeOrigin: true,
+                    rewrite: function (path) { return path.replace(/^\/otel/, ""); },
                 },
             },
         },

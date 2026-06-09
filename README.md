@@ -26,6 +26,7 @@ Default mode is Ollama-first and Docker Compose runs Ollama inside the stack:
 - Node 24
 - pnpm 11 (frontend package manager)
 - Ollama or OpenAI-compatible small models
+- OpenTelemetry (end-to-end tracing, logs, metrics) → Grafana LGTM
 
 ## 1. Configure Environment
 
@@ -99,6 +100,7 @@ This starts:
 - `ollama` on `localhost:11434`
 - `api` on `localhost:8000`
 - `frontend` on `localhost:5173`
+- `otel-lgtm` (Grafana) on `localhost:3000`
 
 The startup flow is:
 
@@ -234,6 +236,80 @@ curl http://localhost:8000/session/SESSION_ID/memory
 - Retrieval ranking uses `score = 0.6 * semantic + 0.25 * recency + 0.15 * importance`.
 - If first startup looks slow, check `docker compose logs -f ollama-init` to watch model pulls complete.
 - If `/chat` returns a provider error, check `docker compose ps` and `docker compose logs ollama ollama-init api`.
+
+## Observability (OpenTelemetry + Grafana)
+
+The whole stack is instrumented with OpenTelemetry. A single **trace** follows
+each user action from the browser → backend → database → LLM call, so you can
+watch "user opens a new chronicle" all the way down to "Ollama generated this
+reply" as one connected waterfall. Traces, logs, and metrics all ship to a
+bundled **Grafana LGTM** container (Grafana + Tempo + Loki + Prometheus).
+
+Open Grafana once the stack is up:
+
+```bash
+http://localhost:3000
+```
+
+- **Login:** `admin` / `admin`
+- **Datasources:** Tempo (traces), Loki (logs), Prometheus (metrics) — pre-wired by the image.
+- **Dashboards:** an **RPG** folder is auto-provisioned on startup with three
+  ready-made dashboards (no setup needed):
+  - **RPG · Metrics (LLM & HTTP)** — LLM tokens/sec & latency p95 by model,
+    chat turns by mode, HTTP request p95 by route, avg memories retrieved.
+  - **RPG · Logs** — backend log volume by level + a live log stream (click a
+    line to jump to its trace via `trace_id`).
+  - **RPG · Traces (OTel)** — recent traces, frontend `ui.*` user-action
+    traces, and slow LLM spans; click any row for the full waterfall.
+
+  These live in `observability/grafana/` and are mounted into the collector via
+  docker-compose, so they survive restarts and are editable in the UI.
+
+### How correlation works
+
+The browser starts a trace and injects a W3C `traceparent` header on every
+`/api` call; FastAPI continues that same trace server-side, and
+SQLAlchemy/httpx/LLM spans hang off it. One trace ID ties it all together.
+
+What you'll see in a single trace:
+
+```
+ui.new_chronicle / ui.send_chat        (frontend span — starts at the click)
+└─ POST /api/...                        (fetch + traceparent)
+   └─ POST /...                         (FastAPI server span, same trace)
+      ├─ orchestrator.retrieve          → SELECT ... <=> embedding (pgvector)
+      ├─ llm.generate_text              (model, tokens, prompt, completion)
+      ├─ orchestrator.continuity_check
+      └─ orchestrator.memory_refresh    → summary + embedding LLM calls
+```
+
+- **Logs (Loki):** existing backend logs are stamped with `trace_id` — click a
+  log line to jump straight to its trace.
+- **Metrics (Prometheus):** LLM token counts, LLM latency, chat turns, and
+  retrieval sizes (`rpg_llm_tokens_total`, `rpg_llm_latency_*`, …), plus
+  automatic HTTP request duration/throughput.
+
+### Configuration
+
+Set in `.env` (already in `.env.sample`):
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-lgtm:4317   # unset to fully disable telemetry
+OTEL_SERVICE_NAME=rpg-backend
+OTEL_RESOURCE_ATTRIBUTES=service.namespace=small-rpg-gpt,deployment.environment=local
+OTEL_CAPTURE_CONTENT=true
+```
+
+- **`OTEL_CAPTURE_CONTENT=true`** — *full* telemetry: capture the actual LLM
+  prompts/completions and user messages on spans (great for debugging RP
+  quality).
+- **`OTEL_CAPTURE_CONTENT=false`** — *metadata only*: model, token counts, and
+  latency, with no prompt/response text stored.
+- Leave `OTEL_EXPORTER_OTLP_ENDPOINT` unset (e.g. running the API outside
+  Docker without the collector) and telemetry cleanly no-ops.
+
+Browser telemetry is sent same-origin to `/otel` (proxied to the collector by
+Vite in dev and nginx in prod) to avoid CORS — no extra setup needed.
 
 ## Game Master Mode
 

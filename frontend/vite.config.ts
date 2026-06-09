@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react-swc";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const proxyTarget = env.VITE_API_PROXY_TARGET || "http://localhost:8000";
+  const otelTarget = env.VITE_OTEL_PROXY_TARGET || "http://localhost:4318";
 
   return {
     plugins: [react()],
@@ -15,6 +16,12 @@ export default defineConfig(({ mode }) => {
           target: proxyTarget,
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api/, ""),
+        },
+        // Browser telemetry -> OTLP/HTTP collector (same-origin to avoid CORS).
+        "/otel": {
+          target: otelTarget,
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/otel/, ""),
         },
       },
     },

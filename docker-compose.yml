@@ -89,6 +89,14 @@ services:
       API_HOST: ${API_HOST:-0.0.0.0}
       API_PORT: ${API_PORT:-8000}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://postgres:postgres@postgres:5432/roleplay}
+      # OpenTelemetry
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-lgtm:4317}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-rpg-backend}
+      OTEL_SERVICE_VERSION: ${OTEL_SERVICE_VERSION:-0.1.0}
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-service.namespace=small-rpg-gpt,deployment.environment=local}
+      # true = full telemetry (capture LLM prompts/completions + user messages on spans)
+      # false = metadata only (model, tokens, latency — no prompt/response text)
+      OTEL_CAPTURE_CONTENT: ${OTEL_CAPTURE_CONTENT:-true}
       # Dev mode: use single model to save RAM
       DEV_MODE: ${DEV_MODE:-false}
       DEV_MODEL_NAME: ${DEV_MODEL_NAME:-llama3.2:3b}
@@ -152,6 +160,28 @@ services:
     ports:
       - "8080:80"
 
+  # Grafana LGTM all-in-one: Grafana UI + Tempo (traces) + Loki (logs) + Prometheus (metrics).
+  # One pane of glass for the whole frontend -> backend -> LLM trace.
+  otel-lgtm:
+    image: grafana/otel-lgtm:latest
+    container_name: small-rpg-otel
+    environment:
+      # Surface the bundled components' logs in `docker logs small-rpg-otel`
+      # (off by default in the image). Useful for debugging log ingestion.
+      ENABLE_LOGS_LOKI: ${ENABLE_LOGS_LOKI:-true}
+      ENABLE_LOGS_OTELCOL: ${ENABLE_LOGS_OTELCOL:-true}
+    ports:
+      - "3000:3000"   # Grafana UI
+      - "4317:4317"   # OTLP gRPC (backend)
+      - "4318:4318"   # OTLP HTTP (browser, proxied via frontend /otel)
+    volumes:
+      - otel_lgtm_data:/data
+      # Auto-provision the RPG dashboards (metrics, logs, traces) on startup.
+      # Datasources (Tempo/Loki/Prometheus) are already provisioned by the image.
+      - ./observability/grafana/provisioning/dashboards/rpg.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/rpg.yaml:ro
+      - ./observability/grafana/dashboards:/otel-lgtm/grafana/dashboards/rpg:ro
+
 volumes:
   postgres_data:
   ollama_data:
+  otel_lgtm_data:

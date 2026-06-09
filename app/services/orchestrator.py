@@ -20,6 +20,7 @@ from app.services.game_master import GameMasterService
 from app.services.memory import MemoryService
 from app.services.continuity import ContinuityResult
 from app.services.retrieval import RetrievalService
+from app.telemetry import chat_turns, retrieval_selected, tracer
 
 
 logger = logging.getLogger(__name__)
@@ -360,7 +361,12 @@ class OrchestratorService:
 
         # Retrieve memories and recent turns
         retrieval_start = time.perf_counter()
-        retrieved = await self.retrieval.retrieve(db, session, user_message)
+        with tracer.start_as_current_span("orchestrator.retrieve") as _span:
+            _span.set_attribute("rpg.session_id", str(session.id))
+            _span.set_attribute("rpg.gm_enabled", True)
+            retrieved = await self.retrieval.retrieve(db, session, user_message)
+            _span.set_attribute("rpg.retrieved_count", len(retrieved))
+            retrieval_selected.record(len(retrieved))
         logger.info("gm_chat_stream session=%s retrieval duration=%.2fs candidates=%d", session_id, time.perf_counter() - retrieval_start, len(retrieved))
         recent_turns = db.scalars(
             select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
@@ -373,12 +379,14 @@ class OrchestratorService:
 
         # Check for event trigger (fast, no LLM)
         event_start = time.perf_counter()
-        event_check = await self.game_master.check_for_event(
-            db,
-            session,
-            location=location or "unknown",
-            time_of_day=time_of_day or "unknown",
-        )
+        with tracer.start_as_current_span("orchestrator.event_check") as _span:
+            event_check = await self.game_master.check_for_event(
+                db,
+                session,
+                location=location or "unknown",
+                time_of_day=time_of_day or "unknown",
+            )
+            _span.set_attribute("rpg.event_should_trigger", event_check.should_trigger)
         logger.info("gm_chat_stream session=%s event_check duration=%.2fs should_trigger=%s", session_id, time.perf_counter() - event_start, event_check.should_trigger)
 
         # Stream pre-narration
@@ -520,10 +528,12 @@ class OrchestratorService:
         # Memory refresh
         yield f"data: {json.dumps({'type': 'phase', 'phase': 'summarizing'})}\n\n"
         try:
-            await self.memory.maybe_refresh(db, session)
+            with tracer.start_as_current_span("orchestrator.memory_refresh"):
+                await self.memory.maybe_refresh(db, session)
         except ProviderError as exc:
             logger.exception("memory refresh skipped for session=%s", session.id)
 
+        chat_turns.add(1, {"gm_enabled": True})
         total_duration = time.perf_counter() - total_start
         logger.info("gm_chat_stream session=%s COMPLETE turn_count=%s total_duration=%.2fs pre_narration_chars=%d character_chars=%d", 
                     session.id, session.turn_count, total_duration, len(pre_narration or ""), len(character_reply))
@@ -541,7 +551,11 @@ class OrchestratorService:
             yield f"data: {json.dumps({'error': 'Session not found'})}\n\n"
             return
 
-        retrieved = await self.retrieval.retrieve(db, session, user_message)
+        with tracer.start_as_current_span("orchestrator.retrieve") as _span:
+            _span.set_attribute("rpg.session_id", str(session.id))
+            retrieved = await self.retrieval.retrieve(db, session, user_message)
+            _span.set_attribute("rpg.retrieved_count", len(retrieved))
+            retrieval_selected.record(len(retrieved))
         recent_turns = db.scalars(
             select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
         ).all()
@@ -606,10 +620,12 @@ class OrchestratorService:
         # Memory refresh
         yield f"data: {json.dumps({'type': 'phase', 'phase': 'summarizing'})}\n\n"
         try:
-            await self.memory.maybe_refresh(db, session)
+            with tracer.start_as_current_span("orchestrator.memory_refresh"):
+                await self.memory.maybe_refresh(db, session)
         except ProviderError as exc:
             logger.exception("memory refresh skipped for session=%s", session.id)
 
+        chat_turns.add(1, {"gm_enabled": False})
         logger.info("chat_stream session=%s turn_count=%s", session.id, session.turn_count)
 
         # Send completion signal

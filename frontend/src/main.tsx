@@ -4,7 +4,10 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 
 import App from "./App";
 import { ChronicleHub } from "./components/ChronicleHub";
+import { setupTelemetry } from "./telemetry";
 import "./styles.css";
+
+setupTelemetry();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
+import { withUiSpan } from "./telemetry";
 import type { ChatMessage, GMEvent, RetrievedMemory } from "./types";
 
 export type SendChatParams = {
@@ -45,11 +46,14 @@ export async function sendChat(params: SendChatParams): Promise<void> {
   setChatInput("");
   setIsBusy(true);
 
-  if (gmEnabled) {
-    await sendGMStream({ ...params, currentInput, userMessage });
-  } else {
-    await sendStandardStream({ ...params, currentInput, userMessage });
-  }
+  await withUiSpan(
+    "ui.send_chat",
+    { "rpg.session_id": sessionId, "rpg.gm_enabled": gmEnabled },
+    () =>
+      gmEnabled
+        ? sendGMStream({ ...params, currentInput, userMessage })
+        : sendStandardStream({ ...params, currentInput, userMessage }),
+  );
 }
 
 async function sendGMStream({

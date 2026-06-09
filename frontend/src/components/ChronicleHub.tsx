@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { api } from "../api";
+import { withUiSpan } from "../telemetry";
 import type { ChronicleListItem } from "../types";
 
 export function ChronicleHub() {
@@ -33,7 +34,9 @@ export function ChronicleHub() {
     if (!confirm("Permanently delete this chronicle? This cannot be undone.")) return;
     setDeleting(id);
     try {
-      await api(`/session/${id}`, { method: "DELETE" });
+      await withUiSpan("ui.delete_chronicle", { "rpg.session_id": id }, () =>
+        api(`/session/${id}`, { method: "DELETE" }),
+      );
       setChronicles((prev) => prev.filter((c) => c.id !== id));
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to delete chronicle.");
