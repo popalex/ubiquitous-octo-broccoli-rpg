@@ -244,16 +244,17 @@ curl http://localhost:8000/session/SESSION_ID/memory
 
 Both run in CI on every pull request (`.github/workflows/build-and-run-tests.yml`).
 
-**Backend (Python) — [Ruff](https://docs.astral.sh/ruff/):**
+**Backend (Python) — [Ruff](https://docs.astral.sh/ruff/) + [mypy](https://mypy-lang.org/):**
 
 ```bash
-pip install -r requirements.txt   # ruff is included
+pip install -r requirements.txt   # ruff + mypy are included
 ruff check .                      # lint
 ruff check . --fix                # lint and auto-fix
+mypy app                          # static type check
 pytest                            # tests (needs Docker running — testcontainers spins up Postgres+pgvector)
 ```
 
-Ruff config lives in `pyproject.toml`.
+Ruff and mypy config both live in `pyproject.toml`.
 
 **Frontend (TypeScript/React) — [ESLint](https://eslint.org/):**
 

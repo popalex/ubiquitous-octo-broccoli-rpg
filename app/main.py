@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
@@ -48,21 +51,32 @@ from app.telemetry import setup_telemetry
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="small-rpg-gpt")
-setup_telemetry(app)
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Startup: log the active configuration.
+    settings = get_settings()
+    if settings.dev_mode:
+        logger.info("+ DEV MODE ENABLED - model: %s, timeout: %.0fs, world_state: %s", settings.dev_model_name, settings.request_timeout_seconds, "on" if settings.world_state_enabled else "off")
+    else:
+        logger.info("+ Production mode - Actor: %s, Memory: %s, GM: %s, world_state: %s",
+                    settings.actor_model_name, settings.memory_model_name, settings.gm_model_name,
+                    "on" if settings.world_state_enabled else "off")
 
-# Log startup configuration
-_settings = get_settings()
-if _settings.dev_mode:
-    logger.info("+ DEV MODE ENABLED - model: %s, timeout: %.0fs, world_state: %s", _settings.dev_model_name, _settings.request_timeout_seconds, "on" if _settings.world_state_enabled else "off")
-else:
-    logger.info("+ Production mode - Actor: %s, Memory: %s, GM: %s, world_state: %s",
-                _settings.actor_model_name, _settings.memory_model_name, _settings.gm_model_name,
-                "on" if _settings.world_state_enabled else "off")
+    yield
+
+    # Shutdown: close provider HTTP clients, but only if the (lazily built,
+    # @lru_cache'd) orchestrator was ever constructed — don't spin one up just
+    # to tear it down.
+    if get_orchestrator.cache_info().currsize:
+        await get_orchestrator().aclose()
+
+
+app = FastAPI(title="small-rpg-gpt", lifespan=lifespan)
+setup_telemetry(app)
 
 
 @app.get("/health", response_model=HealthResponse)
-async def health(db: Session = Depends(get_db)) -> HealthResponse:
+def health(db: Session = Depends(get_db)) -> HealthResponse:
     settings = get_settings()
     try:
         db.execute(text("SELECT 1"))
@@ -73,7 +87,7 @@ async def health(db: Session = Depends(get_db)) -> HealthResponse:
 
 
 @app.post("/character/load", response_model=CharacterLoadResponse)
-async def load_character(payload: CharacterLoadRequest, db: Session = Depends(get_db)) -> CharacterLoadResponse:
+def load_character(payload: CharacterLoadRequest, db: Session = Depends(get_db)) -> CharacterLoadResponse:
     character = db.query(CharacterCard).filter(CharacterCard.name == payload.name).one_or_none()
     if character is None:
         character = CharacterCard(
@@ -115,7 +129,7 @@ async def load_character(payload: CharacterLoadRequest, db: Session = Depends(ge
 
 
 @app.post("/session/init", response_model=SessionInitResponse)
-async def init_session(payload: SessionInitRequest, db: Session = Depends(get_db)) -> SessionInitResponse:
+def init_session(payload: SessionInitRequest, db: Session = Depends(get_db)) -> SessionInitResponse:
     character = db.query(CharacterCard).filter(CharacterCard.id == payload.character_card_id).one_or_none()
     if character is None:
         raise HTTPException(status_code=404, detail="Character card not found.")
@@ -151,7 +165,7 @@ async def init_session(payload: SessionInitRequest, db: Session = Depends(get_db
 
 
 @app.get("/sessions", response_model=SessionListResponse)
-async def list_sessions(db: Session = Depends(get_db)) -> SessionListResponse:
+def list_sessions(db: Session = Depends(get_db)) -> SessionListResponse:
     sessions = (
         db.query(ChatSession)
         .filter(ChatSession.status != "archived")
@@ -197,7 +211,7 @@ async def list_sessions(db: Session = Depends(get_db)) -> SessionListResponse:
 
 
 @app.get("/session/{session_id}", response_model=SessionDetailResponse)
-async def get_session(session_id: str, db: Session = Depends(get_db)) -> SessionDetailResponse:
+def get_session(session_id: str, db: Session = Depends(get_db)) -> SessionDetailResponse:
     session = (
         db.query(ChatSession)
         .filter(ChatSession.id == session_id)
@@ -224,7 +238,7 @@ async def get_session(session_id: str, db: Session = Depends(get_db)) -> Session
 
 
 @app.get("/session/{session_id}/turns", response_model=list[TurnResponse])
-async def get_session_turns(session_id: str, db: Session = Depends(get_db)) -> list[TurnResponse]:
+def get_session_turns(session_id: str, db: Session = Depends(get_db)) -> list[TurnResponse]:
     session = db.query(ChatSession).filter(ChatSession.id == session_id).one_or_none()
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
@@ -238,7 +252,7 @@ async def get_session_turns(session_id: str, db: Session = Depends(get_db)) -> l
 
 
 @app.delete("/session/{session_id}", status_code=204)
-async def delete_session(session_id: str, db: Session = Depends(get_db)) -> None:
+def delete_session(session_id: str, db: Session = Depends(get_db)) -> None:
     session = db.query(ChatSession).filter(ChatSession.id == session_id).one_or_none()
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
@@ -279,19 +293,28 @@ async def chat_stream(
 
 @app.get("/session/{session_id}/memory", response_model=SessionMemoryResponse)
 async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> SessionMemoryResponse:
-    session = db.query(ChatSession).filter(ChatSession.id == session_id).one_or_none()
+    def _summaries() -> list[EpisodeSummary]:
+        return db.query(EpisodeSummary).filter(EpisodeSummary.session_id == session_id).order_by(EpisodeSummary.created_at.desc()).all()
+
+    session = await run_in_threadpool(
+        lambda: db.query(ChatSession).filter(ChatSession.id == session_id).one_or_none()
+    )
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
 
-    summaries = db.query(EpisodeSummary).filter(EpisodeSummary.session_id == session_id).order_by(EpisodeSummary.created_at.desc()).all()
+    summaries = await run_in_threadpool(_summaries)
 
     # Delete broken placeholder summaries left by the old bug so we can regenerate.
     placeholder_ids = [s.id for s in summaries if s.content.strip() == "No summary produced."]
     if placeholder_ids:
         logger.info("backfill_summary CLEANUP session=%s removing %s placeholder summaries", session_id, len(placeholder_ids))
-        db.query(EpisodeSummary).filter(EpisodeSummary.id.in_(placeholder_ids)).delete(synchronize_session="fetch")
-        session.last_summarized_turn = 0
-        db.commit()
+
+        def _cleanup() -> None:
+            db.query(EpisodeSummary).filter(EpisodeSummary.id.in_(placeholder_ids)).delete(synchronize_session="fetch")
+            session.last_summarized_turn = 0
+            db.commit()
+
+        await run_in_threadpool(_cleanup)
         summaries = [s for s in summaries if s.id not in placeholder_ids]
 
     # If no valid summaries exist but there are unsummarized turns, backfill now.
@@ -303,7 +326,7 @@ async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> 
         try:
             orchestrator = get_orchestrator()
             result = await orchestrator.memory.maybe_refresh(db, session, force=True)
-            summaries = db.query(EpisodeSummary).filter(EpisodeSummary.session_id == session_id).order_by(EpisodeSummary.created_at.desc()).all()
+            summaries = await run_in_threadpool(_summaries)
             logger.info(
                 "backfill_summary DONE session=%s summary_created=%s facts=%s relationships=%s summaries_now=%s",
                 session_id, result.summary_created, result.facts_written, result.relationships_written, len(summaries),
@@ -311,8 +334,12 @@ async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> 
         except Exception:
             logger.exception("backfill summary failed for session=%s", session_id)
 
-    facts = db.query(MemoryFact).filter(MemoryFact.session_id == session_id).order_by(MemoryFact.created_at.desc()).all()
-    relationships = db.query(RelationshipState).filter(RelationshipState.session_id == session_id).order_by(RelationshipState.updated_at.desc()).all()
+    facts = await run_in_threadpool(
+        lambda: db.query(MemoryFact).filter(MemoryFact.session_id == session_id).order_by(MemoryFact.created_at.desc()).all()
+    )
+    relationships = await run_in_threadpool(
+        lambda: db.query(RelationshipState).filter(RelationshipState.session_id == session_id).order_by(RelationshipState.updated_at.desc()).all()
+    )
 
     return SessionMemoryResponse(
         session_id=session_id,
@@ -323,7 +350,7 @@ async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> 
 
 
 @app.get("/session/{session_id}/world-state", response_model=WorldStateResponse)
-async def get_world_state(
+def get_world_state(
     session_id: str,
     version: int | None = None,
     db: Session = Depends(get_db),
@@ -421,10 +448,11 @@ async def gm_narration(
 ) -> GMNarrationResponse:
     """Generate standalone GM narration for a scene."""
     from sqlalchemy import select
-    session = db.scalar(
+    session = await run_in_threadpool(
+        db.scalar,
         select(ChatSession)
         .options(joinedload(ChatSession.world_state))
-        .where(ChatSession.id == payload.session_id)
+        .where(ChatSession.id == payload.session_id),
     )
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
@@ -453,10 +481,11 @@ async def gm_event_check(
 ) -> GMEventCheckResponse:
     """Check if an event should trigger in the current game state."""
     from sqlalchemy import select
-    session = db.scalar(
+    session = await run_in_threadpool(
+        db.scalar,
         select(ChatSession)
         .options(joinedload(ChatSession.world_state))
-        .where(ChatSession.id == payload.session_id)
+        .where(ChatSession.id == payload.session_id),
     )
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
@@ -488,10 +517,11 @@ async def gm_event_generate(
 ) -> GMEventGenerateResponse:
     """Generate a full event narrative from a seed."""
     from sqlalchemy import select
-    session = db.scalar(
+    session = await run_in_threadpool(
+        db.scalar,
         select(ChatSession)
         .options(joinedload(ChatSession.world_state))
-        .where(ChatSession.id == payload.session_id)
+        .where(ChatSession.id == payload.session_id),
     )
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
@@ -523,10 +553,11 @@ async def gm_scene_transition(
 ) -> GMSceneTransitionResponse:
     """Generate narration for a scene transition."""
     from sqlalchemy import select
-    session = db.scalar(
+    session = await run_in_threadpool(
+        db.scalar,
         select(ChatSession)
         .options(joinedload(ChatSession.world_state))
-        .where(ChatSession.id == payload.session_id)
+        .where(ChatSession.id == payload.session_id),
     )
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
@@ -556,10 +587,11 @@ async def gm_npc_dialogue(
 ) -> NPCDialogueResponse:
     """Generate dialogue for a specific NPC."""
     from sqlalchemy import select
-    session = db.scalar(
+    session = await run_in_threadpool(
+        db.scalar,
         select(ChatSession)
         .options(joinedload(ChatSession.world_state))
-        .where(ChatSession.id == payload.session_id)
+        .where(ChatSession.id == payload.session_id),
     )
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")

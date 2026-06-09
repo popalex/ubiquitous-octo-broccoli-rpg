@@ -304,14 +304,14 @@ class WorldStateService:
 
         # Threads — upsert by id.
         thread_by_id = {t.id: t for t in new.threads}
-        for upsert in delta.threads_upsert:
-            existing = thread_by_id.get(upsert.id)
-            if existing is None:
-                thread_by_id[upsert.id] = upsert.model_copy(deep=True)
-                new.threads.append(thread_by_id[upsert.id])
+        for thread in delta.threads_upsert:
+            existing_thread = thread_by_id.get(thread.id)
+            if existing_thread is None:
+                thread_by_id[thread.id] = thread.model_copy(deep=True)
+                new.threads.append(thread_by_id[thread.id])
             else:
-                existing.summary = upsert.summary or existing.summary
-                existing.status = upsert.status or existing.status
+                existing_thread.summary = thread.summary or existing_thread.summary
+                existing_thread.status = thread.status or existing_thread.status
 
         # Facts.
         if delta.facts_remove:

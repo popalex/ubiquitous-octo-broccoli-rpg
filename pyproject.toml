@@ -12,3 +12,13 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B017"]  # tests intentionally assert against broad Exception
+
+[tool.mypy]
+# Starts lenient so it passes on the current tree; tighten incrementally
+# (e.g. enable disallow_untyped_defs per-module) as annotations are filled in.
+python_version = "3.14"
+ignore_missing_imports = true   # third-party libs without stubs
+check_untyped_defs = true       # still type-check bodies of untyped funcs
+warn_redundant_casts = true
+warn_unused_ignores = true
+exclude = ["alembic/versions", ".venv"]

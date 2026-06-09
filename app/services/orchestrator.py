@@ -39,6 +39,16 @@ class OrchestratorService:
         self.game_master = GameMasterService(self.gm_provider, self.settings)
         self.world_state = WorldStateService(self.memory_provider, self.settings)
 
+    async def aclose(self) -> None:
+        """Close every provider's HTTP client. Dedupes by identity because
+        DEV_MODE collapses the actor/memory/GM slots onto one instance."""
+        seen: set[int] = set()
+        for provider in (self.actor_provider, self.memory_provider, self.embedding_provider, self.gm_provider):
+            if id(provider) in seen:
+                continue
+            seen.add(id(provider))
+            await provider.aclose()
+
     async def chat(self, db: Session, session_id: str, user_message: str) -> ChatResponse:
         session = db.scalar(
             select(ChatSession)
