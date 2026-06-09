@@ -17,9 +17,8 @@ import logging
 import os
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from typing import Iterator
 
 from opentelemetry import metrics, trace
 from opentelemetry.trace import Status, StatusCode
@@ -145,6 +144,7 @@ def setup_telemetry(app) -> None:
         return
 
     try:
+        from opentelemetry._logs import set_logger_provider
         from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
         from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -159,7 +159,6 @@ def setup_telemetry(app) -> None:
         from opentelemetry.sdk.resources import Resource
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
-        from opentelemetry._logs import set_logger_provider
 
         from app.db import engine
 

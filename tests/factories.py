@@ -7,9 +7,11 @@ from app.models import (
     CharacterCard,
     EpisodeSummary,
     MemoryFact,
-    Session as ChatSession,
     Turn,
     WorldState,
+)
+from app.models import (
+    Session as ChatSession,
 )
 
 EMBEDDING_DIM = 768

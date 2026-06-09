@@ -105,7 +105,7 @@ def db_engine(pg_container):
 
 
 @pytest.fixture()
-def db_session(db_engine) -> Generator[Session, None, None]:
+def db_session(db_engine) -> Generator[Session]:
     """
     Each test gets its own transaction that is rolled back on exit.
     Services that call db.commit() will only release a SAVEPOINT, not the

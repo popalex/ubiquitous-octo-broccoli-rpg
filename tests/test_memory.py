@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import json
-from unittest.mock import patch
-
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import EpisodeSummary, MemoryFact, RelationshipState
 from app.services.memory import MemoryRefreshResult, MemoryService
-from app.providers.base import ProviderError
 from tests.conftest import MockProvider, make_test_settings
 from tests.factories import SessionFactory, TurnFactory
 

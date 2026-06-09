@@ -1,0 +1,14 @@
+[tool.ruff]
+target-version = "py314"
+line-length = 120
+extend-exclude = ["alembic/versions", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "W", "B"]
+ignore = [
+    "E501",  # line too long — many pre-existing long lines; not worth a mass reformat
+    "B008",  # function call in default arg — this is the standard FastAPI Depends() pattern
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B017"]  # tests intentionally assert against broad Exception

@@ -14,7 +14,7 @@ from app.services.game_master import (
     WorldStateUpdateResult,
 )
 from tests.conftest import MockProvider, make_test_settings
-from tests.factories import SessionFactory, TurnFactory, WorldStateFactory
+from tests.factories import SessionFactory, WorldStateFactory
 
 
 @pytest.fixture()

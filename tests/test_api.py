@@ -4,24 +4,17 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 
 from app.schemas import (
     ChatResponse,
     GMChatResponse,
-    GMEventCheckResponse,
-    GMEventGenerateResponse,
-    GMNarrationResponse,
-    GMSceneTransitionResponse,
-    NPCDialogueResponse,
 )
-from tests.conftest import MockProvider
 from tests.factories import (
     CharacterCardFactory,
     SessionFactory,
     WorldStateFactory,
 )
-
 
 # ===========================================================================
 # Health
@@ -306,7 +299,6 @@ async def test_get_session_memory_empty_session_returns_empty_lists(
 async def test_gm_chat_returns_reply_with_narration(
     async_client_mocked_orchestrator: tuple[AsyncClient, MagicMock],
 ) -> None:
-    from app.schemas import GMEventGenerateResponse
 
     client, mock_orch = async_client_mocked_orchestrator
     session = SessionFactory()
@@ -360,7 +352,8 @@ async def test_gm_chat_stream_returns_sse_stream(
 async def test_gm_narration_returns_narration_text(async_client: AsyncClient) -> None:
     session = SessionFactory()
 
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import patch
+
     from app.services.orchestrator import get_orchestrator
 
     mock_orch = MagicMock()
@@ -383,7 +376,8 @@ async def test_gm_narration_returns_narration_text(async_client: AsyncClient) ->
 async def test_gm_event_check_returns_event_check_result(async_client: AsyncClient) -> None:
     session = SessionFactory()
 
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import patch
+
     from app.services.game_master import EventCheckResult
     from app.services.orchestrator import get_orchestrator
 
@@ -413,7 +407,8 @@ async def test_gm_event_check_returns_event_check_result(async_client: AsyncClie
 async def test_gm_event_generate_returns_generated_event(async_client: AsyncClient) -> None:
     session = SessionFactory()
 
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import patch
+
     from app.services.game_master import GeneratedEvent
     from app.services.orchestrator import get_orchestrator
 
@@ -448,7 +443,8 @@ async def test_gm_event_generate_returns_generated_event(async_client: AsyncClie
 async def test_gm_scene_transition_returns_transition_narration(async_client: AsyncClient) -> None:
     session = SessionFactory()
 
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import patch
+
     from app.services.game_master import SceneTransition
     from app.services.orchestrator import get_orchestrator
 
@@ -482,7 +478,8 @@ async def test_gm_scene_transition_returns_transition_narration(async_client: As
 async def test_gm_npc_dialogue_returns_dialogue_text(async_client: AsyncClient) -> None:
     session = SessionFactory()
 
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import patch
+
     from app.services.orchestrator import get_orchestrator
 
     mock_orch = MagicMock()

@@ -229,6 +229,33 @@ curl -X POST http://localhost:8000/chat \
 curl http://localhost:8000/session/SESSION_ID/memory
 ```
 
+## Linting & Tests
+
+Both run in CI on every pull request (`.github/workflows/build-and-run-tests.yml`).
+
+**Backend (Python) — [Ruff](https://docs.astral.sh/ruff/):**
+
+```bash
+pip install -r requirements.txt   # ruff is included
+ruff check .                      # lint
+ruff check . --fix                # lint and auto-fix
+pytest                            # tests (needs Docker running — testcontainers spins up Postgres+pgvector)
+```
+
+Ruff config lives in `pyproject.toml`.
+
+**Frontend (TypeScript/React) — [ESLint](https://eslint.org/):**
+
+```bash
+cd frontend
+pnpm install
+pnpm lint        # ESLint
+pnpm typecheck   # tsc -b (type errors only, no emit)
+pnpm build       # typecheck + production build
+```
+
+ESLint config lives in `frontend/eslint.config.js`.
+
 ## Notes
 
 - `MEMORY_SUMMARY_INTERVAL=6` means the system summarizes every 6 stored turns, which is 3 user/assistant exchanges.

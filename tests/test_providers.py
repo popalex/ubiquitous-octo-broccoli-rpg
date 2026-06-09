@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
-from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
+from app.providers.base import ProviderError, ProviderMessage
 from app.providers.ollama_provider import OllamaProvider
 from app.providers.openai_provider import OpenAIProvider
 from tests.conftest import MockProvider, make_test_settings

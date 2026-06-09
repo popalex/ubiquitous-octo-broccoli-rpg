@@ -4,12 +4,11 @@ from datetime import datetime
 from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.config import get_settings
 from app.db import Base
-
 
 EMBEDDING_DIMENSION = get_settings().embedding_dimension
 
@@ -38,7 +37,7 @@ class CharacterCard(TimestampMixin, Base):
     style_guide: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
-    sessions: Mapped[list["Session"]] = relationship(back_populates="character_card")
+    sessions: Mapped[list[Session]] = relationship(back_populates="character_card")
 
 
 class WorldState(TimestampMixin, Base):
@@ -51,7 +50,7 @@ class WorldState(TimestampMixin, Base):
     hard_rules: Mapped[str] = mapped_column(Text, nullable=False)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
-    sessions: Mapped[list["Session"]] = relationship(back_populates="world_state")
+    sessions: Mapped[list[Session]] = relationship(back_populates="world_state")
 
 
 class Session(TimestampMixin, Base):
@@ -74,11 +73,11 @@ class Session(TimestampMixin, Base):
 
     character_card: Mapped[CharacterCard] = relationship(back_populates="sessions")
     world_state: Mapped[WorldState | None] = relationship(back_populates="sessions")
-    turns: Mapped[list["Turn"]] = relationship(back_populates="session", cascade="all, delete-orphan")
-    memory_facts: Mapped[list["MemoryFact"]] = relationship(back_populates="session", cascade="all, delete-orphan")
-    episode_summaries: Mapped[list["EpisodeSummary"]] = relationship(back_populates="session", cascade="all, delete-orphan")
-    relationship_states: Mapped[list["RelationshipState"]] = relationship(back_populates="session", cascade="all, delete-orphan")
-    world_state_ledgers: Mapped[list["WorldStateLedger"]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    turns: Mapped[list[Turn]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    memory_facts: Mapped[list[MemoryFact]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    episode_summaries: Mapped[list[EpisodeSummary]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    relationship_states: Mapped[list[RelationshipState]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    world_state_ledgers: Mapped[list[WorldStateLedger]] = relationship(back_populates="session", cascade="all, delete-orphan")
 
 
 class Turn(TimestampMixin, Base):

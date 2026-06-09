@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from app.providers.base import ProviderError
-from app.services.continuity import ContinuityResult, ContinuityService
+from app.services.continuity import ContinuityService
 from tests.conftest import MockProvider
 
 

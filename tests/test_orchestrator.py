@@ -1,23 +1,20 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Turn
-from app.providers.base import ProviderError
 from app.schemas import ChatResponse, GMChatResponse
 from app.services.orchestrator import OrchestratorService
 from tests.conftest import MockProvider, make_test_settings
 from tests.factories import (
-    CharacterCardFactory,
     MemoryFactFactory,
     SessionFactory,
     TurnFactory,
-    WorldStateFactory,
 )
 
 EMBEDDING_DIM = 768
@@ -106,7 +103,6 @@ async def test_chat_triggers_memory_refresh_at_threshold(
     })
 
     refresh_called = False
-    original_refresh = svc.memory.maybe_refresh
 
     async def spy_refresh(db, session):  # noqa: ARG001
         nonlocal refresh_called

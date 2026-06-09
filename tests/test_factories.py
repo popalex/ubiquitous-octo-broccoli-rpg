@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-import pytest
 from sqlalchemy.orm import Session
 
 from app.models import (
     CharacterCard,
     EpisodeSummary,
     MemoryFact,
-    Session as ChatSession,
     Turn,
     WorldState,
+)
+from app.models import (
+    Session as ChatSession,
 )
 from tests.factories import (
     CharacterCardFactory,
@@ -19,7 +20,6 @@ from tests.factories import (
     TurnFactory,
     WorldStateFactory,
 )
-
 
 # ===========================================================================
 # Each factory creates a valid persisted row
