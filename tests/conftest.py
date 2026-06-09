@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Generator, Sequence
+from collections.abc import AsyncIterator, Sequence
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
 from app.config import Settings
 from app.db import Base
 from app.providers.base import BaseModelProvider, ProviderMessage
 
-PGVECTOR_IMAGE = "pgvector/pgvector:pg16"
+PGVECTOR_IMAGE = "pgvector/pgvector:pg18"
 EMBEDDING_DIM = 768
 
 
@@ -92,37 +92,37 @@ def pg_container():
         yield pg
 
 
-@pytest.fixture(scope="session")
-def db_engine(pg_container):
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def db_engine(pg_container):
     url = pg_container.get_connection_url()
-    engine = create_engine(url, pool_pre_ping=True, future=True)
-    with engine.connect() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        conn.commit()
-    Base.metadata.create_all(engine)
+    engine = create_async_engine(url, pool_pre_ping=True, future=True)
+    async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.run_sync(Base.metadata.create_all)
     yield engine
-    engine.dispose()
+    await engine.dispose()
 
 
-@pytest.fixture()
-def db_session(db_engine) -> Generator[Session]:
+@pytest_asyncio.fixture()
+async def db_session(db_engine) -> AsyncIterator[AsyncSession]:
     """
     Each test gets its own transaction that is rolled back on exit.
     Services that call db.commit() will only release a SAVEPOINT, not the
     outer transaction, so the rollback still cleans up everything.
     """
-    connection = db_engine.connect()
-    transaction = connection.begin()
-    session = Session(
+    connection = await db_engine.connect()
+    transaction = await connection.begin()
+    session_factory = async_sessionmaker(
         bind=connection,
         join_transaction_mode="create_savepoint",
         autoflush=False,
         expire_on_commit=False,
     )
+    session = session_factory()
     yield session
-    session.close()
-    transaction.rollback()
-    connection.close()
+    await session.close()
+    await transaction.rollback()
+    await connection.close()
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ def db_session(db_engine) -> Generator[Session]:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
-def _wire_factory_session(db_session: Session) -> None:
+def _wire_factory_session(db_session: AsyncSession) -> None:
     """Keep factory-boy in sync with the per-test database session."""
     from tests.factories import (
         CharacterCardFactory,
@@ -165,12 +165,12 @@ def mock_provider() -> MockProvider:
 # ---------------------------------------------------------------------------
 
 @pytest_asyncio.fixture()
-async def async_client(db_session: Session) -> AsyncIterator[AsyncClient]:
+async def async_client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
     """HTTP client with the real app; only the DB dependency is overridden."""
     from app.db import get_db
     from app.main import app
 
-    def _override_db():
+    async def _override_db():
         yield db_session
 
     app.dependency_overrides[get_db] = _override_db
@@ -181,7 +181,7 @@ async def async_client(db_session: Session) -> AsyncIterator[AsyncClient]:
 
 @pytest_asyncio.fixture()
 async def async_client_mocked_orchestrator(
-    db_session: Session,
+    db_session: AsyncSession,
 ) -> AsyncIterator[tuple[AsyncClient, MagicMock]]:
     """
     HTTP client where get_orchestrator() returns a MagicMock so LLM calls
@@ -191,7 +191,7 @@ async def async_client_mocked_orchestrator(
     from app.main import app
     from app.services.orchestrator import OrchestratorService, get_orchestrator
 
-    def _override_db():
+    async def _override_db():
         yield db_session
 
     mock_orch = MagicMock(spec=OrchestratorService)

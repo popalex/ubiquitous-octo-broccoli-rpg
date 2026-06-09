@@ -8,7 +8,8 @@ from functools import lru_cache
 
 from fastapi import HTTPException
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.config import Settings, get_settings
 from app.models import CharacterCard, Turn, WorldState
@@ -49,8 +50,8 @@ class OrchestratorService:
             seen.add(id(provider))
             await provider.aclose()
 
-    async def chat(self, db: Session, session_id: str, user_message: str) -> ChatResponse:
-        session = db.scalar(
+    async def chat(self, db: AsyncSession, session_id: str, user_message: str) -> ChatResponse:
+        session = await db.scalar(
             select(ChatSession)
             .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
             .where(ChatSession.id == session_id)
@@ -59,12 +60,12 @@ class OrchestratorService:
             raise HTTPException(status_code=404, detail="Session not found.")
 
         retrieved = await self.retrieval.retrieve(db, session, user_message)
-        recent_turns = db.scalars(
+        recent_turns = (await db.scalars(
             select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
-        ).all()
+        )).all()
         recent_turns = list(reversed(recent_turns))
 
-        world_state_block = self._world_state_block(db, session)
+        world_state_block = await self._world_state_block(db, session)
         context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block)
         system_prompt = ACTOR_SYSTEM_PROMPT.format(
             character_name=session.character_card.name,
@@ -116,8 +117,8 @@ class OrchestratorService:
             ]
         )
         session.turn_count = next_actor_index
-        db.commit()
-        db.refresh(session)
+        await db.commit()
+        await db.refresh(session)
 
         try:
             await self.memory.maybe_refresh(db, session)
@@ -149,7 +150,7 @@ class OrchestratorService:
 
     async def gm_chat(
         self,
-        db: Session,
+        db: AsyncSession,
         session_id: str,
         user_message: str,
         location: str | None = None,
@@ -165,7 +166,7 @@ class OrchestratorService:
         4. Generate post-narration (world reaction/consequences)
         5. Potentially inject triggered events
         """
-        session = db.scalar(
+        session = await db.scalar(
             select(ChatSession)
             .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
             .where(ChatSession.id == session_id)
@@ -175,9 +176,9 @@ class OrchestratorService:
 
         # Retrieve memories and recent turns for context
         retrieved = await self.retrieval.retrieve(db, session, user_message)
-        recent_turns = db.scalars(
+        recent_turns = (await db.scalars(
             select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
-        ).all()
+        )).all()
         recent_turns = list(reversed(recent_turns))
         recent_events = self._recent_turns_text(recent_turns[-4:]) if recent_turns else ""
 
@@ -202,7 +203,7 @@ class OrchestratorService:
             logger.exception("Pre-narration failed for session=%s", session.id)
 
         # Get character response via normal flow
-        world_state_block = self._world_state_block(db, session)
+        world_state_block = await self._world_state_block(db, session)
         context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block)
 
         # Include GM narration in context if available
@@ -311,8 +312,8 @@ class OrchestratorService:
 
         db.add_all(turns_to_add)
         session.turn_count = current_index
-        db.commit()
-        db.refresh(session)
+        await db.commit()
+        await db.refresh(session)
 
         # Memory refresh
         try:
@@ -355,7 +356,7 @@ class OrchestratorService:
 
     async def gm_chat_stream(
         self,
-        db: Session,
+        db: AsyncSession,
         session_id: str,
         user_message: str,
         location: str | None = None,
@@ -370,7 +371,7 @@ class OrchestratorService:
         total_start = time.perf_counter()
         logger.info("gm_chat_stream START session=%s user_message=%s", session_id, user_message[:50])
 
-        session = db.scalar(
+        session = await db.scalar(
             select(ChatSession)
             .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
             .where(ChatSession.id == session_id)
@@ -389,9 +390,9 @@ class OrchestratorService:
             _span.set_attribute("rpg.retrieved_count", len(retrieved))
             retrieval_selected.record(len(retrieved))
         logger.info("gm_chat_stream session=%s retrieval duration=%.2fs candidates=%d", session_id, time.perf_counter() - retrieval_start, len(retrieved))
-        recent_turns = db.scalars(
+        recent_turns = (await db.scalars(
             select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
-        ).all()
+        )).all()
         recent_turns = list(reversed(recent_turns))
         recent_events = self._recent_turns_text(recent_turns[-4:]) if recent_turns else ""
 
@@ -432,7 +433,7 @@ class OrchestratorService:
         logger.info("gm_chat_stream session=%s pre_narration DONE duration=%.2fs chars=%d", session_id, time.perf_counter() - pre_narration_start, len(pre_narration or ""))
 
         # Build context for character response
-        world_state_block = self._world_state_block(db, session)
+        world_state_block = await self._world_state_block(db, session)
         context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block)
         if pre_narration:
             context_packet = f"[Scene Narration]\n{pre_narration}\n\n{context_packet}"
@@ -544,8 +545,8 @@ class OrchestratorService:
 
         db.add_all(turns_to_add)
         session.turn_count = current_index
-        db.commit()
-        db.refresh(session)
+        await db.commit()
+        await db.refresh(session)
 
         # Memory refresh
         yield f"data: {json.dumps({'type': 'phase', 'phase': 'summarizing'})}\n\n"
@@ -566,9 +567,9 @@ class OrchestratorService:
 
         yield f"data: {json.dumps({'type': 'done', 'session_id': session.id})}\n\n"
 
-    async def chat_stream(self, db: Session, session_id: str, user_message: str) -> AsyncIterator[str]:
+    async def chat_stream(self, db: AsyncSession, session_id: str, user_message: str) -> AsyncIterator[str]:
         """Stream chat response as Server-Sent Events (SSE)."""
-        session = db.scalar(
+        session = await db.scalar(
             select(ChatSession)
             .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
             .where(ChatSession.id == session_id)
@@ -582,12 +583,12 @@ class OrchestratorService:
             retrieved = await self.retrieval.retrieve(db, session, user_message)
             _span.set_attribute("rpg.retrieved_count", len(retrieved))
             retrieval_selected.record(len(retrieved))
-        recent_turns = db.scalars(
+        recent_turns = (await db.scalars(
             select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
-        ).all()
+        )).all()
         recent_turns = list(reversed(recent_turns))
 
-        world_state_block = self._world_state_block(db, session)
+        world_state_block = await self._world_state_block(db, session)
         context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block)
         system_prompt = ACTOR_SYSTEM_PROMPT.format(
             character_name=session.character_card.name,
@@ -642,8 +643,8 @@ class OrchestratorService:
             ]
         )
         session.turn_count = next_actor_index
-        db.commit()
-        db.refresh(session)
+        await db.commit()
+        await db.refresh(session)
 
         # Memory refresh
         yield f"data: {json.dumps({'type': 'phase', 'phase': 'summarizing'})}\n\n"
@@ -662,7 +663,7 @@ class OrchestratorService:
         # Send completion signal
         yield f"data: {json.dumps({'type': 'done', 'session_id': session.id})}\n\n"
 
-    def _world_state_block(self, db: Session, session: ChatSession) -> str:
+    async def _world_state_block(self, db: AsyncSession, session: ChatSession) -> str:
         """Load + render the canonical world-state ledger for injection.
 
         Returns "" (no-op) when the feature flag is off or the ledger is empty.
@@ -671,7 +672,7 @@ class OrchestratorService:
             return ""
         with tracer.start_as_current_span("orchestrator.state_inject") as span:
             span.set_attribute("rpg.session_id", str(session.id))
-            ledger = self.world_state.load_current(db, session.id)
+            ledger = await self.world_state.load_current(db, session.id)
             block = self.world_state.render_block(ledger)
             span.set_attribute(
                 "rpg.canon.injected_token_estimate",
@@ -681,7 +682,7 @@ class OrchestratorService:
 
     async def _extract_world_state(
         self,
-        db: Session,
+        db: AsyncSession,
         session: ChatSession,
         *,
         user_message: str,

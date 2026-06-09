@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
 from app.schemas import (
     ChatResponse,
@@ -88,9 +89,10 @@ async def test_load_character_missing_required_fields_returns_422(async_client: 
 
 
 @pytest.mark.asyncio
-async def test_init_session_creates_session(async_client: AsyncClient) -> None:
+async def test_init_session_creates_session(async_client: AsyncClient, db_session) -> None:
     character = CharacterCardFactory()
     world = WorldStateFactory()
+    await db_session.flush()
 
     response = await async_client.post(
         "/session/init",
@@ -108,9 +110,10 @@ async def test_init_session_creates_session(async_client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_init_session_with_gm_enabled(async_client: AsyncClient) -> None:
+async def test_init_session_with_gm_enabled(async_client: AsyncClient, db_session) -> None:
     character = CharacterCardFactory()
     world = WorldStateFactory()
+    await db_session.flush()
 
     response = await async_client.post(
         "/session/init",
@@ -144,8 +147,9 @@ async def test_init_session_invalid_character_card_returns_404(async_client: Asy
 
 
 @pytest.mark.asyncio
-async def test_delete_session_returns_204(async_client: AsyncClient) -> None:
+async def test_delete_session_returns_204(async_client: AsyncClient, db_session) -> None:
     session = SessionFactory()
+    await db_session.flush()
 
     response = await async_client.delete(f"/session/{session.id}")
     assert response.status_code == 204
@@ -158,11 +162,12 @@ async def test_delete_session_removes_from_db(
     from app.models import Session as ChatSession
 
     session = SessionFactory()
+    await db_session.flush()
     session_id = session.id
 
     await async_client.delete(f"/session/{session_id}")
 
-    remaining = db_session.query(ChatSession).filter(ChatSession.id == session_id).one_or_none()
+    remaining = await db_session.scalar(select(ChatSession).where(ChatSession.id == session_id))
     assert remaining is None
 
 
@@ -173,8 +178,9 @@ async def test_delete_session_not_found_returns_404(async_client: AsyncClient) -
 
 
 @pytest.mark.asyncio
-async def test_delete_session_no_longer_in_list(async_client: AsyncClient) -> None:
+async def test_delete_session_no_longer_in_list(async_client: AsyncClient, db_session) -> None:
     session = SessionFactory()
+    await db_session.flush()
 
     await async_client.delete(f"/session/{session.id}")
 
@@ -192,9 +198,11 @@ async def test_delete_session_no_longer_in_list(async_client: AsyncClient) -> No
 @pytest.mark.asyncio
 async def test_chat_returns_reply_and_continuity_info(
     async_client_mocked_orchestrator: tuple[AsyncClient, MagicMock],
+    db_session,
 ) -> None:
     client, mock_orch = async_client_mocked_orchestrator
     session = SessionFactory()
+    await db_session.flush()
 
     mock_orch.chat.return_value = ChatResponse(
         session_id=session.id,
@@ -233,9 +241,11 @@ async def test_chat_with_invalid_session_returns_error(
 @pytest.mark.asyncio
 async def test_chat_stream_returns_sse_stream(
     async_client_mocked_orchestrator: tuple[AsyncClient, MagicMock],
+    db_session,
 ) -> None:
     client, mock_orch = async_client_mocked_orchestrator
     session = SessionFactory()
+    await db_session.flush()
 
     async def fake_stream(*args, **kwargs):
         yield f"data: {json.dumps({'type': 'chunk', 'content': 'Hello'})}\n\n"
@@ -259,12 +269,14 @@ async def test_chat_stream_returns_sse_stream(
 @pytest.mark.asyncio
 async def test_get_session_memory_returns_facts_summaries_relationships(
     async_client: AsyncClient,
+    db_session,
 ) -> None:
     from tests.factories import EpisodeSummaryFactory, MemoryFactFactory
 
     session = SessionFactory()
     MemoryFactFactory(session=session, content="Fact one.")
     EpisodeSummaryFactory(session=session, content="Summary one.")
+    await db_session.flush()
 
     response = await async_client.get(f"/session/{session.id}/memory")
     assert response.status_code == 200
@@ -279,8 +291,10 @@ async def test_get_session_memory_returns_facts_summaries_relationships(
 @pytest.mark.asyncio
 async def test_get_session_memory_empty_session_returns_empty_lists(
     async_client: AsyncClient,
+    db_session,
 ) -> None:
     session = SessionFactory()
+    await db_session.flush()
 
     response = await async_client.get(f"/session/{session.id}/memory")
     assert response.status_code == 200
@@ -298,10 +312,12 @@ async def test_get_session_memory_empty_session_returns_empty_lists(
 @pytest.mark.asyncio
 async def test_gm_chat_returns_reply_with_narration(
     async_client_mocked_orchestrator: tuple[AsyncClient, MagicMock],
+    db_session,
 ) -> None:
 
     client, mock_orch = async_client_mocked_orchestrator
     session = SessionFactory()
+    await db_session.flush()
 
     mock_orch.gm_chat.return_value = GMChatResponse(
         session_id=session.id,
@@ -331,9 +347,11 @@ async def test_gm_chat_returns_reply_with_narration(
 @pytest.mark.asyncio
 async def test_gm_chat_stream_returns_sse_stream(
     async_client_mocked_orchestrator: tuple[AsyncClient, MagicMock],
+    db_session,
 ) -> None:
     client, mock_orch = async_client_mocked_orchestrator
     session = SessionFactory()
+    await db_session.flush()
 
     async def fake_stream(*args, **kwargs):
         yield f"data: {json.dumps({'type': 'done', 'session_id': session.id})}\n\n"
@@ -349,8 +367,9 @@ async def test_gm_chat_stream_returns_sse_stream(
 
 
 @pytest.mark.asyncio
-async def test_gm_narration_returns_narration_text(async_client: AsyncClient) -> None:
+async def test_gm_narration_returns_narration_text(async_client: AsyncClient, db_session) -> None:
     session = SessionFactory()
+    await db_session.flush()
 
     from unittest.mock import patch
 
@@ -373,8 +392,9 @@ async def test_gm_narration_returns_narration_text(async_client: AsyncClient) ->
 
 
 @pytest.mark.asyncio
-async def test_gm_event_check_returns_event_check_result(async_client: AsyncClient) -> None:
+async def test_gm_event_check_returns_event_check_result(async_client: AsyncClient, db_session) -> None:
     session = SessionFactory()
+    await db_session.flush()
 
     from unittest.mock import patch
 
@@ -404,8 +424,9 @@ async def test_gm_event_check_returns_event_check_result(async_client: AsyncClie
 
 
 @pytest.mark.asyncio
-async def test_gm_event_generate_returns_generated_event(async_client: AsyncClient) -> None:
+async def test_gm_event_generate_returns_generated_event(async_client: AsyncClient, db_session) -> None:
     session = SessionFactory()
+    await db_session.flush()
 
     from unittest.mock import patch
 
@@ -440,8 +461,9 @@ async def test_gm_event_generate_returns_generated_event(async_client: AsyncClie
 
 
 @pytest.mark.asyncio
-async def test_gm_scene_transition_returns_transition_narration(async_client: AsyncClient) -> None:
+async def test_gm_scene_transition_returns_transition_narration(async_client: AsyncClient, db_session) -> None:
     session = SessionFactory()
+    await db_session.flush()
 
     from unittest.mock import patch
 
@@ -475,8 +497,9 @@ async def test_gm_scene_transition_returns_transition_narration(async_client: As
 
 
 @pytest.mark.asyncio
-async def test_gm_npc_dialogue_returns_dialogue_text(async_client: AsyncClient) -> None:
+async def test_gm_npc_dialogue_returns_dialogue_text(async_client: AsyncClient, db_session) -> None:
     session = SessionFactory()
+    await db_session.flush()
 
     from unittest.mock import patch
 
@@ -512,8 +535,9 @@ async def test_gm_npc_dialogue_returns_dialogue_text(async_client: AsyncClient) 
 
 
 @pytest.mark.asyncio
-async def test_get_world_state_empty_when_none(async_client: AsyncClient) -> None:
+async def test_get_world_state_empty_when_none(async_client: AsyncClient, db_session) -> None:
     session = SessionFactory()
+    await db_session.flush()
     response = await async_client.get(f"/session/{session.id}/world-state")
     assert response.status_code == 200
     data = response.json()
@@ -526,13 +550,14 @@ async def test_get_world_state_returns_latest(async_client: AsyncClient, db_sess
     from app.models import WorldStateLedger
 
     session = SessionFactory()
+    await db_session.flush()
     db_session.add_all(
         [
             WorldStateLedger(session_id=session.id, version=1, state={"facts": ["a"]}),
             WorldStateLedger(session_id=session.id, version=2, state={"facts": ["a", "b"]}),
         ]
     )
-    db_session.commit()
+    await db_session.commit()
 
     response = await async_client.get(f"/session/{session.id}/world-state")
     assert response.status_code == 200

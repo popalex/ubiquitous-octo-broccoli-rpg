@@ -5,10 +5,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
-from sqlalchemy import text
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import delete, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.config import get_settings
 from app.db import get_db
@@ -76,10 +76,10 @@ setup_telemetry(app)
 
 
 @app.get("/health", response_model=HealthResponse)
-def health(db: Session = Depends(get_db)) -> HealthResponse:
+async def health(db: AsyncSession = Depends(get_db)) -> HealthResponse:
     settings = get_settings()
     try:
-        db.execute(text("SELECT 1"))
+        await db.execute(text("SELECT 1"))
         return HealthResponse(status="ok", database="ok", mode="DEV" if settings.dev_mode else "PROD")
     except Exception as exc:  # pragma: no cover
         logger.exception("healthcheck failed")
@@ -87,8 +87,8 @@ def health(db: Session = Depends(get_db)) -> HealthResponse:
 
 
 @app.post("/character/load", response_model=CharacterLoadResponse)
-def load_character(payload: CharacterLoadRequest, db: Session = Depends(get_db)) -> CharacterLoadResponse:
-    character = db.query(CharacterCard).filter(CharacterCard.name == payload.name).one_or_none()
+async def load_character(payload: CharacterLoadRequest, db: AsyncSession = Depends(get_db)) -> CharacterLoadResponse:
+    character = await db.scalar(select(CharacterCard).where(CharacterCard.name == payload.name))
     if character is None:
         character = CharacterCard(
             name=payload.name,
@@ -102,7 +102,7 @@ def load_character(payload: CharacterLoadRequest, db: Session = Depends(get_db))
         character.hard_rules = "\n".join(payload.hard_rules)
         character.style_guide = payload.style_guide
 
-    world = db.query(WorldState).filter(WorldState.name == payload.world_name).one_or_none()
+    world = await db.scalar(select(WorldState).where(WorldState.name == payload.world_name))
     if world is None:
         world = WorldState(
             name=payload.world_name,
@@ -116,9 +116,9 @@ def load_character(payload: CharacterLoadRequest, db: Session = Depends(get_db))
         world.canon = payload.world_canon
         world.hard_rules = "\n".join(payload.world_hard_rules)
 
-    db.commit()
-    db.refresh(character)
-    db.refresh(world)
+    await db.commit()
+    await db.refresh(character)
+    await db.refresh(world)
 
     return CharacterLoadResponse(
         character_card_id=character.id,
@@ -129,14 +129,14 @@ def load_character(payload: CharacterLoadRequest, db: Session = Depends(get_db))
 
 
 @app.post("/session/init", response_model=SessionInitResponse)
-def init_session(payload: SessionInitRequest, db: Session = Depends(get_db)) -> SessionInitResponse:
-    character = db.query(CharacterCard).filter(CharacterCard.id == payload.character_card_id).one_or_none()
+async def init_session(payload: SessionInitRequest, db: AsyncSession = Depends(get_db)) -> SessionInitResponse:
+    character = await db.scalar(select(CharacterCard).where(CharacterCard.id == payload.character_card_id))
     if character is None:
         raise HTTPException(status_code=404, detail="Character card not found.")
 
     world = None
     if payload.world_state_id:
-        world = db.query(WorldState).filter(WorldState.id == payload.world_state_id).one_or_none()
+        world = await db.scalar(select(WorldState).where(WorldState.id == payload.world_state_id))
         if world is None:
             raise HTTPException(status_code=404, detail="World state not found.")
 
@@ -149,8 +149,8 @@ def init_session(payload: SessionInitRequest, db: Session = Depends(get_db)) -> 
         time_of_day=payload.time_of_day,
     )
     db.add(session)
-    db.commit()
-    db.refresh(session)
+    await db.commit()
+    await db.refresh(session)
 
     return SessionInitResponse(
         session_id=session.id,
@@ -165,31 +165,30 @@ def init_session(payload: SessionInitRequest, db: Session = Depends(get_db)) -> 
 
 
 @app.get("/sessions", response_model=SessionListResponse)
-def list_sessions(db: Session = Depends(get_db)) -> SessionListResponse:
-    sessions = (
-        db.query(ChatSession)
-        .filter(ChatSession.status != "archived")
+async def list_sessions(db: AsyncSession = Depends(get_db)) -> SessionListResponse:
+    sessions = (await db.scalars(
+        select(ChatSession)
+        .where(ChatSession.status != "archived")
         .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
         .order_by(ChatSession.updated_at.desc())
-        .all()
-    )
+    )).all()
     items = []
     for s in sessions:
-        latest_summary = (
-            db.query(EpisodeSummary)
-            .filter(EpisodeSummary.session_id == s.id)
+        latest_summary = await db.scalar(
+            select(EpisodeSummary)
+            .where(EpisodeSummary.session_id == s.id)
             .order_by(EpisodeSummary.created_at.desc())
-            .first()
+            .limit(1)
         )
         summary: str | None = None
         if latest_summary:
             summary = latest_summary.content[:200]
         else:
-            last_turn = (
-                db.query(Turn)
-                .filter(Turn.session_id == s.id, Turn.role == "assistant")
+            last_turn = await db.scalar(
+                select(Turn)
+                .where(Turn.session_id == s.id, Turn.role == "assistant")
                 .order_by(Turn.turn_index.desc())
-                .first()
+                .limit(1)
             )
             if last_turn:
                 summary = last_turn.content[:200]
@@ -211,12 +210,11 @@ def list_sessions(db: Session = Depends(get_db)) -> SessionListResponse:
 
 
 @app.get("/session/{session_id}", response_model=SessionDetailResponse)
-def get_session(session_id: str, db: Session = Depends(get_db)) -> SessionDetailResponse:
-    session = (
-        db.query(ChatSession)
-        .filter(ChatSession.id == session_id)
+async def get_session(session_id: str, db: AsyncSession = Depends(get_db)) -> SessionDetailResponse:
+    session = await db.scalar(
+        select(ChatSession)
+        .where(ChatSession.id == session_id)
         .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
-        .one_or_none()
     )
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
@@ -238,32 +236,31 @@ def get_session(session_id: str, db: Session = Depends(get_db)) -> SessionDetail
 
 
 @app.get("/session/{session_id}/turns", response_model=list[TurnResponse])
-def get_session_turns(session_id: str, db: Session = Depends(get_db)) -> list[TurnResponse]:
-    session = db.query(ChatSession).filter(ChatSession.id == session_id).one_or_none()
+async def get_session_turns(session_id: str, db: AsyncSession = Depends(get_db)) -> list[TurnResponse]:
+    session = await db.scalar(select(ChatSession).where(ChatSession.id == session_id))
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
-    turns = (
-        db.query(Turn)
-        .filter(Turn.session_id == session_id)
+    turns = (await db.scalars(
+        select(Turn)
+        .where(Turn.session_id == session_id)
         .order_by(Turn.turn_index.asc())
-        .all()
-    )
+    )).all()
     return [TurnResponse.model_validate(t) for t in turns]
 
 
 @app.delete("/session/{session_id}", status_code=204)
-def delete_session(session_id: str, db: Session = Depends(get_db)) -> None:
-    session = db.query(ChatSession).filter(ChatSession.id == session_id).one_or_none()
+async def delete_session(session_id: str, db: AsyncSession = Depends(get_db)) -> None:
+    session = await db.scalar(select(ChatSession).where(ChatSession.id == session_id))
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
-    db.delete(session)
-    db.commit()
+    await db.delete(session)
+    await db.commit()
 
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(
     payload: ChatRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> ChatResponse:
     try:
         orchestrator = get_orchestrator()
@@ -276,7 +273,7 @@ async def chat(
 @app.post("/chat/stream")
 async def chat_stream(
     payload: ChatRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Stream chat response as Server-Sent Events (SSE)."""
     orchestrator = get_orchestrator()
@@ -292,29 +289,24 @@ async def chat_stream(
 
 
 @app.get("/session/{session_id}/memory", response_model=SessionMemoryResponse)
-async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> SessionMemoryResponse:
-    def _summaries() -> list[EpisodeSummary]:
-        return db.query(EpisodeSummary).filter(EpisodeSummary.session_id == session_id).order_by(EpisodeSummary.created_at.desc()).all()
-
-    session = await run_in_threadpool(
-        lambda: db.query(ChatSession).filter(ChatSession.id == session_id).one_or_none()
-    )
+async def get_session_memory(session_id: str, db: AsyncSession = Depends(get_db)) -> SessionMemoryResponse:
+    session = await db.scalar(select(ChatSession).where(ChatSession.id == session_id))
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
 
-    summaries = await run_in_threadpool(_summaries)
+    summaries = (await db.scalars(
+        select(EpisodeSummary)
+        .where(EpisodeSummary.session_id == session_id)
+        .order_by(EpisodeSummary.created_at.desc())
+    )).all()
 
     # Delete broken placeholder summaries left by the old bug so we can regenerate.
     placeholder_ids = [s.id for s in summaries if s.content.strip() == "No summary produced."]
     if placeholder_ids:
         logger.info("backfill_summary CLEANUP session=%s removing %s placeholder summaries", session_id, len(placeholder_ids))
-
-        def _cleanup() -> None:
-            db.query(EpisodeSummary).filter(EpisodeSummary.id.in_(placeholder_ids)).delete(synchronize_session="fetch")
-            session.last_summarized_turn = 0
-            db.commit()
-
-        await run_in_threadpool(_cleanup)
+        await db.execute(delete(EpisodeSummary).where(EpisodeSummary.id.in_(placeholder_ids)))
+        session.last_summarized_turn = 0
+        await db.commit()
         summaries = [s for s in summaries if s.id not in placeholder_ids]
 
     # If no valid summaries exist but there are unsummarized turns, backfill now.
@@ -326,7 +318,11 @@ async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> 
         try:
             orchestrator = get_orchestrator()
             result = await orchestrator.memory.maybe_refresh(db, session, force=True)
-            summaries = await run_in_threadpool(_summaries)
+            summaries = (await db.scalars(
+                select(EpisodeSummary)
+                .where(EpisodeSummary.session_id == session_id)
+                .order_by(EpisodeSummary.created_at.desc())
+            )).all()
             logger.info(
                 "backfill_summary DONE session=%s summary_created=%s facts=%s relationships=%s summaries_now=%s",
                 session_id, result.summary_created, result.facts_written, result.relationships_written, len(summaries),
@@ -334,12 +330,16 @@ async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> 
         except Exception:
             logger.exception("backfill summary failed for session=%s", session_id)
 
-    facts = await run_in_threadpool(
-        lambda: db.query(MemoryFact).filter(MemoryFact.session_id == session_id).order_by(MemoryFact.created_at.desc()).all()
-    )
-    relationships = await run_in_threadpool(
-        lambda: db.query(RelationshipState).filter(RelationshipState.session_id == session_id).order_by(RelationshipState.updated_at.desc()).all()
-    )
+    facts = (await db.scalars(
+        select(MemoryFact)
+        .where(MemoryFact.session_id == session_id)
+        .order_by(MemoryFact.created_at.desc())
+    )).all()
+    relationships = (await db.scalars(
+        select(RelationshipState)
+        .where(RelationshipState.session_id == session_id)
+        .order_by(RelationshipState.updated_at.desc())
+    )).all()
 
     return SessionMemoryResponse(
         session_id=session_id,
@@ -350,16 +350,14 @@ async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> 
 
 
 @app.get("/session/{session_id}/world-state", response_model=WorldStateResponse)
-def get_world_state(
+async def get_world_state(
     session_id: str,
     version: int | None = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> WorldStateResponse:
     """Return the current world-state ledger for a session (or a specific
     historical ``?version=``). Empty ledger (version 0) if none recorded yet."""
-    from sqlalchemy import select
-
-    session = db.query(ChatSession).filter(ChatSession.id == session_id).one_or_none()
+    session = await db.scalar(select(ChatSession).where(ChatSession.id == session_id))
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
 
@@ -368,7 +366,7 @@ def get_world_state(
         query = query.where(WorldStateLedger.version == version)
     else:
         query = query.order_by(WorldStateLedger.version.desc())
-    row = db.scalar(query.limit(1))
+    row = await db.scalar(query.limit(1))
 
     if row is None:
         if version is not None:
@@ -391,7 +389,7 @@ def get_world_state(
 @app.post("/gm/chat", response_model=GMChatResponse)
 async def gm_chat(
     payload: GMChatRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> GMChatResponse:
     """
     GM-driven chat with narration and event generation.
@@ -416,7 +414,7 @@ async def gm_chat(
 @app.post("/gm/chat/stream")
 async def gm_chat_stream(
     payload: GMChatRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """
     Streaming GM-driven chat with narration and event generation.
@@ -444,12 +442,10 @@ async def gm_chat_stream(
 @app.post("/gm/narration", response_model=GMNarrationResponse)
 async def gm_narration(
     payload: GMNarrationRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> GMNarrationResponse:
     """Generate standalone GM narration for a scene."""
-    from sqlalchemy import select
-    session = await run_in_threadpool(
-        db.scalar,
+    session = await db.scalar(
         select(ChatSession)
         .options(joinedload(ChatSession.world_state))
         .where(ChatSession.id == payload.session_id),
@@ -477,12 +473,10 @@ async def gm_narration(
 @app.post("/gm/event/check", response_model=GMEventCheckResponse)
 async def gm_event_check(
     payload: GMEventCheckRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> GMEventCheckResponse:
     """Check if an event should trigger in the current game state."""
-    from sqlalchemy import select
-    session = await run_in_threadpool(
-        db.scalar,
+    session = await db.scalar(
         select(ChatSession)
         .options(joinedload(ChatSession.world_state))
         .where(ChatSession.id == payload.session_id),
@@ -513,12 +507,10 @@ async def gm_event_check(
 @app.post("/gm/event/generate", response_model=GMEventGenerateResponse)
 async def gm_event_generate(
     payload: GMEventGenerateRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> GMEventGenerateResponse:
     """Generate a full event narrative from a seed."""
-    from sqlalchemy import select
-    session = await run_in_threadpool(
-        db.scalar,
+    session = await db.scalar(
         select(ChatSession)
         .options(joinedload(ChatSession.world_state))
         .where(ChatSession.id == payload.session_id),
@@ -549,12 +541,10 @@ async def gm_event_generate(
 @app.post("/gm/scene/transition", response_model=GMSceneTransitionResponse)
 async def gm_scene_transition(
     payload: GMSceneTransitionRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> GMSceneTransitionResponse:
     """Generate narration for a scene transition."""
-    from sqlalchemy import select
-    session = await run_in_threadpool(
-        db.scalar,
+    session = await db.scalar(
         select(ChatSession)
         .options(joinedload(ChatSession.world_state))
         .where(ChatSession.id == payload.session_id),
@@ -583,12 +573,10 @@ async def gm_scene_transition(
 @app.post("/gm/npc/dialogue", response_model=NPCDialogueResponse)
 async def gm_npc_dialogue(
     payload: NPCDialogueRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> NPCDialogueResponse:
     """Generate dialogue for a specific NPC."""
-    from sqlalchemy import select
-    session = await run_in_threadpool(
-        db.scalar,
+    session = await db.scalar(
         select(ChatSession)
         .options(joinedload(ChatSession.world_state))
         .where(ChatSession.id == payload.session_id),

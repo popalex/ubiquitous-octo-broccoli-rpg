@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import EpisodeSummary, MemoryFact, RelationshipState
 from app.services.memory import MemoryRefreshResult, MemoryService
@@ -24,12 +24,12 @@ def _make_service(mock_provider: MockProvider, **setting_overrides) -> MemorySer
 
 @pytest.mark.asyncio
 async def test_maybe_refresh_noop_below_interval(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     settings = make_test_settings(memory_summary_interval=6)
     service = MemoryService(mock_provider, mock_provider, settings)
     session = SessionFactory(turn_count=5, last_summarized_turn=0)
-    db_session.flush()
+    await db_session.flush()
 
     result = await service.maybe_refresh(db_session, session)
     assert result == MemoryRefreshResult(summary_created=False, facts_written=0, relationships_written=0)
@@ -42,14 +42,14 @@ async def test_maybe_refresh_noop_below_interval(
 
 @pytest.mark.asyncio
 async def test_maybe_refresh_creates_episode_summary(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     settings = make_test_settings(memory_summary_interval=6)
     service = MemoryService(mock_provider, mock_provider, settings)
     session = SessionFactory(turn_count=6, last_summarized_turn=0)
     for i in range(1, 7):
         TurnFactory(session=session, turn_index=i, role="user", content=f"Turn {i}")
-    db_session.flush()
+    await db_session.flush()
 
     mock_provider.set_json_response({
         "summary": "The hero ventured forth.",
@@ -61,9 +61,9 @@ async def test_maybe_refresh_creates_episode_summary(
     result = await service.maybe_refresh(db_session, session)
     assert result.summary_created is True
 
-    summaries = db_session.scalars(
+    summaries = (await db_session.scalars(
         select(EpisodeSummary).where(EpisodeSummary.session_id == session.id)
-    ).all()
+    )).all()
     assert len(summaries) == 1
     assert summaries[0].content == "The hero ventured forth."
 
@@ -75,14 +75,14 @@ async def test_maybe_refresh_creates_episode_summary(
 
 @pytest.mark.asyncio
 async def test_maybe_refresh_extracts_memory_facts(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     settings = make_test_settings(memory_summary_interval=6)
     service = MemoryService(mock_provider, mock_provider, settings)
     session = SessionFactory(turn_count=6, last_summarized_turn=0)
     for i in range(1, 7):
         TurnFactory(session=session, turn_index=i, role="user", content=f"Turn {i}")
-    db_session.flush()
+    await db_session.flush()
 
     mock_provider.set_json_response({
         "summary": "Summary.",
@@ -97,9 +97,9 @@ async def test_maybe_refresh_extracts_memory_facts(
     result = await service.maybe_refresh(db_session, session)
     assert result.facts_written == 2
 
-    facts = db_session.scalars(
+    facts = (await db_session.scalars(
         select(MemoryFact).where(MemoryFact.session_id == session.id)
-    ).all()
+    )).all()
     assert len(facts) == 2
     contents = {f.content for f in facts}
     assert "The dragon is dead." in contents
@@ -113,14 +113,14 @@ async def test_maybe_refresh_extracts_memory_facts(
 
 @pytest.mark.asyncio
 async def test_maybe_refresh_creates_relationships(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     settings = make_test_settings(memory_summary_interval=6)
     service = MemoryService(mock_provider, mock_provider, settings)
     session = SessionFactory(turn_count=6, last_summarized_turn=0)
     for i in range(1, 7):
         TurnFactory(session=session, turn_index=i, role="user", content=f"Turn {i}")
-    db_session.flush()
+    await db_session.flush()
 
     mock_provider.set_json_response({
         "summary": "Summary.",
@@ -140,9 +140,9 @@ async def test_maybe_refresh_creates_relationships(
     result = await service.maybe_refresh(db_session, session)
     assert result.relationships_written == 1
 
-    rels = db_session.scalars(
+    rels = (await db_session.scalars(
         select(RelationshipState).where(RelationshipState.session_id == session.id)
-    ).all()
+    )).all()
     assert len(rels) == 1
     assert rels[0].source_entity == "Hero"
     assert rels[0].target_entity == "Dragon"
@@ -156,14 +156,14 @@ async def test_maybe_refresh_creates_relationships(
 
 @pytest.mark.asyncio
 async def test_embeddings_generated_for_facts_and_summaries(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     settings = make_test_settings(memory_summary_interval=6)
     service = MemoryService(mock_provider, mock_provider, settings)
     session = SessionFactory(turn_count=6, last_summarized_turn=0)
     for i in range(1, 7):
         TurnFactory(session=session, turn_index=i, role="user", content=f"Turn {i}")
-    db_session.flush()
+    await db_session.flush()
 
     mock_provider.set_json_response({
         "summary": "Summary text.",
@@ -194,14 +194,14 @@ async def test_embeddings_generated_for_facts_and_summaries(
 
 @pytest.mark.asyncio
 async def test_last_summarized_turn_advanced_after_refresh(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     settings = make_test_settings(memory_summary_interval=6)
     service = MemoryService(mock_provider, mock_provider, settings)
     session = SessionFactory(turn_count=6, last_summarized_turn=0)
     for i in range(1, 7):
         TurnFactory(session=session, turn_index=i, role="user", content=f"Turn {i}")
-    db_session.flush()
+    await db_session.flush()
 
     mock_provider.set_json_response({
         "summary": "Summary.",
@@ -221,14 +221,14 @@ async def test_last_summarized_turn_advanced_after_refresh(
 
 @pytest.mark.asyncio
 async def test_memory_refresh_result_correct_counts(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     settings = make_test_settings(memory_summary_interval=6)
     service = MemoryService(mock_provider, mock_provider, settings)
     session = SessionFactory(turn_count=6, last_summarized_turn=0)
     for i in range(1, 7):
         TurnFactory(session=session, turn_index=i, role="user", content=f"Turn {i}")
-    db_session.flush()
+    await db_session.flush()
 
     mock_provider.set_json_response({
         "summary": "Summary.",
@@ -259,14 +259,14 @@ async def test_memory_refresh_result_correct_counts(
 
 @pytest.mark.asyncio
 async def test_malformed_json_for_facts_handled_gracefully(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     settings = make_test_settings(memory_summary_interval=6)
     service = MemoryService(mock_provider, mock_provider, settings)
     session = SessionFactory(turn_count=6, last_summarized_turn=0)
     for i in range(1, 7):
         TurnFactory(session=session, turn_index=i, role="user", content=f"Turn {i}")
-    db_session.flush()
+    await db_session.flush()
 
     # facts list contains entries with empty content — should be skipped
     mock_provider.set_json_response({
@@ -291,14 +291,14 @@ async def test_malformed_json_for_facts_handled_gracefully(
 
 @pytest.mark.asyncio
 async def test_malformed_json_for_episode_summary_handled_gracefully(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     settings = make_test_settings(memory_summary_interval=6)
     service = MemoryService(mock_provider, mock_provider, settings)
     session = SessionFactory(turn_count=6, last_summarized_turn=0)
     for i in range(1, 7):
         TurnFactory(session=session, turn_index=i, role="user", content=f"Turn {i}")
-    db_session.flush()
+    await db_session.flush()
 
     # summary field is missing — should fall back to default text
     mock_provider.set_json_response({
@@ -309,7 +309,7 @@ async def test_malformed_json_for_episode_summary_handled_gracefully(
 
     result = await service.maybe_refresh(db_session, session)
     assert result.summary_created is True
-    summaries = db_session.scalars(
+    summaries = (await db_session.scalars(
         select(EpisodeSummary).where(EpisodeSummary.session_id == session.id)
-    ).all()
+    )).all()
     assert summaries[0].content == "No summary produced."

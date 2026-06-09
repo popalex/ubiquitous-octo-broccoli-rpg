@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
 from app.models import EpisodeSummary, MemoryFact, RelationshipState, Turn
@@ -39,7 +39,7 @@ class MemoryService:
     _MAX_TURNS_PER_SUMMARY = 20
 
     async def maybe_refresh(
-        self, db: Session, session: ChatSession, *, force: bool = False,
+        self, db: AsyncSession, session: ChatSession, *, force: bool = False,
     ) -> MemoryRefreshResult:
         turns_since_last = session.turn_count - session.last_summarized_turn
         if not force:
@@ -49,11 +49,11 @@ class MemoryService:
             if session.turn_count == 0 or turns_since_last == 0:
                 return MemoryRefreshResult(summary_created=False, facts_written=0, relationships_written=0)
 
-        turns = db.scalars(
+        turns = (await db.scalars(
             select(Turn)
             .where(Turn.session_id == session.id, Turn.turn_index > session.last_summarized_turn)
             .order_by(Turn.turn_index)
-        ).all()
+        )).all()
         if not turns:
             return MemoryRefreshResult(summary_created=False, facts_written=0, relationships_written=0)
 
@@ -92,7 +92,7 @@ class MemoryService:
         # so a failure in fact extraction doesn't leave us re-summarizing
         # an ever-growing backlog of turns.
         session.last_summarized_turn = turns[-1].turn_index
-        db.commit()
+        await db.commit()
 
         facts_written = 0
         relationships_written = 0
@@ -144,7 +144,7 @@ class MemoryService:
                 )
                 relationships_written += 1
 
-            db.commit()
+            await db.commit()
         except Exception:
             logger.exception("fact/relationship extraction failed for session=%s, summary still committed", session.id)
 
