@@ -102,7 +102,8 @@ export default function App() {
         // Load memory separately — may be slow if it needs to backfill summaries.
         try {
           setStatusText("Updating memory scrolls…");
-          await refreshMemory(routeSessionId);
+          // Guarded by the `if (!routeSessionId) return` at the top of this effect.
+          await refreshMemory(routeSessionId!);
           setStatusText(`Chronicle resumed (${detail.gm_enabled ? "GM Mode" : "Standard"}). ${detail.turn_count} turns recorded.`);
         } catch {
           setStatusText("Chronicle loaded. Memory is still syncing…");
