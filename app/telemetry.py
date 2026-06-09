@@ -88,9 +88,9 @@ def record_span_error(span, exc: BaseException) -> None:
 
 def record_llm_tokens(system: str, model: str, input_tokens: int | None, output_tokens: int | None) -> None:
     attrs = {"gen_ai.system": system, "gen_ai.request.model": model}
-    if input_tokens:
+    if input_tokens is not None:
         llm_tokens.add(input_tokens, {**attrs, "gen_ai.token.direction": "input"})
-    if output_tokens:
+    if output_tokens is not None:
         llm_tokens.add(output_tokens, {**attrs, "gen_ai.token.direction": "output"})
 
 
