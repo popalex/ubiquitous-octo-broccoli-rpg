@@ -8,7 +8,15 @@ from collections.abc import AsyncIterator, Sequence
 import httpx
 
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
-from app.telemetry import llm_latency, llm_span, record_llm_tokens, record_span_error, set_completion, set_prompt, tracer
+from app.telemetry import (
+    llm_latency,
+    llm_span,
+    record_llm_tokens,
+    record_span_error,
+    set_completion,
+    set_prompt,
+    tracer,
+)
 
 logger = logging.getLogger(__name__)
 

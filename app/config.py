@@ -4,7 +4,6 @@ from typing import Literal, Self
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 ProviderName = Literal["ollama", "openai"]
 
 

@@ -3,15 +3,15 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
-from app.models import EpisodeSummary, MemoryFact, Session as ChatSession
+from app.models import EpisodeSummary, MemoryFact
+from app.models import Session as ChatSession
 from app.providers.base import BaseModelProvider
-
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +91,9 @@ class RetrievalService:
         )
 
     def _recency_score(self, created_at: datetime) -> float:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
+            created_at = created_at.replace(tzinfo=UTC)
         age_hours = max(0.0, (now - created_at).total_seconds() / 3600)
         return math.exp(-age_hours / max(1, self.settings.recency_half_life_hours))
 

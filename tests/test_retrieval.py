@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy.orm import Session
 
-from app.config import Settings
 from app.services.retrieval import RetrievalService
 from tests.conftest import MockProvider, make_test_settings
 from tests.factories import EpisodeSummaryFactory, MemoryFactFactory, SessionFactory
@@ -92,7 +90,7 @@ async def test_recency_scoring_decays_older_memories(
     db_session.flush()
 
     # Manually patch created_at on old_fact to be 200 hours ago
-    old_time = datetime.now(timezone.utc) - timedelta(hours=200)
+    old_time = datetime.now(UTC) - timedelta(hours=200)
     db_session.execute(
         __import__("sqlalchemy").text("UPDATE memory_facts SET created_at = :ts WHERE id = :id"),
         {"ts": old_time, "id": old_fact.id},

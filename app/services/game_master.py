@@ -15,7 +15,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
-from app.models import Session as ChatSession, Turn, WorldState
+from app.models import Session as ChatSession
+from app.models import Turn, WorldState
 from app.prompts import (
     GM_EVENT_CHECK_PROMPT,
     GM_EVENT_GENERATE_PROMPT,
@@ -88,7 +89,7 @@ class WorldStateUpdateResult:
 class GameMasterService:
     """
     Coordinates world-level narrative generation.
-    
+
     Responsibilities:
     - Scene narration and atmosphere
     - Event generation and triggering
@@ -121,7 +122,7 @@ class GameMasterService:
                 active_characters="None specified.",
                 scene_context=scene_context or "Scene not established.",
             )
-        
+
         return GM_SYSTEM_PROMPT.format(
             world_name=world_state.name,
             world_description=world_state.description,
@@ -140,13 +141,13 @@ class GameMasterService:
     ) -> str:
         """
         Generate atmospheric scene narration.
-        
+
         Args:
             world_state: Current world configuration
             recent_events: Summary of recent happenings
             player_action: The player's last action
             scene_context: Current scene description
-            
+
         Returns:
             Narrative text describing the scene
         """
@@ -199,7 +200,7 @@ class GameMasterService:
     ) -> EventCheckResult:
         """
         Determine if an event should trigger based on game state.
-        
+
         Uses both probabilistic checks and LLM analysis to decide
         whether the current moment warrants an event.
         """
@@ -275,14 +276,14 @@ class GameMasterService:
     ) -> GeneratedEvent:
         """
         Generate a full event narrative from a seed.
-        
+
         Args:
             world_state: Current world configuration
             event_seed: Brief concept for the event
             event_type: Category of event
             urgency: immediate/gradual/background
             player_actions: Recent player actions for context
-            
+
         Returns:
             Fully realized event with narrative
         """
@@ -325,13 +326,13 @@ class GameMasterService:
     ) -> SceneTransition:
         """
         Generate narrative for transitioning between scenes.
-        
+
         Args:
             world_state: Current world configuration
             previous_scene: Description of scene being left
             transition_type: Type of transition (travel, teleport, time_skip, etc.)
             destination: Where the player is going
-            
+
         Returns:
             Transition narration and metadata
         """
@@ -347,7 +348,7 @@ class GameMasterService:
                 temperature=self.settings.gm_temperature,
                 max_tokens=400,
             )
-        except ProviderError as exc:
+        except ProviderError:
             logger.exception("Scene transition generation failed")
             return SceneTransition(
                 narration=f"You arrive at {destination}.",
@@ -373,7 +374,7 @@ class GameMasterService:
     ) -> str:
         """
         Generate dialogue for a specific NPC.
-        
+
         This allows the GM to voice NPCs distinct from the main character.
         """
         system_prompt = self._build_gm_system_prompt(world_state)
@@ -403,7 +404,7 @@ class GameMasterService:
     ) -> WorldStateUpdateResult:
         """
         Analyze recent events and determine canonical world state changes.
-        
+
         This is used to update persistent world state based on what
         happened in the narrative.
         """
@@ -418,7 +419,7 @@ class GameMasterService:
                 temperature=0.1,  # Low temperature for deterministic updates
                 max_tokens=500,
             )
-        except ProviderError as exc:
+        except ProviderError:
             logger.exception("World state analysis failed")
             return WorldStateUpdateResult()
 

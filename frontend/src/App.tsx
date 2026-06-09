@@ -54,7 +54,7 @@ export default function App() {
   const [gmEnabled, setGmEnabled] = useState(localStorage.getItem(storageKeys.gmEnabled) === "true");
   const [currentLocation, setCurrentLocation] = useState("");
   const [timeOfDay, setTimeOfDay] = useState("morning");
-  const [lastEvent, setLastEvent] = useState<GMEvent | null>(null);
+  const [, setLastEvent] = useState<GMEvent | null>(null);
 
   useEffect(() => {
     loadAllTemplates().then(setAllTemplates);

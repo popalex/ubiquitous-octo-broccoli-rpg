@@ -20,7 +20,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
-from app.models import Session as ChatSession, WorldStateLedger
+from app.models import Session as ChatSession
+from app.models import WorldStateLedger
 from app.prompts import WORLD_STATE_EXTRACT_PROMPT
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
 from app.telemetry import canon_extract_failures, canon_size, record_span_error, set_completion, tracer

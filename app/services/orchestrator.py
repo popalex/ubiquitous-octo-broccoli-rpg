@@ -11,18 +11,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import Settings, get_settings
-from app.models import CharacterCard, Session as ChatSession, Turn, WorldState
+from app.models import CharacterCard, Turn, WorldState
+from app.models import Session as ChatSession
 from app.prompts import ACTOR_SYSTEM_PROMPT
 from app.providers.base import ProviderError, ProviderMessage, build_provider
 from app.schemas import ChatResponse, GMChatResponse, GMEventGenerateResponse, RetrievedMemoryItem
-from app.services.continuity import ContinuityService
+from app.services.continuity import ContinuityResult, ContinuityService
 from app.services.game_master import GameMasterService
 from app.services.memory import MemoryService
-from app.services.continuity import ContinuityResult
 from app.services.retrieval import RetrievalService
 from app.services.world_state import WorldStateService
 from app.telemetry import chat_turns, retrieval_selected, tracer
-
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +79,7 @@ class OrchestratorService:
                 user_message=user_message,
                 draft_reply=draft_reply,
             )
-        except ProviderError as exc:
+        except ProviderError:
             logger.exception("continuity check skipped for session=%s", session.id)
             continuity = ContinuityResult(final_reply=draft_reply, applied=False, issues=[])
 
@@ -112,7 +111,7 @@ class OrchestratorService:
 
         try:
             await self.memory.maybe_refresh(db, session)
-        except ProviderError as exc:
+        except ProviderError:
             logger.exception("memory refresh skipped for session=%s", session.id)
         await self._extract_world_state(
             db, session, user_message=user_message, gm_response=continuity.final_reply, turn_id=assistant_turn.id,
@@ -148,7 +147,7 @@ class OrchestratorService:
     ) -> GMChatResponse:
         """
         GM-driven chat that wraps character interaction with world narration.
-        
+
         Flow:
         1. Check for events
         2. Generate pre-narration (scene setting based on player action)
@@ -189,7 +188,7 @@ class OrchestratorService:
                 player_action=user_message,
                 scene_context=location or "",
             )
-        except ProviderError as exc:
+        except ProviderError:
             logger.exception("Pre-narration failed for session=%s", session.id)
 
         # Get character response via normal flow
@@ -225,7 +224,7 @@ class OrchestratorService:
                 user_message=user_message,
                 draft_reply=draft_reply,
             )
-        except ProviderError as exc:
+        except ProviderError:
             logger.exception("continuity check skipped for session=%s", session.id)
             continuity = ContinuityResult(final_reply=draft_reply, applied=False, issues=[])
 
@@ -249,13 +248,13 @@ class OrchestratorService:
                 )
                 # Use event description as post-narration
                 post_narration = generated_event.description
-            except ProviderError as exc:
+            except ProviderError:
                 logger.exception("Event generation failed for session=%s", session.id)
 
         # Persist turns (include pre-narration as GM turn for memory extraction)
         turns_to_add: list[Turn] = []
         current_index = session.turn_count
-        
+
         # Store pre-narration as a separate GM turn if present
         if pre_narration:
             current_index += 1
@@ -269,7 +268,7 @@ class OrchestratorService:
                     turn_type="gm_narration",
                 )
             )
-        
+
         # User turn
         current_index += 1
         turns_to_add.append(
@@ -281,7 +280,7 @@ class OrchestratorService:
                 token_estimate=self._estimate_tokens(user_message),
             )
         )
-        
+
         # Build full assistant content including post-narration
         full_assistant_content = continuity.final_reply
         if post_narration:
@@ -299,7 +298,7 @@ class OrchestratorService:
                 continuity_notes="\n".join(continuity.issues) if continuity.issues else None,
             )
         )
-        
+
         db.add_all(turns_to_add)
         session.turn_count = current_index
         db.commit()
@@ -308,7 +307,7 @@ class OrchestratorService:
         # Memory refresh
         try:
             await self.memory.maybe_refresh(db, session)
-        except ProviderError as exc:
+        except ProviderError:
             logger.exception("memory refresh skipped for session=%s", session.id)
         await self._extract_world_state(
             db, session, user_message=user_message, gm_response=full_assistant_content,
@@ -354,13 +353,13 @@ class OrchestratorService:
     ) -> AsyncIterator[str]:
         """
         Streaming GM-driven chat with narration and character response.
-        
+
         Streams each phase as it generates for responsive UI.
         Skips continuity check for speed.
         """
         total_start = time.perf_counter()
         logger.info("gm_chat_stream START session=%s user_message=%s", session_id, user_message[:50])
-        
+
         session = db.scalar(
             select(ChatSession)
             .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
@@ -483,13 +482,13 @@ class OrchestratorService:
                 post_narration = generated_event.description
                 yield f"data: {json.dumps({'type': 'event', 'event': event_response})}\n\n"
                 logger.info("gm_chat_stream session=%s event_generation DONE duration=%.2fs", session_id, time.perf_counter() - event_gen_start)
-            except ProviderError as exc:
+            except ProviderError:
                 logger.exception("Event generation failed for session=%s", session.id)
 
         # Persist turns (include pre-narration as GM turn for memory extraction)
         turns_to_add: list[Turn] = []
         current_index = session.turn_count
-        
+
         # Store pre-narration as a separate GM turn if present
         if pre_narration:
             current_index += 1
@@ -503,7 +502,7 @@ class OrchestratorService:
                     turn_type="gm_narration",
                 )
             )
-        
+
         # User turn
         current_index += 1
         turns_to_add.append(
@@ -515,7 +514,7 @@ class OrchestratorService:
                 token_estimate=self._estimate_tokens(user_message),
             )
         )
-        
+
         # Build full assistant content including post-narration
         full_assistant_content = character_reply
         if post_narration:
@@ -532,7 +531,7 @@ class OrchestratorService:
                 token_estimate=self._estimate_tokens(full_assistant_content),
             )
         )
-        
+
         db.add_all(turns_to_add)
         session.turn_count = current_index
         db.commit()
@@ -543,7 +542,7 @@ class OrchestratorService:
         try:
             with tracer.start_as_current_span("orchestrator.memory_refresh"):
                 await self.memory.maybe_refresh(db, session)
-        except ProviderError as exc:
+        except ProviderError:
             logger.exception("memory refresh skipped for session=%s", session.id)
         await self._extract_world_state(
             db, session, user_message=user_message, gm_response=full_assistant_content,
@@ -552,7 +551,7 @@ class OrchestratorService:
 
         chat_turns.add(1, {"gm_enabled": True})
         total_duration = time.perf_counter() - total_start
-        logger.info("gm_chat_stream session=%s COMPLETE turn_count=%s total_duration=%.2fs pre_narration_chars=%d character_chars=%d", 
+        logger.info("gm_chat_stream session=%s COMPLETE turn_count=%s total_duration=%.2fs pre_narration_chars=%d character_chars=%d",
                     session.id, session.turn_count, total_duration, len(pre_narration or ""), len(character_reply))
 
         yield f"data: {json.dumps({'type': 'done', 'session_id': session.id})}\n\n"
@@ -641,7 +640,7 @@ class OrchestratorService:
         try:
             with tracer.start_as_current_span("orchestrator.memory_refresh"):
                 await self.memory.maybe_refresh(db, session)
-        except ProviderError as exc:
+        except ProviderError:
             logger.exception("memory refresh skipped for session=%s", session.id)
         await self._extract_world_state(
             db, session, user_message=user_message, gm_response=full_reply, turn_id=assistant_turn.id,

@@ -7,8 +7,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
 
+from app.config import get_settings
 from app.db import get_db
-from app.models import CharacterCard, EpisodeSummary, MemoryFact, RelationshipState, Session as ChatSession, Turn, WorldState
+from app.models import CharacterCard, EpisodeSummary, MemoryFact, RelationshipState, Turn, WorldState, WorldStateLedger
+from app.models import Session as ChatSession
+from app.providers.base import ProviderError
 from app.schemas import (
     CharacterLoadRequest,
     CharacterLoadResponse,
@@ -39,12 +42,8 @@ from app.schemas import (
     TurnResponse,
     WorldStateResponse,
 )
-from app.models import WorldStateLedger
-from app.providers.base import ProviderError
 from app.services.orchestrator import get_orchestrator
-from app.config import get_settings
 from app.telemetry import setup_telemetry
-
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -369,7 +368,7 @@ async def gm_chat(
 ) -> GMChatResponse:
     """
     GM-driven chat with narration and event generation.
-    
+
     Wraps the character interaction with world narration and potentially
     triggered events for a richer gameplay experience.
     """
@@ -394,7 +393,7 @@ async def gm_chat_stream(
 ) -> StreamingResponse:
     """
     Streaming GM-driven chat with narration and event generation.
-    
+
     Streams pre-narration, character reply, and events as they generate.
     """
     orchestrator = get_orchestrator()

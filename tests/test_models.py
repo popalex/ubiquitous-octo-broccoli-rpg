@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -12,7 +12,6 @@ from app.models import (
     EpisodeSummary,
     MemoryFact,
     RelationshipState,
-    Session as ChatSession,
     Turn,
     WorldState,
 )
@@ -198,6 +197,6 @@ def test_timestamp_mixin_auto_sets_created_at_and_updated_at(db_session: Session
     assert isinstance(loaded.created_at, datetime)
     assert isinstance(loaded.updated_at, datetime)
     # Both should be recent (within the last minute)
-    now = datetime.now(timezone.utc)
-    age_seconds = abs((now - loaded.created_at.replace(tzinfo=timezone.utc)).total_seconds())
+    now = datetime.now(UTC)
+    age_seconds = abs((now - loaded.created_at.replace(tzinfo=UTC)).total_seconds())
     assert age_seconds < 60

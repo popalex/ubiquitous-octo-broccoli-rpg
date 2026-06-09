@@ -254,7 +254,7 @@ class NPCDialogueResponse(BaseModel):
 class GMChatRequest(BaseModel):
     """
     Enhanced chat request that supports GM-driven gameplay.
-    
+
     When gm_mode is True, the GM generates narration and potentially
     events before/after the character response.
     """
@@ -269,7 +269,7 @@ class GMChatRequest(BaseModel):
 class GMChatResponse(BaseModel):
     """
     Enhanced chat response with GM elements.
-    
+
     Includes pre-narration (scene setting), character reply,
     post-narration (consequences), and any triggered events.
     """

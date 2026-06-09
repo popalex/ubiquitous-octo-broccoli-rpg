@@ -8,10 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
-from app.models import EpisodeSummary, MemoryFact, RelationshipState, Session as ChatSession, Turn
+from app.models import EpisodeSummary, MemoryFact, RelationshipState, Turn
+from app.models import Session as ChatSession
 from app.prompts import EPISODE_SUMMARY_PROMPT, MEMORY_EXTRACT_PROMPT
 from app.providers.base import BaseModelProvider, ProviderMessage
-
 
 logger = logging.getLogger(__name__)
 
