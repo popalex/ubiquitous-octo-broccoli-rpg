@@ -276,33 +276,33 @@ h3 {
   font-size: 0.6rem;
 }
 
-.back-to-vault {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-bottom: var(--space-sm);
-  background: transparent;
-  border: none;
-  padding: 0;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color 0.2s ease;
-}
-
-.back-to-vault:hover {
-  color: var(--gold);
-}
-
 .lede {
   max-width: 50rem;
   margin-top: 0.75rem;
   color: var(--text-muted);
   font-size: 1.1rem;
   font-style: italic;
+}
+
+/* Makes the masthead title (✦ Live Chronicle / Character Codex) a link home,
+   inheriting the h1 look while staying a real, keyboard-focusable button. */
+.title-home {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.2s ease, text-shadow 0.2s ease;
+}
+
+.title-home:hover,
+.title-home:focus-visible {
+  color: var(--gold);
+  text-shadow: 0 0 18px rgba(201, 162, 39, 0.35);
+  outline: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
