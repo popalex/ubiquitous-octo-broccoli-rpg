@@ -60,6 +60,12 @@ chat_turns = _meter.create_counter(
 retrieval_selected = _meter.create_histogram(
     "rpg.retrieval.selected", description="Memories selected per retrieval"
 )
+canon_size = _meter.create_histogram(
+    "rpg.canon.size", description="World-state ledger size (entities+threads+facts) per turn"
+)
+canon_extract_failures = _meter.create_counter(
+    "rpg.canon.extract_failures", description="World-state extraction failures (parse/provider)"
+)
 
 
 def messages_to_json(messages: Sequence) -> str:

@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     event_check_interval: int = 3  # Check for events every N turns
     event_probability: float = 0.4  # Base probability of event occurrence
 
+    # World-state ledger: an authoritative, structured record of canon
+    # (entities, inventory, threads, location, facts) injected as hard
+    # constraints and updated every turn. Ships dark behind this flag.
+    world_state_enabled: bool = False
+    world_state_max_entities: int = 30
+    world_state_max_threads: int = 20
+    world_state_max_facts: int = 40
+    world_state_extract_max_tokens: int = 800
+
     @property
     def actor_context_budget(self) -> int:
         return max(512, self.actor_max_input_tokens - self.actor_reserved_output_tokens)

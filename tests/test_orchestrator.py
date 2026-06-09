@@ -344,3 +344,67 @@ async def test_token_budget_respected(
     # Should not raise — the budget capping should keep it from blowing up
     result = await svc.chat(db_session, session.id, "What do I know?")
     assert isinstance(result, ChatResponse)
+
+
+# ---------------------------------------------------------------------------
+# World-state ledger integration (flag on/off)
+# ---------------------------------------------------------------------------
+
+
+def _world_state_orchestrator(mock_provider: MockProvider) -> OrchestratorService:
+    settings = make_test_settings(memory_summary_interval=100, world_state_enabled=True)
+    with patch("app.services.orchestrator.build_provider", return_value=mock_provider):
+        return OrchestratorService(settings)
+
+
+@pytest.mark.asyncio
+async def test_chat_writes_ledger_when_flag_on(
+    mock_provider: MockProvider, db_session: Session
+) -> None:
+    from app.models import WorldStateLedger
+
+    orchestrator = _world_state_orchestrator(mock_provider)
+    # Same payload serves continuity (passes through) and extraction (a death).
+    mock_provider.set_json_response({"entities_upsert": [{"id": "kael", "name": "Kael", "status": "dead"}]})
+    session = SessionFactory(turn_count=0)
+    db_session.flush()
+
+    await orchestrator.chat(db_session, session.id, "I slay Kael.")
+
+    rows = db_session.scalars(
+        select(WorldStateLedger).where(WorldStateLedger.session_id == session.id)
+    ).all()
+    assert len(rows) == 1
+    assert rows[0].version == 1
+    assert rows[0].state["entities"][0]["status"] == "dead"
+
+
+@pytest.mark.asyncio
+async def test_chat_no_ledger_when_flag_off(
+    orchestrator: OrchestratorService, db_session: Session
+) -> None:
+    from app.models import WorldStateLedger
+
+    session = SessionFactory(turn_count=0)
+    db_session.flush()
+    await orchestrator.chat(db_session, session.id, "I slay Kael.")
+
+    rows = db_session.scalars(
+        select(WorldStateLedger).where(WorldStateLedger.session_id == session.id)
+    ).all()
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_established_death_is_injected_next_turn(
+    mock_provider: MockProvider, db_session: Session
+) -> None:
+    orchestrator = _world_state_orchestrator(mock_provider)
+    mock_provider.set_json_response({"entities_upsert": [{"id": "kael", "name": "Kael", "status": "dead"}]})
+    session = SessionFactory(turn_count=0)
+    db_session.flush()
+    await orchestrator.chat(db_session, session.id, "I slay Kael.")
+    db_session.refresh(session)
+
+    block = orchestrator._world_state_block(db_session, session)
+    assert "Dead (must stay dead): Kael" in block

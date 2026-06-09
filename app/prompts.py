@@ -75,6 +75,46 @@ Return strict JSON with this shape:
 """.strip()
 
 
+WORLD_STATE_EXTRACT_PROMPT = """
+You maintain the canonical world-state ledger for a roleplay engine.
+
+You are given the CURRENT LEDGER (structured JSON of what is true) and the
+latest exchange (player message + game response). Return a strict JSON DELTA
+describing only what CHANGED this exchange. Do not restate unchanged state.
+
+Be conservative: only record changes the text clearly supports. Never invent
+facts. Mark deaths, departures, and resolutions explicitly. The player's
+actions can change the world; do not undo established canon (e.g. someone
+already dead stays dead) unless the text explicitly resurrects them.
+
+Use stable lowercase-kebab ids for entities and threads (e.g. "kael",
+"find-the-heir"); reuse the existing id when updating an existing item.
+
+Return strict JSON with this exact shape (omit empty arrays/fields):
+{
+  "location": {"name": "string", "description": "string"},
+  "entities_upsert": [
+    {"id": "kael", "name": "Kael", "kind": "npc|player|item|faction",
+     "status": "alive|dead|...", "facts": ["new fact about them"],
+     "relationship_to_player": "ally|hostile|neutral|..."}
+  ],
+  "entities_remove": ["entity-id-no-longer-relevant"],
+  "inventory_changes": [
+    {"item": "gold", "qty_delta": -12},
+    {"item": "rusted key", "set_qty": 1},
+    {"item": "torch", "remove": true}
+  ],
+  "threads_upsert": [
+    {"id": "find-the-heir", "summary": "string", "status": "open|resolved"}
+  ],
+  "facts_add": ["The bridge to Eastreach is destroyed."],
+  "facts_remove": ["fact that is no longer true"]
+}
+
+If nothing changed, return {}.
+""".strip()
+
+
 # =============================================================================
 # GAME MASTER PROMPTS
 # =============================================================================

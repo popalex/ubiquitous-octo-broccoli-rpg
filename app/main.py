@@ -37,7 +37,9 @@ from app.schemas import (
     SessionListResponse,
     SessionMemoryResponse,
     TurnResponse,
+    WorldStateResponse,
 )
+from app.models import WorldStateLedger
 from app.providers.base import ProviderError
 from app.services.orchestrator import get_orchestrator
 from app.config import get_settings
@@ -53,10 +55,11 @@ setup_telemetry(app)
 # Log startup configuration
 _settings = get_settings()
 if _settings.dev_mode:
-    logger.info("+ DEV MODE ENABLED - model: %s, timeout: %.0fs", _settings.dev_model_name, _settings.request_timeout_seconds)
+    logger.info("+ DEV MODE ENABLED - model: %s, timeout: %.0fs, world_state: %s", _settings.dev_model_name, _settings.request_timeout_seconds, "on" if _settings.world_state_enabled else "off")
 else:
-    logger.info("+ Production mode - Actor: %s, Memory: %s, GM: %s",
-                _settings.actor_model_name, _settings.memory_model_name, _settings.gm_model_name)
+    logger.info("+ Production mode - Actor: %s, Memory: %s, GM: %s, world_state: %s",
+                _settings.actor_model_name, _settings.memory_model_name, _settings.gm_model_name,
+                "on" if _settings.world_state_enabled else "off")
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -317,6 +320,40 @@ async def get_session_memory(session_id: str, db: Session = Depends(get_db)) -> 
         facts=[MemoryFactResponse.model_validate(f) for f in facts],
         episode_summaries=[EpisodeSummaryResponse.model_validate(s) for s in summaries],
         relationships=[RelationshipStateResponse.model_validate(r) for r in relationships],
+    )
+
+
+@app.get("/session/{session_id}/world-state", response_model=WorldStateResponse)
+async def get_world_state(
+    session_id: str,
+    version: int | None = None,
+    db: Session = Depends(get_db),
+) -> WorldStateResponse:
+    """Return the current world-state ledger for a session (or a specific
+    historical ``?version=``). Empty ledger (version 0) if none recorded yet."""
+    from sqlalchemy import select
+
+    session = db.query(ChatSession).filter(ChatSession.id == session_id).one_or_none()
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    query = select(WorldStateLedger).where(WorldStateLedger.session_id == session_id)
+    if version is not None:
+        query = query.where(WorldStateLedger.version == version)
+    else:
+        query = query.order_by(WorldStateLedger.version.desc())
+    row = db.scalar(query.limit(1))
+
+    if row is None:
+        if version is not None:
+            raise HTTPException(status_code=404, detail="World-state version not found.")
+        return WorldStateResponse(session_id=session_id, version=0, state={}, created_at=None)
+
+    return WorldStateResponse(
+        session_id=session_id,
+        version=row.version,
+        state=row.state,
+        created_at=row.created_at,
     )
 
 

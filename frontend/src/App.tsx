@@ -8,6 +8,7 @@ import { sendChat } from "./chat";
 import { withUiSpan } from "./telemetry";
 import { CharacterPanel } from "./components/CharacterPanel";
 import { ChatPanel } from "./components/ChatPanel";
+import { CodexPanel } from "./components/CodexPanel";
 import { MemoryPanel } from "./components/MemoryPanel";
 import type {
   CharacterLoadPayload,
@@ -18,6 +19,7 @@ import type {
   SessionDetail,
   SessionMemory,
   TurnRecord,
+  WorldStateLedger,
 } from "./types";
 
 export default function App() {
@@ -41,6 +43,7 @@ export default function App() {
   const [retrievedMemories, setRetrievedMemories] = useState<RetrievedMemory[]>([]);
   const [continuityIssues, setContinuityIssues] = useState<string[]>([]);
   const [memory, setMemory] = useState<SessionMemory | null>(null);
+  const [worldState, setWorldState] = useState<WorldStateLedger | null>(null);
   const [ids, setIds] = useState({
     characterCardId: localStorage.getItem(storageKeys.characterCardId) || "",
     worldStateId: localStorage.getItem(storageKeys.worldStateId) || "",
@@ -99,8 +102,7 @@ export default function App() {
         // Load memory separately — may be slow if it needs to backfill summaries.
         try {
           setStatusText("Updating memory scrolls…");
-          const mem = await api<SessionMemory>(`/session/${routeSessionId}/memory`);
-          setMemory(mem);
+          await refreshMemory(routeSessionId);
           setStatusText(`Chronicle resumed (${detail.gm_enabled ? "GM Mode" : "Standard"}). ${detail.turn_count} turns recorded.`);
         } catch {
           setStatusText("Chronicle loaded. Memory is still syncing…");
@@ -151,6 +153,14 @@ export default function App() {
   async function refreshMemory(sessionId: string) {
     const nextMemory = await api<SessionMemory>(`/session/${sessionId}/memory`);
     setMemory(nextMemory);
+    // World-state ledger refresh — best-effort; ships dark behind a flag and
+    // returns an empty version 0 when disabled, so failures shouldn't disrupt.
+    try {
+      const ledger = await api<WorldStateLedger>(`/session/${sessionId}/world-state`);
+      setWorldState(ledger);
+    } catch {
+      // ignore — the Codex panel simply shows its empty state
+    }
   }
 
   async function handleLoadCharacter(event: FormEvent) {
@@ -220,6 +230,7 @@ export default function App() {
       setRetrievedMemories([]);
       setContinuityIssues([]);
       setLastEvent(null);
+      setWorldState(null);
       await refreshMemory(payload.session_id);
       const modeLabel = gmEnabled ? "GM Mode" : "Standard";
       setStatusText(`Session ready (${modeLabel}). Turn count: ${payload.turn_count}.`);
@@ -354,11 +365,14 @@ export default function App() {
               statusText={statusText}
               onSendChat={handleSendChat}
             />
-            <MemoryPanel
-              retrievedMemories={retrievedMemories}
-              continuityIssues={continuityIssues}
-              memory={memory}
-            />
+            <div className="panel-stack">
+              <CodexPanel worldState={worldState} />
+              <MemoryPanel
+                retrievedMemories={retrievedMemories}
+                continuityIssues={continuityIssues}
+                memory={memory}
+              />
+            </div>
           </main>
         </>
       )}
