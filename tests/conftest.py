@@ -14,7 +14,7 @@ from app.config import Settings
 from app.db import Base
 from app.providers.base import BaseModelProvider, ProviderMessage
 
-PGVECTOR_IMAGE = "pgvector/pgvector:pg16"
+PGVECTOR_IMAGE = "pgvector/pgvector:pg18"
 EMBEDDING_DIM = 768
 
 
