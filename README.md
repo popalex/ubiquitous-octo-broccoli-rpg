@@ -1,6 +1,17 @@
-# Small RPG GPT MVP
+# Small RPG GPT
 
-Hybrid roleplay chat backend built with FastAPI, PostgreSQL, pgvector, Alembic, and Docker Compose. It routes actor generation, memory extraction, summarization, embeddings, and continuity checks through configurable small-model providers only.
+A self-hosted, local-first roleplay engine. You chat with an in-character actor while a Game Master narrates scenes and triggers events around you — backed by long-term vector memory so the world remembers what happened. Everything runs on small local LLMs through Ollama (OpenAI optional); nothing leaves your machine by default.
+
+It's a full stack you can `docker compose up` and play: a React/Vite frontend, a FastAPI backend, and Postgres + pgvector for memory.
+
+What makes it more than a chat wrapper:
+
+- **Multiple cooperating models** — separate slots for the actor, the Game Master, memory/summarization, and embeddings, each independently configurable.
+- **Long-term memory** — turns and extracted facts are vector-embedded; retrieval ranks them by `0.6·semantic + 0.25·recency + 0.15·importance`, and episodes are summarized as the chronicle grows.
+- **Continuity checking** — a second model validates each reply against the world's canon and hard rules before it reaches you.
+- **Full observability** — the whole stack is OpenTelemetry-instrumented; one trace follows a click from the browser down to the LLM call, viewable in a bundled Grafana.
+
+Built with FastAPI, PostgreSQL, pgvector, Alembic, React/Vite, and Docker Compose.
 
 Default mode is Ollama-first and Docker Compose runs Ollama inside the stack:
 
