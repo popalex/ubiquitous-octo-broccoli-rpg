@@ -77,31 +77,40 @@ class OpenAIProvider(BaseModelProvider):
         set_prompt(span, messages)
         parts: list[str] = []
         usage = None
-        try:
-            stream = await self.client.chat.completions.create(
-                model=self.model_name,
-                messages=self._to_openai_messages(messages),
-                temperature=temperature,
-                max_completion_tokens=max_tokens,
-                stream=True,
-                stream_options={"include_usage": True},
-            )
-            async for chunk in stream:
-                if chunk.usage:
-                    usage = chunk.usage
-                if chunk.choices and chunk.choices[0].delta.content:
-                    parts.append(chunk.choices[0].delta.content)
-                    yield chunk.choices[0].delta.content
-            set_completion(span, "".join(parts))
-            if usage:
-                span.set_attribute("gen_ai.usage.input_tokens", usage.prompt_tokens)
-                span.set_attribute("gen_ai.usage.output_tokens", usage.completion_tokens)
-                record_llm_tokens("openai", self.model_name, usage.prompt_tokens, usage.completion_tokens)
-        except Exception as exc:
-            record_span_error(span, exc)
-            raise
-        finally:
-            span.end()
+from time import perf_counter
+
+from app.telemetry import llm_latency
+
+start = perf_counter()
+try:
+    stream = await self.client.chat.completions.create(
+        model=self.model_name,
+        messages=self._to_openai_messages(messages),
+        temperature=temperature,
+        max_completion_tokens=max_tokens,
+        stream=True,
+        stream_options={"include_usage": True},
+    )
+    async for chunk in stream:
+        if chunk.usage:
+            usage = chunk.usage
+        if chunk.choices and chunk.choices[0].delta.content:
+            parts.append(chunk.choices[0].delta.content)
+            yield chunk.choices[0].delta.content
+    set_completion(span, "".join(parts))
+    if usage:
+        span.set_attribute("gen_ai.usage.input_tokens", usage.prompt_tokens)
+        span.set_attribute("gen_ai.usage.output_tokens", usage.completion_tokens)
+        record_llm_tokens("openai", self.model_name, usage.prompt_tokens, usage.completion_tokens)
+except Exception as exc:
+    record_span_error(span, exc)
+    raise
+finally:
+    llm_latency.record(
+        (perf_counter() - start) * 1000.0,
+        {"gen_ai.system": "openai", "gen_ai.request.model": self.model_name},
+    )
+    span.end()
 
     async def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
         with llm_span("llm.embed_texts", "openai", self.model_name) as span:
