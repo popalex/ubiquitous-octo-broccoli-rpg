@@ -261,18 +261,25 @@ export default function App() {
       <div className="ambient ambient-right" />
       <header className="masthead">
         <div>
-          <button className="back-to-vault" onClick={() => navigate("/")}>← Vault</button>
           <p className="eyebrow">Arcane Chronicle</p>
           {phase === "codex" ? (
             <>
-              <h1>✦ Character Codex</h1>
+              <h1>
+                <button type="button" className="title-home" onClick={() => navigate("/")} title="Return to the Vault">
+                  ✦ Character Codex
+                </button>
+              </h1>
               <p className="lede">
                 Craft your character, choose your world, and prepare for the adventure ahead.
               </p>
             </>
           ) : (
             <>
-              <h1>✦ Live Chronicle</h1>
+              <h1>
+                <button type="button" className="title-home" onClick={() => navigate("/")} title="Return to the Vault">
+                  ✦ Live Chronicle
+                </button>
+              </h1>
               <p className="lede">
                 Your story unfolds — speak and the world responds.
               </p>
