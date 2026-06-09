@@ -35,14 +35,19 @@ export function CodexPanel({ worldState }: Props) {
         <p className="muted">Canon accretes as the story unfolds...</p>
       ) : (
         <div className="stack">
-          {location?.name && (
+          {hasLocation && (
             <div className="subpanel">
               <h3>✦ Location</h3>
               <div className="memory-card">
                 <p>
-                  <strong>{location.name}</strong>
-                  {location.description ? ` — ${location.description}` : ""}
+                  {location?.name ? <strong>{location.name}</strong> : null}
+                  {location?.description
+                    ? `${location?.name ? " — " : ""}${location.description}`
+                    : ""}
                 </p>
+              </div>
+            </div>
+          )}
               </div>
             </div>
           )}
