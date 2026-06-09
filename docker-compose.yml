@@ -164,12 +164,21 @@ services:
   otel-lgtm:
     image: grafana/otel-lgtm:latest
     container_name: small-rpg-otel
+    environment:
+      # Surface the bundled components' logs in `docker logs small-rpg-otel`
+      # (off by default in the image). Useful for debugging log ingestion.
+      ENABLE_LOGS_LOKI: ${ENABLE_LOGS_LOKI:-true}
+      ENABLE_LOGS_OTELCOL: ${ENABLE_LOGS_OTELCOL:-true}
     ports:
       - "3000:3000"   # Grafana UI
       - "4317:4317"   # OTLP gRPC (backend)
       - "4318:4318"   # OTLP HTTP (browser, proxied via frontend /otel)
     volumes:
       - otel_lgtm_data:/data
+      # Auto-provision the RPG dashboards (metrics, logs, traces) on startup.
+      # Datasources (Tempo/Loki/Prometheus) are already provisioned by the image.
+      - ./observability/grafana/provisioning/dashboards/rpg.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/rpg.yaml:ro
+      - ./observability/grafana/dashboards:/otel-lgtm/grafana/dashboards/rpg:ro
 
 volumes:
   postgres_data:

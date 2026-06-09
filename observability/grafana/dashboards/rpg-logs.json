@@ -1,0 +1,40 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "schemaVersion": 39,
+  "tags": ["rpg", "logs", "otel"],
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "title": "RPG · Logs",
+  "uid": "rpg-logs",
+  "version": 1,
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "title": "Log volume by level",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" } }, "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "datasource": { "type": "loki", "uid": "loki" }, "editorMode": "code", "expr": "sum by (detected_level) (count_over_time({service_name=\"rpg-backend\"} [$__interval]))", "legendFormat": "{{detected_level}}", "queryType": "range", "refId": "A" }
+      ]
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "title": "Backend logs  (open a line → Tempo trace via trace_id)",
+      "type": "logs",
+      "gridPos": { "h": 17, "w": 24, "x": 0, "y": 7 },
+      "id": 2,
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [
+        { "datasource": { "type": "loki", "uid": "loki" }, "editorMode": "code", "expr": "{service_name=\"rpg-backend\"}", "queryType": "range", "refId": "A" }
+      ]
+    }
+  ]
+}

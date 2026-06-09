@@ -11,6 +11,8 @@ services:
       target: dev
     environment:
       VITE_API_PROXY_TARGET: http://api:8000
+      # Vite proxies the browser's /otel telemetry to the collector (container DNS name).
+      VITE_OTEL_PROXY_TARGET: http://otel-lgtm:4318
     volumes:
       - ./frontend:/app
       - /app/node_modules

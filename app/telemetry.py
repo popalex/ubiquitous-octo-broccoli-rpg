@@ -43,17 +43,20 @@ CAPTURE_CONTENT = _env_bool("OTEL_CAPTURE_CONTENT", True)
 tracer = trace.get_tracer("rpg-backend")
 _meter = metrics.get_meter("rpg-backend")
 
+# Units intentionally omitted so the Prometheus series names stay predictable
+# (no unit suffix): rpg_llm_tokens_total, rpg_llm_latency_bucket, etc. Display
+# units are set on the Grafana panels instead. Latency is recorded in ms.
 llm_tokens = _meter.create_counter(
-    "rpg.llm.tokens", unit="token", description="LLM tokens consumed, by direction"
+    "rpg.llm.tokens", description="LLM tokens consumed, by direction"
 )
 llm_latency = _meter.create_histogram(
-    "rpg.llm.latency", unit="ms", description="LLM call wall-clock latency"
+    "rpg.llm.latency", description="LLM call wall-clock latency (ms)"
 )
 chat_turns = _meter.create_counter(
-    "rpg.chat.turns", unit="turn", description="Completed chat turns"
+    "rpg.chat.turns", description="Completed chat turns"
 )
 retrieval_selected = _meter.create_histogram(
-    "rpg.retrieval.selected", unit="item", description="Memories selected per retrieval"
+    "rpg.retrieval.selected", description="Memories selected per retrieval"
 )
 
 
@@ -164,11 +167,23 @@ def setup_telemetry(app) -> None:
         logger_provider = LoggerProvider(resource=resource)
         logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter()))
         set_logger_provider(logger_provider)
-        logging.getLogger().addHandler(LoggingHandler(level=logging.INFO, logger_provider=logger_provider))
+        otlp_log_handler = LoggingHandler(level=logging.INFO, logger_provider=logger_provider)
+        logging.getLogger().addHandler(otlp_log_handler)
+        # uvicorn configures its own loggers with propagate=False, so their request
+        # logs never reach the root handler. Attach the OTLP handler directly so the
+        # high-volume access/error logs also land in Loki.
+        for _name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+            logging.getLogger(_name).addHandler(otlp_log_handler)
         LoggingInstrumentor().instrument(set_logging_format=True)
 
-        # Auto-instrumentation
-        FastAPIInstrumentor.instrument_app(app)
+        # Auto-instrumentation. Exclude the Docker healthcheck endpoint so the
+        # frequent /health polls don't flood traces and HTTP metrics.
+        # exclude_spans drops the per-ASGI-event "http send"/"http receive"
+        # spans — otherwise SSE streaming (/chat/stream) emits one span per
+        # chunk, producing hundreds of spans that bury the meaningful ones.
+        FastAPIInstrumentor.instrument_app(
+            app, excluded_urls="health", exclude_spans=["receive", "send"]
+        )
         SQLAlchemyInstrumentor().instrument(engine=engine)
         HTTPXClientInstrumentor().instrument()
 

@@ -1,0 +1,15 @@
+# Provisions the RPG dashboards into Grafana on startup. Mounted into the
+# otel-lgtm container's Grafana provisioning dir via docker-compose.
+apiVersion: 1
+
+providers:
+  - name: rpg
+    orgId: 1
+    folder: RPG
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    updateIntervalSeconds: 30
+    options:
+      path: /otel-lgtm/grafana/dashboards/rpg
+      foldersFromFilesStructure: false

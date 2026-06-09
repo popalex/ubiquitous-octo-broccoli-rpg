@@ -252,7 +252,18 @@ http://localhost:3000
 ```
 
 - **Login:** `admin` / `admin`
-- **Datasources:** Tempo (traces), Loki (logs), Prometheus (metrics) — pre-wired.
+- **Datasources:** Tempo (traces), Loki (logs), Prometheus (metrics) — pre-wired by the image.
+- **Dashboards:** an **RPG** folder is auto-provisioned on startup with three
+  ready-made dashboards (no setup needed):
+  - **RPG · Metrics (LLM & HTTP)** — LLM tokens/sec & latency p95 by model,
+    chat turns by mode, HTTP request p95 by route, avg memories retrieved.
+  - **RPG · Logs** — backend log volume by level + a live log stream (click a
+    line to jump to its trace via `trace_id`).
+  - **RPG · Traces (OTel)** — recent traces, frontend `ui.*` user-action
+    traces, and slow LLM spans; click any row for the full waterfall.
+
+  These live in `observability/grafana/` and are mounted into the collector via
+  docker-compose, so they survive restarts and are editable in the UI.
 
 ### How correlation works
 

@@ -34,6 +34,8 @@ export function setupTelemetry(): void {
       new FetchInstrumentation({
         // Add the traceparent header to our backend calls so the trace continues server-side.
         propagateTraceHeaderCorsUrls: [/\/api\//],
+        // Don't trace the Docker healthcheck poll or our own OTLP export (avoids a feedback loop).
+        ignoreUrls: [/\/health$/, /\/otel\//],
         clearTimingResources: true,
       }),
     ],

@@ -1,0 +1,61 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "schemaVersion": 39,
+  "tags": ["rpg", "traces", "otel"],
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "title": "RPG · Traces (OTel)",
+  "uid": "rpg-traces",
+  "version": 1,
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "title": "Recent traces  (click a row to open the waterfall: frontend → API → DB → LLM)",
+      "type": "table",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true },
+      "targets": [
+        { "datasource": { "type": "tempo", "uid": "tempo" }, "queryType": "traceql", "query": "{}", "limit": 20, "tableType": "traces", "refId": "A" }
+      ]
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "title": "User-action traces  (frontend ui.* spans)",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "id": 2,
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true },
+      "targets": [
+        { "datasource": { "type": "tempo", "uid": "tempo" }, "queryType": "traceql", "query": "{ name =~ \"ui\\\\..*\" }", "limit": 20, "tableType": "traces", "refId": "A" }
+      ]
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "title": "Slow LLM spans (> 2s)",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "id": 3,
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true },
+      "targets": [
+        { "datasource": { "type": "tempo", "uid": "tempo" }, "queryType": "traceql", "query": "{ name =~ \"llm\\\\..*\" && duration > 2s }", "limit": 20, "tableType": "traces", "refId": "A" }
+      ]
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "title": "How to read these traces",
+      "type": "text",
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 17 },
+      "id": 4,
+      "options": { "mode": "markdown", "content": "Each trace starts at a **frontend** `ui.*` span (the user's click), continues into the **FastAPI** server span via the `traceparent` header, then fans out into `orchestrator.*` phases, **SQLAlchemy** queries (pgvector retrieval), and `llm.generate_text` / `llm.embed_texts` spans carrying model, token counts, and — when `OTEL_CAPTURE_CONTENT=true` — the full prompt and completion.\n\nUse **Explore → Tempo** for ad-hoc TraceQL, or click any log line in **RPG · Logs** to jump straight to its trace via `trace_id`." }
+    }
+  ]
+}
