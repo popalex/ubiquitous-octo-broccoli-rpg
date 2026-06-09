@@ -663,11 +663,10 @@ class OrchestratorService:
         with tracer.start_as_current_span("orchestrator.state_inject") as span:
             span.set_attribute("rpg.session_id", str(session.id))
             ledger = self.world_state.load_current(db, session.id)
-            block = self.world_state.render_block(ledger)
-            span.set_attribute("rpg.canon.version", self.world_state.current_version(db, session.id))
-            span.set_attribute("rpg.canon.entity_count", len(ledger.entities))
-            span.set_attribute("rpg.canon.thread_count", len(ledger.threads))
-            span.set_attribute("rpg.canon.injected_token_estimate", self._estimate_tokens(block))
+            span.set_attribute(
+                "rpg.canon.injected_token_estimate",
+                0 if not block.strip() else self._estimate_tokens(block),
+            )
             return block
 
     async def _extract_world_state(
