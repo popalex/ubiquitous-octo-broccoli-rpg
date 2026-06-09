@@ -18,8 +18,10 @@ export function CodexPanel({ worldState }: Props) {
   const living = entities.filter((e) => (e.status ?? "").toLowerCase() !== "dead");
   const openThreads = threads.filter((t) => (t.status ?? "").toLowerCase() !== "resolved");
 
+  const hasLocation = !!(location?.name || location?.description);
+
   const isEmpty =
-    !location?.name && !entities.length && !inventory.length && !threads.length && !facts.length;
+    !hasLocation && !entities.length && !inventory.length && !threads.length && !facts.length;
 
   return (
     <section className="panel panel-right">
