@@ -406,15 +406,24 @@ class WorldStateService:
                 span.set_attribute("rpg.canon.delta.empty", True)
                 return None
 
+            from sqlalchemy.exc import IntegrityError
+
             new_ledger = self.apply_delta(ledger, delta)
-            row = WorldStateLedger(
-                session_id=session.id,
-                version=base_version + 1,
-                turn_id=turn_id,
-                state=new_ledger.model_dump(),
-            )
-            db.add(row)
-            db.commit()
+            try:
+                row = WorldStateLedger(
+                    session_id=session.id,
+                    version=base_version + 1,
+                    turn_id=turn_id,
+                    state=new_ledger.model_dump(),
+                )
+                db.add(row)
+                db.commit()
+            except IntegrityError as exc:
+                db.rollback()
+                logger.warning("world-state version conflict for session=%s; skipping", session.id)
+                canon_extract_failures.add(1, {"reason": "conflict"})
+                record_span_error(span, exc)
+                return None
 
             span.set_attribute("rpg.canon.version", base_version + 1)
             span.set_attribute("rpg.canon.size", new_ledger.size)
