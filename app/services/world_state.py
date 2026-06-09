@@ -272,6 +272,9 @@ class WorldStateService:
         inv_by_item = {item.item: item for item in new.inventory}
         for change in delta.inventory_changes:
             current = inv_by_item.get(change.item)
+            # Treat malformed/no-op changes as no-ops (avoid creating qty=0 items).
+            if not change.remove and change.set_qty is None and change.qty_delta is None:
+                continue
             if change.remove:
                 if current is not None:
                     new.inventory.remove(current)
@@ -283,6 +286,10 @@ class WorldStateService:
                 base = current.qty if current and current.qty is not None else 0
                 qty = base + (change.qty_delta or 0)
             if qty <= 0 and (change.set_qty is not None or change.qty_delta is not None):
+                if current is not None:
+                    new.inventory.remove(current)
+                    del inv_by_item[change.item]
+                continue
                 if current is not None:
                     new.inventory.remove(current)
                     del inv_by_item[change.item]
