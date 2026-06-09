@@ -256,17 +256,18 @@ pytest                            # tests (needs Docker running — testcontaine
 
 Ruff and mypy config both live in `pyproject.toml`.
 
-**Frontend (TypeScript/React) — [ESLint](https://eslint.org/):**
+**Frontend (TypeScript/React) — [ESLint](https://eslint.org/) + [Vitest](https://vitest.dev/):**
 
 ```bash
 cd frontend
 pnpm install
 pnpm lint        # ESLint
 pnpm typecheck   # tsc -b (type errors only, no emit)
+pnpm test        # Vitest + React Testing Library (jsdom)
 pnpm build       # typecheck + production build
 ```
 
-ESLint config lives in `frontend/eslint.config.js`.
+ESLint config lives in `frontend/eslint.config.js`; Vitest config in `frontend/vitest.config.ts`.
 
 ## Notes
 
