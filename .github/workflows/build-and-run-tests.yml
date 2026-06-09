@@ -28,8 +28,12 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.14"
-    - name: Install ruff and mypy
-      run: pip install ruff==0.15.16 mypy==1.18.2
+    # Install the full deps (not just ruff+mypy) so mypy type-checks against
+    # real library types. Without them, ignore_missing_imports makes every
+    # third-party symbol Any — mypy then misses real errors and even flip-flops
+    # on warn_redundant_casts (a cast looks redundant only because the type is Any).
+    - name: Install dependencies
+      run: pip install -r requirements.txt
     - name: Ruff lint
       run: ruff check .
     - name: Mypy type check
