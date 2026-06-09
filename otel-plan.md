@@ -173,6 +173,18 @@ Also expose module-level helpers (bind to no-op providers until setup runs, so
 safe to import anywhere): `tracer = trace.get_tracer(name)`, metric instruments
 (`create_counter`/`create_histogram`), and a `llm_span(...)` context manager.
 
+**Resource attributes:** add `service.version` (env `OTEL_SERVICE_VERSION`) and
+`service.instance.id` (the container `HOSTNAME`, or a uuid) to the `Resource` so
+deploys/replicas are distinguishable in queries.
+
+**Mark failures as errors.** Spans opened with `start_as_current_span` (the
+non-streaming `llm_span`, orchestrator phase spans) auto-record the exception and
+set `STATUS=ERROR` when one propagates through them — even if an outer `except`
+then swallows it, because the span's `__exit__` runs first. **Manual** spans
+(`start_span` + `finally: end()`, used for streaming) do **not** — add
+`except Exception as e: span.record_exception(e); span.set_status(Status(ERROR)); raise`.
+Then failed turns are filterable in Tempo with `{ status = error }`.
+
 **Wire it:** call `setup_telemetry(app)` right after `app = FastAPI(...)`.
 
 **Content flag:** gate prompt/completion capture behind an env var

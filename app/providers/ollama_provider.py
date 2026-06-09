@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Sequence
 import httpx
 
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
-from app.telemetry import llm_span, record_llm_tokens, set_completion, set_prompt, tracer
+from app.telemetry import llm_span, record_llm_tokens, record_span_error, set_completion, set_prompt, tracer
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +139,11 @@ class OllamaProvider(BaseModelProvider):
                 record_llm_tokens("ollama", self.model_name, input_tokens, output_tokens)
         except httpx.HTTPError as exc:
             logger.exception("Ollama stream API error for model=%s", self.model_name)
+            record_span_error(span, exc)
             raise ProviderError(f"Failed to stream from Ollama chat API at {self.settings.ollama_base_url}: {exc}") from exc
+        except Exception as exc:
+            record_span_error(span, exc)
+            raise
         finally:
             span.end()
 

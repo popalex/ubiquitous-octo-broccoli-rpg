@@ -92,6 +92,7 @@ services:
       # OpenTelemetry
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-lgtm:4317}
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-rpg-backend}
+      OTEL_SERVICE_VERSION: ${OTEL_SERVICE_VERSION:-0.1.0}
       OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-service.namespace=small-rpg-gpt,deployment.environment=local}
       # true = full telemetry (capture LLM prompts/completions + user messages on spans)
       # false = metadata only (model, tokens, latency — no prompt/response text)

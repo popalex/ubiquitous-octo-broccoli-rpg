@@ -7,7 +7,7 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
-from app.telemetry import llm_span, record_llm_tokens, set_completion, set_prompt, tracer
+from app.telemetry import llm_span, record_llm_tokens, record_span_error, set_completion, set_prompt, tracer
 
 
 class OpenAIProvider(BaseModelProvider):
@@ -97,6 +97,9 @@ class OpenAIProvider(BaseModelProvider):
                 span.set_attribute("gen_ai.usage.input_tokens", usage.prompt_tokens)
                 span.set_attribute("gen_ai.usage.output_tokens", usage.completion_tokens)
                 record_llm_tokens("openai", self.model_name, usage.prompt_tokens, usage.completion_tokens)
+        except Exception as exc:
+            record_span_error(span, exc)
+            raise
         finally:
             span.end()
 

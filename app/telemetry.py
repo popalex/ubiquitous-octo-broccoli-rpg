@@ -16,11 +16,13 @@ import json
 import logging
 import os
 import time
+import uuid
 from collections.abc import Sequence
 from contextlib import contextmanager
 from typing import Iterator
 
 from opentelemetry import metrics, trace
+from opentelemetry.trace import Status, StatusCode
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,13 @@ def set_completion(span, text: str | None) -> None:
     """Attach the completion to a span — only in full-content mode."""
     if CAPTURE_CONTENT and text:
         span.set_attribute("gen_ai.completion", text)
+
+
+def record_span_error(span, exc: BaseException) -> None:
+    """Mark a span failed and attach the exception, so failed turns are
+    filterable in Tempo with `{ status = error }`."""
+    span.record_exception(exc)
+    span.set_status(Status(StatusCode.ERROR, str(exc)))
 
 
 def record_llm_tokens(system: str, model: str, input_tokens: int | None, output_tokens: int | None) -> None:
@@ -148,8 +157,14 @@ def setup_telemetry(app) -> None:
 
         from app.db import engine
 
-        # Resource picks up OTEL_SERVICE_NAME / OTEL_RESOURCE_ATTRIBUTES from env.
-        resource = Resource.create({})
+        # Resource picks up OTEL_SERVICE_NAME / OTEL_RESOURCE_ATTRIBUTES from env;
+        # add a version + per-process instance id so deploys/replicas are distinguishable.
+        resource = Resource.create(
+            {
+                "service.version": os.getenv("OTEL_SERVICE_VERSION", "0.1.0"),
+                "service.instance.id": os.getenv("HOSTNAME") or str(uuid.uuid4()),
+            }
+        )
 
         # Traces
         tracer_provider = TracerProvider(resource=resource)
