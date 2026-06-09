@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
 from time import perf_counter
-from typing import Any
+from typing import Any, cast
 
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
@@ -31,7 +31,14 @@ class OpenAIProvider(BaseModelProvider):
         )
 
     def _to_openai_messages(self, messages: Sequence[ProviderMessage]) -> list[ChatCompletionMessageParam]:
-        return [{"role": message.role, "content": message.content} for message in messages]
+        # cast is load-bearing, NOT redundant: our messages carry a plain str
+        # `role`, which mypy can't match against the strict ChatCompletionMessageParam
+        # TypedDict union (each requires a literal role). Removing it reintroduces
+        # a [misc] type error. (See branch history: a bot "fix" wrongly dropped it.)
+        return cast(
+            list[ChatCompletionMessageParam],
+            [{"role": message.role, "content": message.content} for message in messages],
+        )
 
     async def generate_text(
         self,
