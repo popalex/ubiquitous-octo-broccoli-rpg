@@ -152,6 +152,10 @@ def _fake_completion(content: str) -> MagicMock:
     choice.message.content = content
     resp = MagicMock()
     resp.choices = [choice]
+    usage = MagicMock()
+    usage.prompt_tokens = 10
+    usage.completion_tokens = 5
+    resp.usage = usage
     return resp
 
 
@@ -179,7 +183,17 @@ async def test_openai_generate_text_stream_yields_delta_chunks() -> None:
             chunk = MagicMock()
             chunk.choices = [MagicMock()]
             chunk.choices[0].delta.content = content
+            chunk.usage = None
             yield chunk
+
+        # Final usage chunk mirrors OpenAI stream_options={"include_usage": True}
+        usage_chunk = MagicMock()
+        usage_chunk.choices = []
+        usage = MagicMock()
+        usage.prompt_tokens = 10
+        usage.completion_tokens = 5
+        usage_chunk.usage = usage
+        yield usage_chunk
 
     with patch.object(
         provider.client.chat.completions,
@@ -202,6 +216,9 @@ async def test_openai_embed_texts_calls_embeddings_endpoint() -> None:
     item.embedding = fake_embedding
     fake_resp = MagicMock()
     fake_resp.data = [item]
+    usage = MagicMock()
+    usage.prompt_tokens = 3
+    fake_resp.usage = usage
 
     with patch.object(
         provider.client.embeddings,

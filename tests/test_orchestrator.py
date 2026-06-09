@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Turn
 from app.schemas import ChatResponse, GMChatResponse
@@ -40,10 +40,10 @@ def orchestrator(mock_provider: MockProvider) -> OrchestratorService:
 
 @pytest.mark.asyncio
 async def test_chat_returns_chat_response(
-    orchestrator: OrchestratorService, db_session: Session
+    orchestrator: OrchestratorService, db_session: AsyncSession
 ) -> None:
     session = SessionFactory()
-    db_session.flush()
+    await db_session.flush()
 
     result = await orchestrator.chat(db_session, session.id, "Hello!")
     assert isinstance(result, ChatResponse)
@@ -59,17 +59,18 @@ async def test_chat_returns_chat_response(
 
 @pytest.mark.asyncio
 async def test_chat_persists_turns(
-    orchestrator: OrchestratorService, db_session: Session
+    orchestrator: OrchestratorService, db_session: AsyncSession
 ) -> None:
     session = SessionFactory(turn_count=0)
-    db_session.flush()
+    await db_session.flush()
+    session_id = session.id
 
-    await orchestrator.chat(db_session, session.id, "What is happening?")
+    await orchestrator.chat(db_session, session_id, "What is happening?")
     db_session.expire_all()
 
-    turns = db_session.scalars(
-        select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index)
-    ).all()
+    turns = (await db_session.scalars(
+        select(Turn).where(Turn.session_id == session_id).order_by(Turn.turn_index)
+    )).all()
     assert len(turns) == 2
     roles = [t.role for t in turns]
     assert "user" in roles
@@ -84,7 +85,7 @@ async def test_chat_persists_turns(
 
 @pytest.mark.asyncio
 async def test_chat_triggers_memory_refresh_at_threshold(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     # With interval=4 and starting turn_count=2, after chat turn_count=4 → refresh
     settings = make_test_settings(memory_summary_interval=4, retrieval_top_k=8)
@@ -94,7 +95,7 @@ async def test_chat_triggers_memory_refresh_at_threshold(
     session = SessionFactory(turn_count=2, last_summarized_turn=0)
     TurnFactory(session=session, turn_index=1, role="user", content="Turn 1")
     TurnFactory(session=session, turn_index=2, role="assistant", content="Turn 2")
-    db_session.flush()
+    await db_session.flush()
 
     mock_provider.set_json_response({
         "ok": True,
@@ -124,11 +125,11 @@ async def test_chat_triggers_memory_refresh_at_threshold(
 
 @pytest.mark.asyncio
 async def test_chat_retrieves_memories(
-    orchestrator: OrchestratorService, db_session: Session
+    orchestrator: OrchestratorService, db_session: AsyncSession
 ) -> None:
     session = SessionFactory()
     MemoryFactFactory(session=session, content="The hero has a magic sword.", importance=0.9)
-    db_session.flush()
+    await db_session.flush()
 
     result = await orchestrator.chat(db_session, session.id, "What weapon do I have?")
     assert len(result.retrieved_memories) >= 1
@@ -142,14 +143,14 @@ async def test_chat_retrieves_memories(
 
 @pytest.mark.asyncio
 async def test_chat_applies_continuity_correction(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     settings = make_test_settings(memory_summary_interval=100)
     with patch("app.services.orchestrator.build_provider", return_value=mock_provider):
         svc = OrchestratorService(settings)
 
     session = SessionFactory()
-    db_session.flush()
+    await db_session.flush()
 
     mock_provider.set_text_response("I cast a fireball!")  # draft reply
     mock_provider.set_json_response({
@@ -171,10 +172,10 @@ async def test_chat_applies_continuity_correction(
 
 @pytest.mark.asyncio
 async def test_chat_stream_yields_sse_chunks(
-    orchestrator: OrchestratorService, db_session: Session
+    orchestrator: OrchestratorService, db_session: AsyncSession
 ) -> None:
     session = SessionFactory()
-    db_session.flush()
+    await db_session.flush()
 
     chunks = []
     async for chunk in orchestrator.chat_stream(db_session, session.id, "Hello!"):
@@ -195,10 +196,10 @@ async def test_chat_stream_yields_sse_chunks(
 
 @pytest.mark.asyncio
 async def test_gm_chat_returns_gm_chat_response(
-    orchestrator: OrchestratorService, db_session: Session
+    orchestrator: OrchestratorService, db_session: AsyncSession
 ) -> None:
     session = SessionFactory(gm_enabled=True, turn_count=0)
-    db_session.flush()
+    await db_session.flush()
 
     result = await orchestrator.gm_chat(db_session, session.id, "I look around the room.")
     assert isinstance(result, GMChatResponse)
@@ -213,7 +214,7 @@ async def test_gm_chat_returns_gm_chat_response(
 
 @pytest.mark.asyncio
 async def test_gm_chat_triggers_event_generation(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     settings = make_test_settings(
         memory_summary_interval=100,
@@ -224,7 +225,7 @@ async def test_gm_chat_triggers_event_generation(
         svc = OrchestratorService(settings)
 
     session = SessionFactory(gm_enabled=True, turn_count=3)
-    db_session.flush()
+    await db_session.flush()
 
     call_count = 0
 
@@ -257,17 +258,18 @@ async def test_gm_chat_triggers_event_generation(
 
 @pytest.mark.asyncio
 async def test_gm_chat_persists_turns(
-    orchestrator: OrchestratorService, db_session: Session
+    orchestrator: OrchestratorService, db_session: AsyncSession
 ) -> None:
     session = SessionFactory(gm_enabled=True, turn_count=0)
-    db_session.flush()
+    await db_session.flush()
+    session_id = session.id
 
-    await orchestrator.gm_chat(db_session, session.id, "I explore the dungeon.")
+    await orchestrator.gm_chat(db_session, session_id, "I explore the dungeon.")
     db_session.expire_all()
 
-    turns = db_session.scalars(
-        select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index)
-    ).all()
+    turns = (await db_session.scalars(
+        select(Turn).where(Turn.session_id == session_id).order_by(Turn.turn_index)
+    )).all()
     # At minimum: user turn + assistant (character) turn; possibly a GM narration turn too
     assert len(turns) >= 2
     roles = {t.role for t in turns}
@@ -282,10 +284,10 @@ async def test_gm_chat_persists_turns(
 
 @pytest.mark.asyncio
 async def test_gm_chat_stream_yields_sse_chunks(
-    orchestrator: OrchestratorService, db_session: Session
+    orchestrator: OrchestratorService, db_session: AsyncSession
 ) -> None:
     session = SessionFactory(gm_enabled=True, turn_count=0)
-    db_session.flush()
+    await db_session.flush()
 
     chunks = []
     async for chunk in orchestrator.gm_chat_stream(db_session, session.id, "I run away!"):
@@ -304,7 +306,7 @@ async def test_gm_chat_stream_yields_sse_chunks(
 
 @pytest.mark.asyncio
 async def test_chat_missing_session_raises_404(
-    orchestrator: OrchestratorService, db_session: Session
+    orchestrator: OrchestratorService, db_session: AsyncSession
 ) -> None:
     from fastapi import HTTPException
 
@@ -320,7 +322,7 @@ async def test_chat_missing_session_raises_404(
 
 @pytest.mark.asyncio
 async def test_token_budget_respected(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     """With a tiny context budget, only required sections should appear."""
     settings = make_test_settings(
@@ -335,7 +337,7 @@ async def test_token_budget_respected(
     # Add a very long memory fact that should be excluded due to budget
     long_content = "Very important memory: " + "word " * 200
     MemoryFactFactory(session=session, content=long_content, importance=0.9)
-    db_session.flush()
+    await db_session.flush()
 
     # Should not raise — the budget capping should keep it from blowing up
     result = await svc.chat(db_session, session.id, "What do I know?")
@@ -355,7 +357,7 @@ def _world_state_orchestrator(mock_provider: MockProvider) -> OrchestratorServic
 
 @pytest.mark.asyncio
 async def test_chat_writes_ledger_when_flag_on(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     from app.models import WorldStateLedger
 
@@ -363,13 +365,13 @@ async def test_chat_writes_ledger_when_flag_on(
     # Same payload serves continuity (passes through) and extraction (a death).
     mock_provider.set_json_response({"entities_upsert": [{"id": "kael", "name": "Kael", "status": "dead"}]})
     session = SessionFactory(turn_count=0)
-    db_session.flush()
+    await db_session.flush()
 
     await orchestrator.chat(db_session, session.id, "I slay Kael.")
 
-    rows = db_session.scalars(
+    rows = (await db_session.scalars(
         select(WorldStateLedger).where(WorldStateLedger.session_id == session.id)
-    ).all()
+    )).all()
     assert len(rows) == 1
     assert rows[0].version == 1
     assert rows[0].state["entities"][0]["status"] == "dead"
@@ -377,30 +379,30 @@ async def test_chat_writes_ledger_when_flag_on(
 
 @pytest.mark.asyncio
 async def test_chat_no_ledger_when_flag_off(
-    orchestrator: OrchestratorService, db_session: Session
+    orchestrator: OrchestratorService, db_session: AsyncSession
 ) -> None:
     from app.models import WorldStateLedger
 
     session = SessionFactory(turn_count=0)
-    db_session.flush()
+    await db_session.flush()
     await orchestrator.chat(db_session, session.id, "I slay Kael.")
 
-    rows = db_session.scalars(
+    rows = (await db_session.scalars(
         select(WorldStateLedger).where(WorldStateLedger.session_id == session.id)
-    ).all()
+    )).all()
     assert rows == []
 
 
 @pytest.mark.asyncio
 async def test_established_death_is_injected_next_turn(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     orchestrator = _world_state_orchestrator(mock_provider)
     mock_provider.set_json_response({"entities_upsert": [{"id": "kael", "name": "Kael", "status": "dead"}]})
     session = SessionFactory(turn_count=0)
-    db_session.flush()
+    await db_session.flush()
     await orchestrator.chat(db_session, session.id, "I slay Kael.")
-    db_session.refresh(session)
+    await db_session.refresh(session)
 
-    block = orchestrator._world_state_block(db_session, session)
+    block = await orchestrator._world_state_block(db_session, session)
     assert "Dead (must stay dead): Kael" in block

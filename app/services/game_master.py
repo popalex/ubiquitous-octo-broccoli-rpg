@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
 from app.models import Session as ChatSession
@@ -193,7 +193,7 @@ class GameMasterService:
 
     async def check_for_event(
         self,
-        db: Session,
+        db: AsyncSession,
         session: ChatSession,
         location: str = "unknown",
         time_of_day: str = "unknown",
@@ -225,12 +225,12 @@ class GameMasterService:
             )
 
         # Get recent transcript for context
-        recent_turns = db.scalars(
+        recent_turns = (await db.scalars(
             select(Turn)
             .where(Turn.session_id == session.id)
             .order_by(Turn.turn_index.desc())
             .limit(6)
-        ).all()
+        )).all()
         recent_transcript = "\n".join(
             f"{turn.role.upper()}: {turn.content}" for turn in reversed(recent_turns)
         )

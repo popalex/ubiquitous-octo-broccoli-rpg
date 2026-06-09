@@ -3,7 +3,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.providers.base import ProviderError
 from app.services.game_master import (
@@ -69,12 +69,12 @@ async def test_generate_narration_stream_yields_chunks(service: GameMasterServic
 
 @pytest.mark.asyncio
 async def test_check_for_event_false_when_interval_not_met(
-    service: GameMasterService, db_session: Session
+    service: GameMasterService, db_session: AsyncSession
 ) -> None:
     settings = make_test_settings(event_check_interval=3, event_probability=1.0)
     svc = GameMasterService(service.gm_provider, settings)
     session = SessionFactory(turn_count=5)  # 5 % 3 != 0
-    db_session.flush()
+    await db_session.flush()
 
     result = await svc.check_for_event(db_session, session)
     assert result.should_trigger is False
@@ -87,12 +87,12 @@ async def test_check_for_event_false_when_interval_not_met(
 
 @pytest.mark.asyncio
 async def test_check_for_event_returns_valid_result_when_triggered(
-    mock_provider: MockProvider, db_session: Session
+    mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     settings = make_test_settings(event_check_interval=3, event_probability=1.0)
     service = GameMasterService(mock_provider, settings)
     session = SessionFactory(turn_count=3)  # 3 % 3 == 0
-    db_session.flush()
+    await db_session.flush()
 
     mock_provider.set_json_response({
         "should_trigger": True,

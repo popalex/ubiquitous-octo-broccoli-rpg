@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     CharacterCard,
@@ -32,17 +32,19 @@ EMBEDDING_DIM = 768
 # ===========================================================================
 
 
-def test_character_card_round_trip(db_session: Session) -> None:
+@pytest.mark.asyncio
+async def test_character_card_round_trip(db_session: AsyncSession) -> None:
     char = CharacterCardFactory(
         name="Elara Swiftblade",
         description="An elven ranger.",
         hard_rules="No firearms.",
         style_guide="Poetic and concise.",
     )
-    db_session.flush()
+    await db_session.flush()
+    char_id = char.id
     db_session.expire(char)
 
-    loaded = db_session.get(CharacterCard, char.id)
+    loaded = await db_session.get(CharacterCard, char_id)
     assert loaded is not None
     assert loaded.name == "Elara Swiftblade"
     assert loaded.description == "An elven ranger."
@@ -55,17 +57,19 @@ def test_character_card_round_trip(db_session: Session) -> None:
 # ===========================================================================
 
 
-def test_world_state_round_trip(db_session: Session) -> None:
+@pytest.mark.asyncio
+async def test_world_state_round_trip(db_session: AsyncSession) -> None:
     world = WorldStateFactory(
         name="Aethoria",
         description="A floating realm.",
         canon="Magic flows from leylines.",
         hard_rules="No anachronisms.",
     )
-    db_session.flush()
+    await db_session.flush()
+    world_id = world.id
     db_session.expire(world)
 
-    loaded = db_session.get(WorldState, world.id)
+    loaded = await db_session.get(WorldState, world_id)
     assert loaded is not None
     assert loaded.name == "Aethoria"
     assert loaded.canon == "Magic flows from leylines."
@@ -76,24 +80,25 @@ def test_world_state_round_trip(db_session: Session) -> None:
 # ===========================================================================
 
 
-def test_session_cascades_to_turns_on_delete(db_session: Session) -> None:
+@pytest.mark.asyncio
+async def test_session_cascades_to_turns_on_delete(db_session: AsyncSession) -> None:
     session = SessionFactory()
     TurnFactory(session=session, turn_index=1)
     TurnFactory(session=session, turn_index=2)
-    db_session.flush()
+    await db_session.flush()
 
     # Verify turns exist
-    turns_before = db_session.scalars(
+    turns_before = (await db_session.scalars(
         select(Turn).where(Turn.session_id == session.id)
-    ).all()
+    )).all()
     assert len(turns_before) == 2
 
-    db_session.delete(session)
-    db_session.flush()
+    await db_session.delete(session)
+    await db_session.flush()
 
-    turns_after = db_session.scalars(
+    turns_after = (await db_session.scalars(
         select(Turn).where(Turn.session_id == session.id)
-    ).all()
+    )).all()
     assert len(turns_after) == 0
 
 
@@ -102,14 +107,15 @@ def test_session_cascades_to_turns_on_delete(db_session: Session) -> None:
 # ===========================================================================
 
 
-def test_turn_unique_constraint_on_session_and_index(db_session: Session) -> None:
+@pytest.mark.asyncio
+async def test_turn_unique_constraint_on_session_and_index(db_session: AsyncSession) -> None:
     session = SessionFactory()
     TurnFactory(session=session, turn_index=1)
-    db_session.flush()
+    await db_session.flush()
 
     with pytest.raises(IntegrityError):
         TurnFactory(session=session, turn_index=1)
-        db_session.flush()
+        await db_session.flush()
 
 
 # ===========================================================================
@@ -117,17 +123,19 @@ def test_turn_unique_constraint_on_session_and_index(db_session: Session) -> Non
 # ===========================================================================
 
 
-def test_memory_fact_stores_and_retrieves_embedding(db_session: Session) -> None:
+@pytest.mark.asyncio
+async def test_memory_fact_stores_and_retrieves_embedding(db_session: AsyncSession) -> None:
     embedding = [float(i) / EMBEDDING_DIM for i in range(EMBEDDING_DIM)]
     fact = MemoryFactFactory(
         content="The sword is enchanted.",
         importance=0.9,
         embedding=embedding,
     )
-    db_session.flush()
+    await db_session.flush()
+    fact_id = fact.id
     db_session.expire(fact)
 
-    loaded = db_session.get(MemoryFact, fact.id)
+    loaded = await db_session.get(MemoryFact, fact_id)
     assert loaded is not None
     assert loaded.content == "The sword is enchanted."
     assert loaded.importance == pytest.approx(0.9)
@@ -139,17 +147,19 @@ def test_memory_fact_stores_and_retrieves_embedding(db_session: Session) -> None
 # ===========================================================================
 
 
-def test_episode_summary_stores_and_retrieves_embedding(db_session: Session) -> None:
+@pytest.mark.asyncio
+async def test_episode_summary_stores_and_retrieves_embedding(db_session: AsyncSession) -> None:
     embedding = [0.5] * EMBEDDING_DIM
     summary = EpisodeSummaryFactory(
         content="The party explored the ruins.",
         importance=0.7,
         embedding=embedding,
     )
-    db_session.flush()
+    await db_session.flush()
+    summary_id = summary.id
     db_session.expire(summary)
 
-    loaded = db_session.get(EpisodeSummary, summary.id)
+    loaded = await db_session.get(EpisodeSummary, summary_id)
     assert loaded is not None
     assert loaded.content == "The party explored the ruins."
     assert len(loaded.embedding) == EMBEDDING_DIM
@@ -160,8 +170,10 @@ def test_episode_summary_stores_and_retrieves_embedding(db_session: Session) -> 
 # ===========================================================================
 
 
-def test_relationship_state_links_entities(db_session: Session) -> None:
+@pytest.mark.asyncio
+async def test_relationship_state_links_entities(db_session: AsyncSession) -> None:
     session = SessionFactory()
+    await db_session.flush()
     rel = RelationshipState(
         session_id=session.id,
         source_entity="Aria",
@@ -171,10 +183,11 @@ def test_relationship_state_links_entities(db_session: Session) -> None:
         importance=0.85,
     )
     db_session.add(rel)
-    db_session.flush()
+    await db_session.flush()
+    rel_id = rel.id
     db_session.expire(rel)
 
-    loaded = db_session.get(RelationshipState, rel.id)
+    loaded = await db_session.get(RelationshipState, rel_id)
     assert loaded is not None
     assert loaded.source_entity == "Aria"
     assert loaded.target_entity == "Dark Lord"
@@ -187,12 +200,14 @@ def test_relationship_state_links_entities(db_session: Session) -> None:
 # ===========================================================================
 
 
-def test_timestamp_mixin_auto_sets_created_at_and_updated_at(db_session: Session) -> None:
+@pytest.mark.asyncio
+async def test_timestamp_mixin_auto_sets_created_at_and_updated_at(db_session: AsyncSession) -> None:
     char = CharacterCardFactory()
-    db_session.flush()
+    await db_session.flush()
+    char_id = char.id
     db_session.expire(char)
 
-    loaded = db_session.get(CharacterCard, char.id)
+    loaded = await db_session.get(CharacterCard, char_id)
     assert loaded is not None
     assert isinstance(loaded.created_at, datetime)
     assert isinstance(loaded.updated_at, datetime)

@@ -21,7 +21,7 @@ class CharacterCardFactory(SQLAlchemyModelFactory):
     class Meta:
         model = CharacterCard
         sqlalchemy_session = None
-        sqlalchemy_session_persistence = "flush"
+        sqlalchemy_session_persistence = None
 
     name = factory.Sequence(lambda n: f"Character {n}")
     description = "A brave adventurer with a mysterious past."
@@ -33,7 +33,7 @@ class WorldStateFactory(SQLAlchemyModelFactory):
     class Meta:
         model = WorldState
         sqlalchemy_session = None
-        sqlalchemy_session_persistence = "flush"
+        sqlalchemy_session_persistence = None
 
     name = factory.Sequence(lambda n: f"World {n}")
     description = "A dark fantasy realm plagued by shadow."
@@ -45,7 +45,7 @@ class SessionFactory(SQLAlchemyModelFactory):
     class Meta:
         model = ChatSession
         sqlalchemy_session = None
-        sqlalchemy_session_persistence = "flush"
+        sqlalchemy_session_persistence = None
 
     character_card = factory.SubFactory(CharacterCardFactory)
     world_state = factory.SubFactory(WorldStateFactory)
@@ -60,7 +60,7 @@ class TurnFactory(SQLAlchemyModelFactory):
     class Meta:
         model = Turn
         sqlalchemy_session = None
-        sqlalchemy_session_persistence = "flush"
+        sqlalchemy_session_persistence = None
 
     session = factory.SubFactory(SessionFactory)
     turn_index = factory.Sequence(lambda n: n + 1)
@@ -74,7 +74,7 @@ class MemoryFactFactory(SQLAlchemyModelFactory):
     class Meta:
         model = MemoryFact
         sqlalchemy_session = None
-        sqlalchemy_session_persistence = "flush"
+        sqlalchemy_session_persistence = None
 
     session = factory.SubFactory(SessionFactory)
     content = "The hero defeated the dragon."
@@ -86,7 +86,7 @@ class EpisodeSummaryFactory(SQLAlchemyModelFactory):
     class Meta:
         model = EpisodeSummary
         sqlalchemy_session = None
-        sqlalchemy_session_persistence = "flush"
+        sqlalchemy_session_persistence = None
 
     session = factory.SubFactory(SessionFactory)
     start_turn_index = 1

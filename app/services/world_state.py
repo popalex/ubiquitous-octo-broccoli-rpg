@@ -17,7 +17,7 @@ import logging
 
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
 from app.models import Session as ChatSession
@@ -131,9 +131,9 @@ class WorldStateService:
     # Read
     # ------------------------------------------------------------------
 
-    def load_current(self, db: Session, session_id: str) -> Ledger:
+    async def load_current(self, db: AsyncSession, session_id: str) -> Ledger:
         """Return the latest ledger snapshot for a session (empty if none)."""
-        row = db.scalar(
+        row = await db.scalar(
             select(WorldStateLedger)
             .where(WorldStateLedger.session_id == session_id)
             .order_by(WorldStateLedger.version.desc())
@@ -147,8 +147,8 @@ class WorldStateService:
             logger.exception("corrupt world-state row id=%s; treating as empty", row.id)
             return Ledger()
 
-    def current_version(self, db: Session, session_id: str) -> int:
-        row = db.scalar(
+    async def current_version(self, db: AsyncSession, session_id: str) -> int:
+        row = await db.scalar(
             select(WorldStateLedger.version)
             .where(WorldStateLedger.session_id == session_id)
             .order_by(WorldStateLedger.version.desc())
@@ -364,7 +364,7 @@ class WorldStateService:
 
     async def extract_and_apply(
         self,
-        db: Session,
+        db: AsyncSession,
         session: ChatSession,
         *,
         user_message: str,
@@ -376,8 +376,8 @@ class WorldStateService:
         extraction failed (failures are logged + metered, never raised)."""
         with tracer.start_as_current_span("orchestrator.state_extract") as span:
             span.set_attribute("rpg.session_id", str(session.id))
-            ledger = self.load_current(db, session.id)
-            base_version = self.current_version(db, session.id)
+            ledger = await self.load_current(db, session.id)
+            base_version = await self.current_version(db, session.id)
             span.set_attribute("rpg.canon.version", base_version)
 
             user_content = (
@@ -425,9 +425,9 @@ class WorldStateService:
                     state=new_ledger.model_dump(),
                 )
                 db.add(row)
-                db.commit()
+                await db.commit()
             except IntegrityError as exc:
-                db.rollback()
+                await db.rollback()
                 logger.warning("world-state version conflict for session=%s; skipping", session.id)
                 canon_extract_failures.add(1, {"reason": "conflict"})
                 record_span_error(span, exc)

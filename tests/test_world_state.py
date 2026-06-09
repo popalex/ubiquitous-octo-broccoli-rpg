@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import WorldStateLedger
 from app.services.world_state import (
@@ -230,7 +230,7 @@ def test_render_block_leads_with_dead() -> None:
 
 
 @pytest.mark.asyncio
-async def test_extract_and_apply_persists_version(db_session: Session) -> None:
+async def test_extract_and_apply_persists_version(db_session: AsyncSession) -> None:
     provider = MockProvider()
     provider.set_json_response(
         {
@@ -241,7 +241,7 @@ async def test_extract_and_apply_persists_version(db_session: Session) -> None:
     settings = make_test_settings(world_state_enabled=True)
     svc = WorldStateService(provider, settings)
     session = SessionFactory(turn_count=2)
-    db_session.flush()
+    await db_session.flush()
 
     row = await svc.extract_and_apply(
         db_session, session, user_message="I strike the wraith", gm_response="Kael falls, slain."
@@ -249,63 +249,64 @@ async def test_extract_and_apply_persists_version(db_session: Session) -> None:
     assert row is not None
     assert row.version == 1
 
-    ledger = svc.load_current(db_session, session.id)
+    ledger = await svc.load_current(db_session, session.id)
     assert ledger.entities[0].status == "dead"
     assert "Kael fell to the wraith." in ledger.facts
 
 
 @pytest.mark.asyncio
-async def test_extract_increments_version(db_session: Session) -> None:
+async def test_extract_increments_version(db_session: AsyncSession) -> None:
     provider = MockProvider()
     provider.set_json_response({"facts_add": ["fact one"]})
     svc = WorldStateService(provider, make_test_settings(world_state_enabled=True))
     session = SessionFactory(turn_count=2)
-    db_session.flush()
+    await db_session.flush()
 
     await svc.extract_and_apply(db_session, session, user_message="a", gm_response="b")
     provider.set_json_response({"facts_add": ["fact two"]})
     row = await svc.extract_and_apply(db_session, session, user_message="c", gm_response="d")
     assert row.version == 2
 
-    rows = db_session.scalars(
+    rows = (await db_session.scalars(
         select(WorldStateLedger).where(WorldStateLedger.session_id == session.id)
-    ).all()
+    )).all()
     assert len(rows) == 2
-    ledger = svc.load_current(db_session, session.id)
+    ledger = await svc.load_current(db_session, session.id)
     assert ledger.facts == ["fact one", "fact two"]
 
 
 @pytest.mark.asyncio
-async def test_extract_empty_delta_writes_nothing(db_session: Session) -> None:
+async def test_extract_empty_delta_writes_nothing(db_session: AsyncSession) -> None:
     provider = MockProvider()
     provider.set_json_response({})
     svc = WorldStateService(provider, make_test_settings(world_state_enabled=True))
     session = SessionFactory(turn_count=2)
-    db_session.flush()
+    await db_session.flush()
 
     row = await svc.extract_and_apply(db_session, session, user_message="a", gm_response="b")
     assert row is None
-    assert svc.current_version(db_session, session.id) == 0
+    assert await svc.current_version(db_session, session.id) == 0
 
 
 @pytest.mark.asyncio
-async def test_extract_invalid_provider_json_skips(db_session: Session) -> None:
+async def test_extract_invalid_provider_json_skips(db_session: AsyncSession) -> None:
     # MockProvider.generate_json returns a non-dict-shaped payload that fails
     # schema validation -> extraction is skipped, turn is never broken.
     provider = MockProvider()
     provider.set_json_response({"entities_upsert": "not a list"})
     svc = WorldStateService(provider, make_test_settings(world_state_enabled=True))
     session = SessionFactory(turn_count=2)
-    db_session.flush()
+    await db_session.flush()
 
     row = await svc.extract_and_apply(db_session, session, user_message="a", gm_response="b")
     assert row is None
-    assert svc.current_version(db_session, session.id) == 0
+    assert await svc.current_version(db_session, session.id) == 0
 
 
-def test_load_current_empty_when_no_rows(db_session: Session) -> None:
+@pytest.mark.asyncio
+async def test_load_current_empty_when_no_rows(db_session: AsyncSession) -> None:
     svc = WorldStateService(MockProvider(), make_test_settings(world_state_enabled=True))
     session = SessionFactory()
-    db_session.flush()
-    ledger = svc.load_current(db_session, session.id)
+    await db_session.flush()
+    ledger = await svc.load_current(db_session, session.id)
     assert ledger.is_empty()

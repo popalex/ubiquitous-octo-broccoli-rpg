@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import Select, select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
 from app.models import EpisodeSummary, MemoryFact
@@ -32,16 +32,16 @@ class RetrievalService:
         self.embedding_provider = embedding_provider
         self.settings = settings or get_settings()
 
-    async def retrieve(self, db: Session, session: ChatSession, query_text: str) -> list[RetrievedMemory]:
+    async def retrieve(self, db: AsyncSession, session: ChatSession, query_text: str) -> list[RetrievedMemory]:
         query_embedding = (await self.embedding_provider.embed_texts([query_text]))[0]
-        fact_rows = self._fetch_facts(db, session.id, query_embedding)
-        summary_rows = self._fetch_summaries(db, session.id, query_embedding)
+        fact_rows = await self._fetch_facts(db, session.id, query_embedding)
+        summary_rows = await self._fetch_summaries(db, session.id, query_embedding)
         combined = fact_rows + summary_rows
         ranked = sorted(combined, key=lambda item: item.weighted_score, reverse=True)[: self.settings.retrieval_top_k]
         logger.info("retrieval session=%s candidates=%s selected=%s", session.id, len(combined), len(ranked))
         return ranked
 
-    def _fetch_facts(self, db: Session, session_id: str, query_embedding: list[float]) -> list[RetrievedMemory]:
+    async def _fetch_facts(self, db: AsyncSession, session_id: str, query_embedding: list[float]) -> list[RetrievedMemory]:
         distance = MemoryFact.embedding.cosine_distance(query_embedding).label("distance")
         stmt: Select = (
             select(MemoryFact, distance)
@@ -49,12 +49,13 @@ class RetrievalService:
             .order_by(distance)
             .limit(self.settings.retrieval_candidate_pool)
         )
+        rows = (await db.execute(stmt)).all()
         return [
             self._to_result(record.id, "fact", record.content, score, record.importance, record.created_at)
-            for record, score in db.execute(stmt).all()
+            for record, score in rows
         ]
 
-    def _fetch_summaries(self, db: Session, session_id: str, query_embedding: list[float]) -> list[RetrievedMemory]:
+    async def _fetch_summaries(self, db: AsyncSession, session_id: str, query_embedding: list[float]) -> list[RetrievedMemory]:
         distance = EpisodeSummary.embedding.cosine_distance(query_embedding).label("distance")
         stmt: Select = (
             select(EpisodeSummary, distance)
@@ -62,9 +63,10 @@ class RetrievalService:
             .order_by(distance)
             .limit(self.settings.retrieval_candidate_pool)
         )
+        rows = (await db.execute(stmt)).all()
         return [
             self._to_result(record.id, "summary", record.content, score, record.importance, record.created_at)
-            for record, score in db.execute(stmt).all()
+            for record, score in rows
         ]
 
     def _to_result(
