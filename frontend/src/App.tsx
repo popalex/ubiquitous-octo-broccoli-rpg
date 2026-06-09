@@ -5,6 +5,7 @@ import { templates as baseTemplates } from "./templates";
 import { loadAllTemplates } from "./loadTemplates";
 import { api, storageKeys, createInitialForm } from "./api";
 import { sendChat } from "./chat";
+import { withUiSpan } from "./telemetry";
 import { CharacterPanel } from "./components/CharacterPanel";
 import { ChatPanel } from "./components/ChatPanel";
 import { MemoryPanel } from "./components/MemoryPanel";
@@ -157,15 +158,20 @@ export default function App() {
     setIsBusy(true);
     setStatusText("Loading character and world...");
     try {
-      const payload = await api<{
-        character_card_id: string;
-        world_state_id: string;
-        character_name: string;
-        world_name: string;
-      }>("/character/load", {
-        method: "POST",
-        body: JSON.stringify(form),
-      });
+      const payload = await withUiSpan(
+        "ui.load_character",
+        { "rpg.character_name": form.name, "rpg.world_name": form.world_name },
+        () =>
+          api<{
+            character_card_id: string;
+            world_state_id: string;
+            character_name: string;
+            world_name: string;
+          }>("/character/load", {
+            method: "POST",
+            body: JSON.stringify(form),
+          }),
+      );
       setIds((current) => ({
         ...current,
         characterCardId: payload.character_card_id,
@@ -187,23 +193,28 @@ export default function App() {
     setIsBusy(true);
     setStatusText("Starting session...");
     try {
-      const payload = await api<{
-        session_id: string;
-        turn_count: number;
-        gm_enabled: boolean;
-        current_location: string | null;
-        time_of_day: string | null;
-      }>("/session/init", {
-        method: "POST",
-        body: JSON.stringify({
-          character_card_id: ids.characterCardId,
-          world_state_id: ids.worldStateId || null,
-          title: sessionTitle || null,
-          gm_enabled: gmEnabled,
-          current_location: currentLocation || null,
-          time_of_day: timeOfDay || null,
-        }),
-      });
+      const payload = await withUiSpan(
+        "ui.new_chronicle",
+        { "rpg.character_card_id": ids.characterCardId, "rpg.gm_enabled": gmEnabled },
+        () =>
+          api<{
+            session_id: string;
+            turn_count: number;
+            gm_enabled: boolean;
+            current_location: string | null;
+            time_of_day: string | null;
+          }>("/session/init", {
+            method: "POST",
+            body: JSON.stringify({
+              character_card_id: ids.characterCardId,
+              world_state_id: ids.worldStateId || null,
+              title: sessionTitle || null,
+              gm_enabled: gmEnabled,
+              current_location: currentLocation || null,
+              time_of_day: timeOfDay || null,
+            }),
+          }),
+      );
       setIds((current) => ({ ...current, sessionId: payload.session_id }));
       setChatMessages([]);
       setRetrievedMemories([]);

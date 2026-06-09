@@ -41,12 +41,14 @@ from app.schemas import (
 from app.providers.base import ProviderError
 from app.services.orchestrator import get_orchestrator
 from app.config import get_settings
+from app.telemetry import setup_telemetry
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="small-rpg-gpt")
+setup_telemetry(app)
 
 # Log startup configuration
 _settings = get_settings()
