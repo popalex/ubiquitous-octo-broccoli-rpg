@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
 from time import perf_counter
-from typing import Any, cast
+from typing import Any
 
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
@@ -31,10 +31,7 @@ class OpenAIProvider(BaseModelProvider):
         )
 
     def _to_openai_messages(self, messages: Sequence[ProviderMessage]) -> list[ChatCompletionMessageParam]:
-        return cast(
-            list[ChatCompletionMessageParam],
-            [{"role": message.role, "content": message.content} for message in messages],
-        )
+        return [{"role": message.role, "content": message.content} for message in messages]
 
     async def generate_text(
         self,
