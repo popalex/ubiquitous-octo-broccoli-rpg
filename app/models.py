@@ -78,6 +78,7 @@ class Session(TimestampMixin, Base):
     memory_facts: Mapped[list["MemoryFact"]] = relationship(back_populates="session", cascade="all, delete-orphan")
     episode_summaries: Mapped[list["EpisodeSummary"]] = relationship(back_populates="session", cascade="all, delete-orphan")
     relationship_states: Mapped[list["RelationshipState"]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    world_state_ledgers: Mapped[list["WorldStateLedger"]] = relationship(back_populates="session", cascade="all, delete-orphan")
 
 
 class Turn(TimestampMixin, Base):
@@ -126,6 +127,33 @@ class EpisodeSummary(TimestampMixin, Base):
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     session: Mapped[Session] = relationship(back_populates="episode_summaries")
+
+
+class WorldStateLedger(Base):
+    """Versioned, structured canon for a session — the authoritative record of
+    what is *true* (entities, inventory, threads, location, facts).
+
+    Distinct from :class:`WorldState`, which is the static world *template*
+    (setting/canon text shared across sessions). Each turn that changes canon
+    writes a new immutable version row; the latest version is current canon.
+    """
+
+    __tablename__ = "world_state_ledger"
+    __table_args__ = (
+        UniqueConstraint("session_id", "version", name="uq_world_state_ledger_session_version"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The turn that produced this version (nullable: backfill/manual edits).
+    turn_id: Mapped[str | None] = mapped_column(ForeignKey("turns.id", ondelete="SET NULL"), nullable=True)
+    state: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    session: Mapped[Session] = relationship(back_populates="world_state_ledgers")
 
 
 class RelationshipState(TimestampMixin, Base):

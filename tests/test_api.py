@@ -507,3 +507,48 @@ async def test_gm_npc_dialogue_returns_dialogue_text(async_client: AsyncClient) 
     data = response.json()
     assert data["npc_name"] == "Tavern Keeper"
     assert len(data["dialogue"]) > 0
+
+
+# ===========================================================================
+# World-state ledger
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_get_world_state_empty_when_none(async_client: AsyncClient) -> None:
+    session = SessionFactory()
+    response = await async_client.get(f"/session/{session.id}/world-state")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["version"] == 0
+    assert data["state"] == {}
+
+
+@pytest.mark.asyncio
+async def test_get_world_state_returns_latest(async_client: AsyncClient, db_session) -> None:
+    from app.models import WorldStateLedger
+
+    session = SessionFactory()
+    db_session.add_all(
+        [
+            WorldStateLedger(session_id=session.id, version=1, state={"facts": ["a"]}),
+            WorldStateLedger(session_id=session.id, version=2, state={"facts": ["a", "b"]}),
+        ]
+    )
+    db_session.commit()
+
+    response = await async_client.get(f"/session/{session.id}/world-state")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["version"] == 2
+    assert data["state"]["facts"] == ["a", "b"]
+
+    # Historical version fetch.
+    response = await async_client.get(f"/session/{session.id}/world-state?version=1")
+    assert response.json()["state"]["facts"] == ["a"]
+
+
+@pytest.mark.asyncio
+async def test_get_world_state_unknown_session_404(async_client: AsyncClient) -> None:
+    response = await async_client.get("/session/does-not-exist/world-state")
+    assert response.status_code == 404

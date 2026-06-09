@@ -143,6 +143,15 @@ class SessionDetailResponse(BaseModel):
     time_of_day: str | None
 
 
+class WorldStateResponse(BaseModel):
+    """Current (or a historical) world-state ledger snapshot for a session."""
+
+    session_id: str
+    version: int
+    state: dict
+    created_at: datetime | None = None
+
+
 class HealthResponse(BaseModel):
     status: str
     database: str

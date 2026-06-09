@@ -20,6 +20,7 @@ from app.services.game_master import GameMasterService
 from app.services.memory import MemoryService
 from app.services.continuity import ContinuityResult
 from app.services.retrieval import RetrievalService
+from app.services.world_state import WorldStateService
 from app.telemetry import chat_turns, retrieval_selected, tracer
 
 
@@ -37,6 +38,7 @@ class OrchestratorService:
         self.memory = MemoryService(self.memory_provider, self.embedding_provider, self.settings)
         self.continuity = ContinuityService(self.memory_provider)
         self.game_master = GameMasterService(self.gm_provider, self.settings)
+        self.world_state = WorldStateService(self.memory_provider, self.settings)
 
     async def chat(self, db: Session, session_id: str, user_message: str) -> ChatResponse:
         session = db.scalar(
@@ -53,7 +55,8 @@ class OrchestratorService:
         ).all()
         recent_turns = list(reversed(recent_turns))
 
-        context_packet = self._build_context_packet(session, recent_turns, retrieved)
+        world_state_block = self._world_state_block(db, session)
+        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block)
         system_prompt = ACTOR_SYSTEM_PROMPT.format(
             character_name=session.character_card.name,
             character_description=session.character_card.description,
@@ -72,7 +75,7 @@ class OrchestratorService:
         try:
             continuity = await self.continuity.validate(
                 hard_rules=self._hard_rules_text(session.character_card, session.world_state),
-                world_canon=session.world_state.canon if session.world_state else "",
+                world_canon=self._continuity_canon(session, world_state_block),
                 recent_transcript=self._recent_turns_text(recent_turns),
                 user_message=user_message,
                 draft_reply=draft_reply,
@@ -83,6 +86,14 @@ class OrchestratorService:
 
         next_user_index = session.turn_count + 1
         next_actor_index = session.turn_count + 2
+        assistant_turn = Turn(
+            session_id=session.id,
+            turn_index=next_actor_index,
+            role="assistant",
+            content=continuity.final_reply,
+            token_estimate=self._estimate_tokens(continuity.final_reply),
+            continuity_notes="\n".join(continuity.issues) if continuity.issues else None,
+        )
         db.add_all(
             [
                 Turn(
@@ -92,14 +103,7 @@ class OrchestratorService:
                     content=user_message,
                     token_estimate=self._estimate_tokens(user_message),
                 ),
-                Turn(
-                    session_id=session.id,
-                    turn_index=next_actor_index,
-                    role="assistant",
-                    content=continuity.final_reply,
-                    token_estimate=self._estimate_tokens(continuity.final_reply),
-                    continuity_notes="\n".join(continuity.issues) if continuity.issues else None,
-                ),
+                assistant_turn,
             ]
         )
         session.turn_count = next_actor_index
@@ -110,6 +114,9 @@ class OrchestratorService:
             await self.memory.maybe_refresh(db, session)
         except ProviderError as exc:
             logger.exception("memory refresh skipped for session=%s", session.id)
+        await self._extract_world_state(
+            db, session, user_message=user_message, gm_response=continuity.final_reply, turn_id=assistant_turn.id,
+        )
         logger.info("chat session=%s turn_count=%s continuity_applied=%s", session.id, session.turn_count, continuity.applied)
 
         return ChatResponse(
@@ -186,8 +193,9 @@ class OrchestratorService:
             logger.exception("Pre-narration failed for session=%s", session.id)
 
         # Get character response via normal flow
-        context_packet = self._build_context_packet(session, recent_turns, retrieved)
-        
+        world_state_block = self._world_state_block(db, session)
+        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block)
+
         # Include GM narration in context if available
         if pre_narration:
             context_packet = f"[Scene Narration]\n{pre_narration}\n\n{context_packet}"
@@ -212,7 +220,7 @@ class OrchestratorService:
         try:
             continuity = await self.continuity.validate(
                 hard_rules=self._hard_rules_text(session.character_card, session.world_state),
-                world_canon=session.world_state.canon if session.world_state else "",
+                world_canon=self._continuity_canon(session, world_state_block),
                 recent_transcript=self._recent_turns_text(recent_turns),
                 user_message=user_message,
                 draft_reply=draft_reply,
@@ -302,6 +310,10 @@ class OrchestratorService:
             await self.memory.maybe_refresh(db, session)
         except ProviderError as exc:
             logger.exception("memory refresh skipped for session=%s", session.id)
+        await self._extract_world_state(
+            db, session, user_message=user_message, gm_response=full_assistant_content,
+            turn_id=turns_to_add[-1].id,
+        )
 
         logger.info(
             "gm_chat session=%s turn_count=%s event_triggered=%s",
@@ -411,7 +423,8 @@ class OrchestratorService:
         logger.info("gm_chat_stream session=%s pre_narration DONE duration=%.2fs chars=%d", session_id, time.perf_counter() - pre_narration_start, len(pre_narration or ""))
 
         # Build context for character response
-        context_packet = self._build_context_packet(session, recent_turns, retrieved)
+        world_state_block = self._world_state_block(db, session)
+        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block)
         if pre_narration:
             context_packet = f"[Scene Narration]\n{pre_narration}\n\n{context_packet}"
 
@@ -532,6 +545,10 @@ class OrchestratorService:
                 await self.memory.maybe_refresh(db, session)
         except ProviderError as exc:
             logger.exception("memory refresh skipped for session=%s", session.id)
+        await self._extract_world_state(
+            db, session, user_message=user_message, gm_response=full_assistant_content,
+            turn_id=turns_to_add[-1].id,
+        )
 
         chat_turns.add(1, {"gm_enabled": True})
         total_duration = time.perf_counter() - total_start
@@ -561,7 +578,8 @@ class OrchestratorService:
         ).all()
         recent_turns = list(reversed(recent_turns))
 
-        context_packet = self._build_context_packet(session, recent_turns, retrieved)
+        world_state_block = self._world_state_block(db, session)
+        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block)
         system_prompt = ACTOR_SYSTEM_PROMPT.format(
             character_name=session.character_card.name,
             character_description=session.character_card.description,
@@ -595,6 +613,13 @@ class OrchestratorService:
         # Persist turns to database
         next_user_index = session.turn_count + 1
         next_actor_index = session.turn_count + 2
+        assistant_turn = Turn(
+            session_id=session.id,
+            turn_index=next_actor_index,
+            role="assistant",
+            content=full_reply,
+            token_estimate=self._estimate_tokens(full_reply),
+        )
         db.add_all(
             [
                 Turn(
@@ -604,13 +629,7 @@ class OrchestratorService:
                     content=user_message,
                     token_estimate=self._estimate_tokens(user_message),
                 ),
-                Turn(
-                    session_id=session.id,
-                    turn_index=next_actor_index,
-                    role="assistant",
-                    content=full_reply,
-                    token_estimate=self._estimate_tokens(full_reply),
-                ),
+                assistant_turn,
             ]
         )
         session.turn_count = next_actor_index
@@ -624,6 +643,9 @@ class OrchestratorService:
                 await self.memory.maybe_refresh(db, session)
         except ProviderError as exc:
             logger.exception("memory refresh skipped for session=%s", session.id)
+        await self._extract_world_state(
+            db, session, user_message=user_message, gm_response=full_reply, turn_id=assistant_turn.id,
+        )
 
         chat_turns.add(1, {"gm_enabled": False})
         logger.info("chat_stream session=%s turn_count=%s", session.id, session.turn_count)
@@ -631,9 +653,60 @@ class OrchestratorService:
         # Send completion signal
         yield f"data: {json.dumps({'type': 'done', 'session_id': session.id})}\n\n"
 
-    def _build_context_packet(self, session: ChatSession, recent_turns: list[Turn], retrieved: list) -> str:
+    def _world_state_block(self, db: Session, session: ChatSession) -> str:
+        """Load + render the canonical world-state ledger for injection.
+
+        Returns "" (no-op) when the feature flag is off or the ledger is empty.
+        """
+        if not self.settings.world_state_enabled:
+            return ""
+        with tracer.start_as_current_span("orchestrator.state_inject") as span:
+            span.set_attribute("rpg.session_id", str(session.id))
+            ledger = self.world_state.load_current(db, session.id)
+            block = self.world_state.render_block(ledger)
+            span.set_attribute(
+                "rpg.canon.injected_token_estimate",
+                0 if not block.strip() else self._estimate_tokens(block),
+            )
+            return block
+
+    async def _extract_world_state(
+        self,
+        db: Session,
+        session: ChatSession,
+        *,
+        user_message: str,
+        gm_response: str,
+        turn_id: str | None = None,
+    ) -> None:
+        """Fire the after-turn world-state extraction; never break the turn."""
+        if not self.settings.world_state_enabled:
+            return
+        try:
+            await self.world_state.extract_and_apply(
+                db,
+                session,
+                user_message=user_message,
+                gm_response=gm_response,
+                turn_id=turn_id,
+            )
+        except Exception:
+            logger.exception("world-state extract skipped for session=%s", session.id)
+
+    def _build_context_packet(
+        self,
+        session: ChatSession,
+        recent_turns: list[Turn],
+        retrieved: list,
+        world_state_block: str = "",
+    ) -> str:
         remaining_budget = self.settings.actor_context_budget
         sections: list[str] = []
+
+        if world_state_block.strip():
+            remaining_budget = self._append_section(
+                sections, "Canonical World State", world_state_block, remaining_budget, required=True
+            )
 
         hard_rules = self._hard_rules_text(session.character_card, session.world_state)
         remaining_budget = self._append_section(sections, "Hard Rules And Canon", hard_rules, remaining_budget, required=True)
@@ -661,6 +734,15 @@ class OrchestratorService:
     @staticmethod
     def _recent_turns_text(turns: list[Turn]) -> str:
         return "\n".join(f"{turn.role.upper()}: {turn.content}" for turn in turns)
+
+    @staticmethod
+    def _continuity_canon(session: ChatSession, world_state_block: str) -> str:
+        """Canon text continuity defends: the static world canon plus, when
+        enabled, the live ledger (the authoritative source of truth)."""
+        canon = session.world_state.canon if session.world_state else ""
+        if world_state_block.strip():
+            return f"{world_state_block}\n\n{canon}".strip()
+        return canon
 
     @staticmethod
     def _hard_rules_text(character: CharacterCard, world: WorldState | None) -> str:

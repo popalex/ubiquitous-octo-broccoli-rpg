@@ -75,6 +75,26 @@ export type SessionMemory = {
   }>;
 };
 
+export type WorldStateLedger = {
+  session_id: string;
+  version: number;
+  created_at: string | null;
+  state: {
+    location?: { name?: string | null; description?: string | null } | null;
+    entities?: Array<{
+      id: string;
+      name: string;
+      kind?: string;
+      status?: string | null;
+      facts?: string[];
+      relationship_to_player?: string | null;
+    }>;
+    inventory?: Array<{ item: string; qty?: number | null }>;
+    threads?: Array<{ id: string; summary: string; status?: string }>;
+    facts?: string[];
+  };
+};
+
 export type RetrievedMemory = {
   id: string;
   kind: string;

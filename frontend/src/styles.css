@@ -381,6 +381,15 @@ h3 {
   grid-template-columns: 1.6fr 0.85fr;
 }
 
+/* Right-hand column stacks the Codex (world-state ledger) above the Archive */
+.panel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  align-items: stretch;
+  min-width: 0;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    WIZARD: CODEX STAGE (full-width character setup)
    ═══════════════════════════════════════════════════════════════════════════ */
