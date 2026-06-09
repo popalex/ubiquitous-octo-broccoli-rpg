@@ -48,10 +48,6 @@ export function CodexPanel({ worldState }: Props) {
               </div>
             </div>
           )}
-              </div>
-            </div>
-          )}
-
           {dead.length > 0 && (
             <div className="subpanel">
               <h3>☠ The Fallen</h3>
