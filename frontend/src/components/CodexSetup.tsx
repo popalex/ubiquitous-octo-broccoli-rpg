@@ -1,0 +1,173 @@
+import { useQuery } from "@tanstack/react-query";
+import { type FormEvent, useState } from "react";
+
+import { storageKeys } from "../api";
+import { useLoadCharacter, useStartSession } from "../hooks/useSessionMutations";
+import { loadAllTemplates } from "../loadTemplates";
+import { templates as baseTemplates, type RoleplayTemplate } from "../templates";
+import type { CharacterLoadPayload } from "../types";
+import { CharacterPanel } from "./CharacterPanel";
+
+type Props = {
+  /** Called with the new session id and the starter prompt to seed the chat box. */
+  onStarted: (sessionId: string, starterPrompt: string) => void;
+};
+
+/**
+ * Character/world setup. Owns the state that survives template switches
+ * (selected template, GM mode, time of day, loaded ids); the per-template
+ * fields live in {@link CodexForm}, which is remounted via `key` when the
+ * resolved template changes — so picking a template (or async-loading an extra
+ * one) re-seeds the form without a set-state-in-effect.
+ */
+export function CodexSetup({ onStarted }: Props) {
+  // placeholderData (not initialData) shows the built-in templates immediately
+  // while still fetching the extra ones — initialData + staleTime:Infinity would
+  // treat the seed as fresh and never load templates-extra.json.
+  const { data: templates = baseTemplates } = useQuery({
+    queryKey: ["templates"],
+    queryFn: loadAllTemplates,
+    placeholderData: baseTemplates,
+    staleTime: Infinity,
+  });
+
+  const [selectedTemplateId, setSelectedTemplateId] = useState(
+    () => localStorage.getItem(storageKeys.selectedTemplate) || baseTemplates[0].id,
+  );
+  const [gmEnabled, setGmEnabled] = useState(() => localStorage.getItem(storageKeys.gmEnabled) === "true");
+  const [timeOfDay, setTimeOfDay] = useState("morning");
+  const [ids, setIds] = useState(() => ({
+    characterCardId: localStorage.getItem(storageKeys.characterCardId) || "",
+    worldStateId: localStorage.getItem(storageKeys.worldStateId) || "",
+  }));
+
+  const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) || templates[0];
+
+  function handleSelectTemplate(id: string) {
+    setSelectedTemplateId(id);
+    localStorage.setItem(storageKeys.selectedTemplate, id);
+  }
+
+  function handleSetGmEnabled(value: boolean) {
+    setGmEnabled(value);
+    localStorage.setItem(storageKeys.gmEnabled, String(value));
+  }
+
+  return (
+    <CodexForm
+      key={selectedTemplate.id}
+      template={selectedTemplate}
+      templates={templates}
+      selectedTemplateId={selectedTemplateId}
+      onSelectTemplate={handleSelectTemplate}
+      gmEnabled={gmEnabled}
+      setGmEnabled={handleSetGmEnabled}
+      timeOfDay={timeOfDay}
+      setTimeOfDay={setTimeOfDay}
+      ids={ids}
+      setIds={setIds}
+      onStarted={onStarted}
+    />
+  );
+}
+
+type CodexFormProps = {
+  template: RoleplayTemplate;
+  templates: RoleplayTemplate[];
+  selectedTemplateId: string;
+  onSelectTemplate: (id: string) => void;
+  gmEnabled: boolean;
+  setGmEnabled: (v: boolean) => void;
+  timeOfDay: string;
+  setTimeOfDay: (v: string) => void;
+  ids: { characterCardId: string; worldStateId: string };
+  setIds: (ids: { characterCardId: string; worldStateId: string }) => void;
+  onStarted: (sessionId: string, starterPrompt: string) => void;
+};
+
+function CodexForm({
+  template,
+  templates,
+  selectedTemplateId,
+  onSelectTemplate,
+  gmEnabled,
+  setGmEnabled,
+  timeOfDay,
+  setTimeOfDay,
+  ids,
+  setIds,
+  onStarted,
+}: CodexFormProps) {
+  // Seeded from the template prop; reset on template switch via the parent's key.
+  const [form, setForm] = useState<CharacterLoadPayload>(() => ({ ...template.characterLoad }));
+  const [sessionTitle, setSessionTitle] = useState(template.sessionTitle);
+  const [starterPrompt, setStarterPrompt] = useState(template.starterUserPrompt);
+  const [currentLocation, setCurrentLocation] = useState(template.startingLocation || "");
+  const [statusText, setStatusText] = useState("Ready.");
+
+  const loadCharacter = useLoadCharacter();
+  const startSession = useStartSession();
+  const isBusy = loadCharacter.isPending || startSession.isPending;
+
+  async function handleLoadCharacter(event: FormEvent) {
+    event.preventDefault();
+    setStatusText("Loading character and world...");
+    try {
+      const payload = await loadCharacter.mutateAsync(form);
+      const next = { characterCardId: payload.character_card_id, worldStateId: payload.world_state_id };
+      setIds(next);
+      localStorage.setItem(storageKeys.characterCardId, next.characterCardId);
+      localStorage.setItem(storageKeys.worldStateId, next.worldStateId);
+      setStatusText(`Loaded ${payload.character_name} in ${payload.world_name}.`);
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : "Failed to load character.");
+    }
+  }
+
+  async function handleStartSession() {
+    if (!ids.characterCardId) {
+      setStatusText("Load a character first.");
+      return;
+    }
+    setStatusText("Starting session...");
+    try {
+      const payload = await startSession.mutateAsync({
+        character_card_id: ids.characterCardId,
+        world_state_id: ids.worldStateId || null,
+        title: sessionTitle || null,
+        gm_enabled: gmEnabled,
+        current_location: currentLocation || null,
+        time_of_day: timeOfDay || null,
+      });
+      localStorage.setItem(storageKeys.sessionTitle, sessionTitle);
+      onStarted(payload.session_id, starterPrompt);
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : "Failed to start session.");
+    }
+  }
+
+  return (
+    <main className="codex-stage">
+      <CharacterPanel
+        templates={templates}
+        form={form}
+        setForm={setForm}
+        selectedTemplateId={selectedTemplateId}
+        setSelectedTemplateId={onSelectTemplate}
+        sessionTitle={sessionTitle}
+        setSessionTitle={setSessionTitle}
+        isBusy={isBusy}
+        gmEnabled={gmEnabled}
+        setGmEnabled={setGmEnabled}
+        currentLocation={currentLocation}
+        setCurrentLocation={setCurrentLocation}
+        timeOfDay={timeOfDay}
+        setTimeOfDay={setTimeOfDay}
+        onLoadCharacter={handleLoadCharacter}
+        onStartSession={handleStartSession}
+        onLoadOpening={() => setStarterPrompt(template.starterUserPrompt)}
+      />
+      <p className="muted codex-status" role="status">{statusText}</p>
+    </main>
+  );
+}

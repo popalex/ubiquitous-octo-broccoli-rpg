@@ -1799,3 +1799,9 @@ textarea:focus-visible {
   justify-content: center;
 }
 
+/* Status line under the character-setup panel (load/start feedback). */
+.codex-status {
+  margin-top: var(--space-md);
+  text-align: center;
+}
+
