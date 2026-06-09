@@ -1,0 +1,53 @@
+import { useMutation } from "@tanstack/react-query";
+
+import { api } from "../api";
+import { withUiSpan } from "../telemetry";
+import type { CharacterLoadPayload } from "../types";
+
+type CharacterLoadResult = {
+  character_card_id: string;
+  world_state_id: string;
+  character_name: string;
+  world_name: string;
+};
+
+type SessionInitResult = {
+  session_id: string;
+  turn_count: number;
+  gm_enabled: boolean;
+  current_location: string | null;
+  time_of_day: string | null;
+};
+
+export type SessionInitInput = {
+  character_card_id: string;
+  world_state_id: string | null;
+  title: string | null;
+  gm_enabled: boolean;
+  current_location: string | null;
+  time_of_day: string | null;
+};
+
+/** POST /character/load — upserts the character + world templates. */
+export function useLoadCharacter() {
+  return useMutation({
+    mutationFn: (form: CharacterLoadPayload) =>
+      withUiSpan(
+        "ui.load_character",
+        { "rpg.character_name": form.name, "rpg.world_name": form.world_name },
+        () => api<CharacterLoadResult>("/character/load", { method: "POST", body: JSON.stringify(form) }),
+      ),
+  });
+}
+
+/** POST /session/init — starts a new chronicle. */
+export function useStartSession() {
+  return useMutation({
+    mutationFn: (input: SessionInitInput) =>
+      withUiSpan(
+        "ui.new_chronicle",
+        { "rpg.character_card_id": input.character_card_id, "rpg.gm_enabled": input.gm_enabled },
+        () => api<SessionInitResult>("/session/init", { method: "POST", body: JSON.stringify(input) }),
+      ),
+  });
+}

@@ -20,12 +20,12 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    let detail = response.statusText;
+    let detail: string;
     try {
       const body = await response.json();
       detail = body.detail ?? JSON.stringify(body);
     } catch {
-      detail = await response.text();
+      detail = (await response.text()) || response.statusText;
     }
     throw new Error(detail || "Request failed");
   }

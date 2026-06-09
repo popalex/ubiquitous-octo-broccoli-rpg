@@ -18,17 +18,14 @@ export default tseslint.config(
       "react-refresh": reactRefresh,
     },
     rules: {
-      // Stable hooks rules (rules-of-hooks + exhaustive-deps). We deliberately
-      // avoid react-hooks 7's "recommended-latest", whose new React-Compiler
-      // rules (e.g. set-state-in-effect) flag working effects and would force
-      // refactors out of scope for lint adoption.
+      // Stable hooks rules (rules-of-hooks + exhaustive-deps).
       ...reactHooks.configs.recommended.rules,
-      // Opinionated React-Compiler-era rules that flag working, intentional
-      // patterns in this codebase (loading-state effects, defensive fallback
-      // assignment). Disabled so lint catches real bugs without forcing
-      // refactors. Revisit if the app adopts the React Compiler.
-      "react-hooks/set-state-in-effect": "off",
-      "no-useless-assignment": "off",
+      // React-Compiler-era rules. Now enforced: data fetching moved to
+      // TanStack Query and template/resume seeding uses keyed components, so
+      // no effect sets state synchronously; the one defensive fallback
+      // assignment in api.ts was restructured. See hooks/ and components/.
+      "react-hooks/set-state-in-effect": "error",
+      "no-useless-assignment": "error",
       "react-refresh/only-export-components": [
         "warn",
         { allowConstantExport: true },

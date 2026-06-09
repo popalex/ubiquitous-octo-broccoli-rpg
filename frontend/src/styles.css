@@ -1764,3 +1764,44 @@ textarea:focus-visible {
   transform: translateX(0);
 }
 
+/* Top-level render-error fallback (ErrorBoundary). */
+.error-boundary {
+  max-width: 40rem;
+  margin: 4rem auto;
+  padding: var(--space-xl);
+  background: var(--charcoal);
+  border: 1px solid var(--crimson);
+  border-radius: 12px;
+  box-shadow: var(--paper-shadow), var(--glow-crimson);
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.error-boundary h1 {
+  color: var(--crimson-glow);
+  margin-top: 0;
+}
+
+.error-boundary__detail {
+  margin: var(--space-lg) 0;
+  padding: var(--space-md);
+  background: var(--void);
+  border-radius: 8px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: left;
+}
+
+.error-boundary__actions {
+  display: flex;
+  gap: var(--space-md);
+  justify-content: center;
+}
+
+/* Status line under the character-setup panel (load/start feedback). */
+.codex-status {
+  margin-top: var(--space-md);
+  text-align: center;
+}
+

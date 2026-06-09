@@ -26,6 +26,19 @@ class BaseModelProvider(ABC):
         self.model_name = model_name
         self.settings = settings or get_settings()
 
+    async def aclose(self) -> None:
+        """Release the underlying HTTP client, if any. Idempotent.
+
+        Handles both ``httpx.AsyncClient`` (``aclose``) and the OpenAI SDK
+        client (``close``), so subclasses don't each need their own teardown.
+        """
+        client = getattr(self, "client", None)
+        if client is None:
+            return
+        closer = getattr(client, "aclose", None) or getattr(client, "close", None)
+        if closer is not None:
+            await closer()
+
     @abstractmethod
     async def generate_text(
         self,
@@ -38,7 +51,7 @@ class BaseModelProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def generate_text_stream(
+    async def generate_text_stream(
         self,
         messages: Sequence[ProviderMessage],
         *,

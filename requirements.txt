@@ -20,6 +20,7 @@ opentelemetry-instrumentation-logging==0.63b1
 
 # Lint
 ruff==0.15.16
+mypy==1.18.2
 
 # Test dependencies
 pytest>=8.0

@@ -28,10 +28,12 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.14"
-    - name: Install ruff
-      run: pip install ruff==0.15.16
+    - name: Install ruff and mypy
+      run: pip install ruff==0.15.16 mypy==1.18.2
     - name: Ruff lint
       run: ruff check .
+    - name: Mypy type check
+      run: mypy app
 
   frontend:
     runs-on: ubuntu-latest
@@ -54,6 +56,8 @@ jobs:
       run: pnpm lint
     - name: Typecheck
       run: pnpm typecheck
+    - name: Unit tests
+      run: pnpm test
 
   build:
     runs-on: ubuntu-latest
