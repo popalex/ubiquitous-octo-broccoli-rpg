@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Generator, Sequence
+from collections.abc import AsyncIterator, Sequence
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
