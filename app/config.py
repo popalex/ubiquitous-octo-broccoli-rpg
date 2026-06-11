@@ -75,6 +75,18 @@ class Settings(BaseSettings):
     world_state_max_facts: int = 40
     world_state_extract_max_tokens: int = 800
 
+    # Quest system: AI-tracked narrative arcs (GM offers, emergent player
+    # promises, escalation of neglected arcs). Ships dark behind this flag,
+    # like world_state. Turn-based knobs are in raw turn_count units — GM mode
+    # advances turn_count by 2-3 per exchange, so 12 turns is ~4-6 exchanges.
+    quests_enabled: bool = False
+    quest_max_active: int = 5  # cap of non-terminal quests tracked/injected
+    quest_max_stages: int = 8  # per-quest stage cap
+    quest_extraction_interval: int = 1  # run the post-turn judge every N turns
+    quest_escalation_turns: int = 12  # turns without progress before escalation
+    quest_extract_max_tokens: int = 700
+    quest_temperature: float = 0.2
+
     @property
     def actor_context_budget(self) -> int:
         return max(512, self.actor_max_input_tokens - self.actor_reserved_output_tokens)

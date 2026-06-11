@@ -2,6 +2,8 @@ export type Health = {
   status: string;
   database: string;
   mode: string;
+  world_state_enabled: boolean;
+  quests_enabled: boolean;
 };
 
 export type ChronicleListItem = {
@@ -95,6 +97,45 @@ export type WorldStateLedger = {
   };
 };
 
+export type QuestStage = {
+  id: string;
+  description: string;
+  done: boolean;
+};
+
+export type Quest = {
+  id: string;
+  slug: string;
+  title: string;
+  quest_type: string;
+  description: string;
+  stakes: string | null;
+  status: string;
+  origin: string;
+  stages: QuestStage[];
+  resolution: string | null;
+  created_turn: number;
+  accepted_turn: number | null;
+  last_progress_turn: number;
+  resolved_turn: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SessionQuests = {
+  session_id: string;
+  quests: Quest[];
+};
+
+export type QuestUpdateNotification = {
+  quest_id: string;
+  slug: string;
+  title: string;
+  status: string;
+  change: string;
+  detail: string | null;
+};
+
 export type RetrievedMemory = {
   id: string;
   kind: string;
@@ -109,7 +150,7 @@ export type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "narrator";
   content: string;
-  messageType?: "chat" | "pre_narration" | "post_narration" | "event";
+  messageType?: "chat" | "pre_narration" | "post_narration" | "event" | "quest";
 };
 
 export type GMEvent = {

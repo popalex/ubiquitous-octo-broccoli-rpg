@@ -574,3 +574,97 @@ async def test_get_world_state_returns_latest(async_client: AsyncClient, db_sess
 async def test_get_world_state_unknown_session_404(async_client: AsyncClient) -> None:
     response = await async_client.get("/session/does-not-exist/world-state")
     assert response.status_code == 404
+
+
+# ===========================================================================
+# Quests
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_get_quests_empty_when_none(async_client: AsyncClient, db_session) -> None:
+    session = SessionFactory()
+    await db_session.flush()
+    response = await async_client.get(f"/session/{session.id}/quests")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["session_id"] == session.id
+    assert data["quests"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_quests_orders_open_first(async_client: AsyncClient, db_session) -> None:
+    from tests.factories import QuestFactory
+
+    session = SessionFactory()
+    QuestFactory(session=session, slug="done-quest", status="completed", resolution="Done.")
+    QuestFactory(session=session, slug="open-quest", status="active")
+    await db_session.flush()
+
+    response = await async_client.get(f"/session/{session.id}/quests")
+    assert response.status_code == 200
+    quests = response.json()["quests"]
+    assert [q["slug"] for q in quests] == ["open-quest", "done-quest"]
+    assert quests[0]["stages"][0]["id"] == "ask-around"
+
+
+@pytest.mark.asyncio
+async def test_get_quests_status_filter(async_client: AsyncClient, db_session) -> None:
+    from tests.factories import QuestFactory
+
+    session = SessionFactory()
+    QuestFactory(session=session, slug="active-one", status="active")
+    QuestFactory(session=session, slug="offered-one", status="offered")
+    await db_session.flush()
+
+    response = await async_client.get(f"/session/{session.id}/quests?status=offered")
+    quests = response.json()["quests"]
+    assert [q["slug"] for q in quests] == ["offered-one"]
+
+
+@pytest.mark.asyncio
+async def test_get_quests_unknown_session_404(async_client: AsyncClient) -> None:
+    response = await async_client.get("/session/does-not-exist/quests")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_patch_quest_abandons(async_client: AsyncClient, db_session) -> None:
+    from tests.factories import QuestFactory
+
+    session = SessionFactory(turn_count=9)
+    quest = QuestFactory(session=session, status="active")
+    await db_session.flush()
+
+    response = await async_client.patch(
+        f"/session/{session.id}/quests/{quest.id}", json={"status": "abandoned"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "abandoned"
+    assert data["resolved_turn"] == 9
+    assert data["resolution"] == "Abandoned by the player."
+
+
+@pytest.mark.asyncio
+async def test_patch_quest_terminal_returns_409(async_client: AsyncClient, db_session) -> None:
+    from tests.factories import QuestFactory
+
+    session = SessionFactory()
+    quest = QuestFactory(session=session, status="completed", resolution="Done.")
+    await db_session.flush()
+
+    response = await async_client.patch(
+        f"/session/{session.id}/quests/{quest.id}", json={"status": "abandoned"}
+    )
+    assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_patch_quest_unknown_quest_404(async_client: AsyncClient, db_session) -> None:
+    session = SessionFactory()
+    await db_session.flush()
+    response = await async_client.patch(
+        f"/session/{session.id}/quests/nonexistent", json={"status": "abandoned"}
+    )
+    assert response.status_code == 404

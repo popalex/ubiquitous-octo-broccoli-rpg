@@ -2,10 +2,12 @@ import { useState } from "react";
 import { useLocation } from "react-router-dom";
 
 import { sendChat } from "../chat";
+import { useHealth } from "../hooks/useHealth";
 import {
   useRefreshMemory,
   useSessionDetail,
   useSessionMemory,
+  useSessionQuests,
   useSessionTurns,
   useWorldState,
 } from "../hooks/useSession";
@@ -14,6 +16,7 @@ import type { ChatMessage, GMEvent, RetrievedMemory, SessionDetail, TurnRecord }
 import { ChatPanel } from "./ChatPanel";
 import { CodexPanel } from "./CodexPanel";
 import { MemoryPanel } from "./MemoryPanel";
+import { QuestJournal } from "./QuestJournal";
 
 /**
  * Loads a chronicle's detail + turns via React Query, then hands the resolved
@@ -64,8 +67,10 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
   );
   const [isBusy, setIsBusy] = useState(false);
 
+  const health = useHealth();
   const memory = useSessionMemory(sessionId);
   const worldState = useWorldState(sessionId);
+  const quests = useSessionQuests(sessionId);
   const refreshMemory = useRefreshMemory();
 
   const gmEnabled = detail.gm_enabled;
@@ -101,6 +106,10 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
           <span className="meta-label">Realm</span>
           <strong>{detail.world_name || "—"}</strong>
         </div>
+        <div className="summary-item">
+          <span className="meta-label">Chronicle</span>
+          <strong>{sessionId ? `#${sessionId.slice(0, 8)}` : "Awaiting"}</strong>
+        </div>
         {gmEnabled && (
           <div className="summary-item">
             <span className="meta-label">Location</span>
@@ -109,7 +118,17 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
         )}
         <div className="summary-item">
           <span className="meta-label">Mode</span>
-          <strong>{gmEnabled ? "✧ Game Master" : "Standard"}</strong>
+          <strong className={gmEnabled ? "gm-badge" : undefined}>
+            {gmEnabled ? "✧ Game Master" : "Standard"}
+          </strong>
+        </div>
+        <div className="summary-item">
+          <span className="meta-label">World Ledger</span>
+          <strong>{health ? (health.world_state_enabled ? "On" : "Off") : "—"}</strong>
+        </div>
+        <div className="summary-item">
+          <span className="meta-label">Quests</span>
+          <strong>{health ? (health.quests_enabled ? "On" : "Off") : "—"}</strong>
         </div>
       </div>
       <main className="dashboard dashboard-chronicle">
@@ -120,13 +139,12 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
           isBusy={isBusy}
           sessionId={sessionId}
           characterName={detail.character_name || ""}
-          worldName={detail.world_name || ""}
-          gmEnabled={gmEnabled}
           statusText={statusText}
           onSendChat={handleSendChat}
         />
         <div className="panel-stack">
           <CodexPanel worldState={worldState.data ?? null} />
+          <QuestJournal sessionId={sessionId} quests={quests.data ?? null} />
           <MemoryPanel
             retrievedMemories={retrievedMemories}
             continuityIssues={continuityIssues}

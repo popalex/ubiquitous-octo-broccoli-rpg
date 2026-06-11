@@ -16,10 +16,17 @@ from app.models import CharacterCard, Turn, WorldState
 from app.models import Session as ChatSession
 from app.prompts import ACTOR_SYSTEM_PROMPT
 from app.providers.base import ProviderError, ProviderMessage, build_provider
-from app.schemas import ChatResponse, GMChatResponse, GMEventGenerateResponse, RetrievedMemoryItem
+from app.schemas import (
+    ChatResponse,
+    GMChatResponse,
+    GMEventGenerateResponse,
+    QuestUpdateNotification,
+    RetrievedMemoryItem,
+)
 from app.services.continuity import ContinuityResult, ContinuityService
 from app.services.game_master import GameMasterService
 from app.services.memory import MemoryService
+from app.services.quests import QuestChange, QuestService
 from app.services.retrieval import RetrievalService
 from app.services.world_state import WorldStateService
 from app.telemetry import chat_turns, retrieval_selected, tracer
@@ -39,6 +46,7 @@ class OrchestratorService:
         self.continuity = ContinuityService(self.memory_provider)
         self.game_master = GameMasterService(self.gm_provider, self.settings)
         self.world_state = WorldStateService(self.memory_provider, self.settings)
+        self.quests = QuestService(self.memory_provider, self.settings)
 
     async def aclose(self) -> None:
         """Close every provider's HTTP client. Dedupes by identity because
@@ -66,7 +74,8 @@ class OrchestratorService:
         recent_turns = list(reversed(recent_turns))
 
         world_state_block = await self._world_state_block(db, session)
-        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block)
+        quest_block = await self._quest_block(db, session)
+        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block, quest_block)
         system_prompt = ACTOR_SYSTEM_PROMPT.format(
             character_name=session.character_card.name,
             character_description=session.character_card.description,
@@ -127,6 +136,9 @@ class OrchestratorService:
         await self._extract_world_state(
             db, session, user_message=user_message, gm_response=continuity.final_reply, turn_id=assistant_turn.id,
         )
+        quest_changes = await self._extract_quests(
+            db, session, user_message=user_message, response_text=continuity.final_reply, turn_id=assistant_turn.id,
+        )
         logger.info("chat session=%s turn_count=%s continuity_applied=%s", session.id, session.turn_count, continuity.applied)
 
         return ChatResponse(
@@ -134,6 +146,7 @@ class OrchestratorService:
             reply=continuity.final_reply,
             continuity_applied=continuity.applied,
             continuity_issues=continuity.issues,
+            quest_updates=self._quest_change_notifications(quest_changes),
             retrieved_memories=[
                 RetrievedMemoryItem(
                     id=item.id,
@@ -182,12 +195,21 @@ class OrchestratorService:
         recent_turns = list(reversed(recent_turns))
         recent_events = self._recent_turns_text(recent_turns[-4:]) if recent_turns else ""
 
+        # Neglected quests pressure the event check toward consequence events
+        pressure_quests = []
+        if self.settings.quests_enabled:
+            try:
+                pressure_quests = await self.quests.neglected(db, session)
+            except Exception:
+                logger.exception("quest pressure check skipped for session=%s", session.id)
+
         # Check for event trigger
         event_check = await self.game_master.check_for_event(
             db,
             session,
             location=location or "unknown",
             time_of_day=time_of_day or "unknown",
+            quest_pressure=QuestService.render_pressure(pressure_quests),
         )
 
         # Generate pre-narration (scene setting)
@@ -204,7 +226,8 @@ class OrchestratorService:
 
         # Get character response via normal flow
         world_state_block = await self._world_state_block(db, session)
-        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block)
+        quest_block = await self._quest_block(db, session)
+        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block, quest_block)
 
         # Include GM narration in context if available
         if pre_narration:
@@ -250,6 +273,7 @@ class OrchestratorService:
                     event_type=event_check.event_type,
                     urgency=event_check.urgency,
                     player_actions=user_message,
+                    quest_context=quest_block,
                 )
                 event_response = GMEventGenerateResponse(
                     event_type=generated_event.event_type,
@@ -324,6 +348,18 @@ class OrchestratorService:
             db, session, user_message=user_message, gm_response=full_assistant_content,
             turn_id=turns_to_add[-1].id,
         )
+        quest_changes = await self._post_event_quest_work(
+            db,
+            session,
+            event_check=event_check,
+            event_description=post_narration,
+            pressure_quests=pressure_quests,
+            turn_id=turns_to_add[-1].id,
+        )
+        quest_changes += await self._extract_quests(
+            db, session, user_message=user_message, response_text=full_assistant_content,
+            turn_id=turns_to_add[-1].id,
+        )
 
         logger.info(
             "gm_chat session=%s turn_count=%s event_triggered=%s",
@@ -340,6 +376,7 @@ class OrchestratorService:
             event=event_response,
             continuity_applied=continuity.applied,
             continuity_issues=continuity.issues,
+            quest_updates=self._quest_change_notifications(quest_changes),
             retrieved_memories=[
                 RetrievedMemoryItem(
                     id=item.id,
@@ -399,6 +436,14 @@ class OrchestratorService:
         # Send retrieved memories
         yield f"data: {json.dumps({'type': 'memories', 'memories': [{'id': item.id, 'kind': item.kind, 'content': item.content, 'weighted_score': item.weighted_score, 'semantic_score': item.semantic_score, 'recency_score': item.recency_score, 'importance': item.importance} for item in retrieved]})}\n\n"
 
+        # Neglected quests pressure the event check toward consequence events
+        pressure_quests = []
+        if self.settings.quests_enabled:
+            try:
+                pressure_quests = await self.quests.neglected(db, session)
+            except Exception:
+                logger.exception("quest pressure check skipped for session=%s", session.id)
+
         # Check for event trigger (fast, no LLM)
         event_start = time.perf_counter()
         with tracer.start_as_current_span("orchestrator.event_check") as _span:
@@ -407,6 +452,7 @@ class OrchestratorService:
                 session,
                 location=location or "unknown",
                 time_of_day=time_of_day or "unknown",
+                quest_pressure=QuestService.render_pressure(pressure_quests),
             )
             _span.set_attribute("rpg.event_should_trigger", event_check.should_trigger)
         logger.info("gm_chat_stream session=%s event_check duration=%.2fs should_trigger=%s", session_id, time.perf_counter() - event_start, event_check.should_trigger)
@@ -434,7 +480,8 @@ class OrchestratorService:
 
         # Build context for character response
         world_state_block = await self._world_state_block(db, session)
-        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block)
+        quest_block = await self._quest_block(db, session)
+        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block, quest_block)
         if pre_narration:
             context_packet = f"[Scene Narration]\n{pre_narration}\n\n{context_packet}"
 
@@ -483,6 +530,7 @@ class OrchestratorService:
                     event_type=event_check.event_type,
                     urgency=event_check.urgency,
                     player_actions=user_message,
+                    quest_context=quest_block,
                 )
                 event_response = {
                     "event_type": generated_event.event_type,
@@ -559,6 +607,20 @@ class OrchestratorService:
             db, session, user_message=user_message, gm_response=full_assistant_content,
             turn_id=turns_to_add[-1].id,
         )
+        quest_changes = await self._post_event_quest_work(
+            db,
+            session,
+            event_check=event_check,
+            event_description=post_narration,
+            pressure_quests=pressure_quests,
+            turn_id=turns_to_add[-1].id,
+        )
+        quest_changes += await self._extract_quests(
+            db, session, user_message=user_message, response_text=full_assistant_content,
+            turn_id=turns_to_add[-1].id,
+        )
+        for change in quest_changes:
+            yield f"data: {json.dumps({'type': 'quest_update', 'quest': self._quest_change_payload(change)})}\n\n"
 
         chat_turns.add(1, {"gm_enabled": True})
         total_duration = time.perf_counter() - total_start
@@ -589,7 +651,8 @@ class OrchestratorService:
         recent_turns = list(reversed(recent_turns))
 
         world_state_block = await self._world_state_block(db, session)
-        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block)
+        quest_block = await self._quest_block(db, session)
+        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block, quest_block)
         system_prompt = ACTOR_SYSTEM_PROMPT.format(
             character_name=session.character_card.name,
             character_description=session.character_card.description,
@@ -656,6 +719,11 @@ class OrchestratorService:
         await self._extract_world_state(
             db, session, user_message=user_message, gm_response=full_reply, turn_id=assistant_turn.id,
         )
+        quest_changes = await self._extract_quests(
+            db, session, user_message=user_message, response_text=full_reply, turn_id=assistant_turn.id,
+        )
+        for change in quest_changes:
+            yield f"data: {json.dumps({'type': 'quest_update', 'quest': self._quest_change_payload(change)})}\n\n"
 
         chat_turns.add(1, {"gm_enabled": False})
         logger.info("chat_stream session=%s turn_count=%s", session.id, session.turn_count)
@@ -703,12 +771,99 @@ class OrchestratorService:
         except Exception:
             logger.exception("world-state extract skipped for session=%s", session.id)
 
+    async def _quest_block(self, db: AsyncSession, session: ChatSession) -> str:
+        """Load + render open quests for prompt injection.
+
+        Returns "" (no-op) when the feature flag is off or no quests are open.
+        """
+        if not self.settings.quests_enabled:
+            return ""
+        try:
+            quests = await self.quests.load_open(db, session.id)
+        except Exception:
+            logger.exception("quest load skipped for session=%s", session.id)
+            return ""
+        return self.quests.render_block(quests)
+
+    async def _extract_quests(
+        self,
+        db: AsyncSession,
+        session: ChatSession,
+        *,
+        user_message: str,
+        response_text: str,
+        turn_id: str | None = None,
+    ) -> list[QuestChange]:
+        """Fire the after-turn quest judge; never break the turn."""
+        if not self.settings.quests_enabled:
+            return []
+        try:
+            return await self.quests.extract_and_apply(
+                db,
+                session,
+                user_message=user_message,
+                response_text=response_text,
+                turn_id=turn_id,
+            )
+        except Exception:
+            logger.exception("quest extract skipped for session=%s", session.id)
+            return []
+
+    async def _post_event_quest_work(
+        self,
+        db: AsyncSession,
+        session: ChatSession,
+        *,
+        event_check,
+        event_description: str | None,
+        pressure_quests: list,
+        turn_id: str | None,
+    ) -> list[QuestChange]:
+        """After-commit GM event follow-up: plot hooks become quest offers and
+        pressured quests escalate once a consequence event fired. Never breaks
+        the turn."""
+        if not self.settings.quests_enabled:
+            return []
+        changes: list[QuestChange] = []
+        try:
+            if event_description and event_check.event_type == "plot_hook":
+                offer = await self.quests.offer_from_event(
+                    db,
+                    session,
+                    event_seed=event_check.event_seed,
+                    description=event_description,
+                    turn_id=turn_id,
+                )
+                if offer is not None:
+                    changes.append(QuestChange(quest=offer, change="offered", detail=offer.description))
+            if pressure_quests and event_check.should_trigger:
+                changes += await self.quests.mark_escalating(db, session, pressure_quests)
+        except Exception:
+            logger.exception("post-event quest work skipped for session=%s", session.id)
+        return changes
+
+    @staticmethod
+    def _quest_change_payload(change: QuestChange) -> dict:
+        return {
+            "quest_id": change.quest.id,
+            "slug": change.quest.slug,
+            "title": change.quest.title,
+            "status": change.quest.status,
+            "change": change.change,
+            "detail": change.detail,
+        }
+
+    @classmethod
+    def _quest_change_notifications(cls, changes: list[QuestChange]) -> list[QuestUpdateNotification]:
+        return [QuestUpdateNotification(**cls._quest_change_payload(c)) for c in changes]
+
     def _build_context_packet(
         self,
         session: ChatSession,
         recent_turns: list[Turn],
         retrieved: list,
         world_state_block: str = "",
+        quest_block: str = "",
     ) -> str:
         remaining_budget = self.settings.actor_context_budget
         sections: list[str] = []
@@ -716,6 +871,11 @@ class OrchestratorService:
         if world_state_block.strip():
             remaining_budget = self._append_section(
                 sections, "Canonical World State", world_state_block, remaining_budget, required=True
+            )
+
+        if quest_block.strip():
+            remaining_budget = self._append_section(
+                sections, "Active Quests", quest_block, remaining_budget
             )
 
         hard_rules = self._hard_rules_text(session.character_card, session.world_state)

@@ -115,6 +115,76 @@ If nothing changed, return {}.
 """.strip()
 
 
+QUEST_JUDGE_PROMPT = """
+You are the quest tracker for a text roleplay engine. Quests here are
+narrative arcs — mysteries to unravel, promises the player made, social arcs,
+moral dilemmas, escalating threats — never fetch/kill checklists.
+
+You are given the OPEN QUESTS (JSON) and the latest exchange (player message +
+game response). Return a strict JSON delta describing what changed.
+
+Be conservative: only act on what the text clearly supports.
+- Create a new quest ONLY for an explicit player commitment ("I'll help you
+  find your sister") or a clearly established narrative arc — never for idle
+  conversation or vague intentions.
+- An "offered" or "rumored" quest becomes "active" when the player engages
+  with it; mark it "abandoned" only when the player clearly refuses it.
+- Mark a stage complete only when the fiction shows it happened.
+- Mark a quest "completed" or "failed" only when its arc is clearly concluded,
+  and always include a one-line resolution.
+- Use stable lowercase-kebab slugs (e.g. "find-marens-sister"); reuse the
+  existing slug when updating an existing quest.
+
+Return strict JSON with this exact shape (omit empty arrays/fields):
+{
+  "quests_new": [
+    {"slug": "find-marens-sister", "title": "string",
+     "quest_type": "mystery|promise|social|dilemma|threat",
+     "description": "string", "stakes": "what is lost if this fails",
+     "stages": [{"id": "kebab-id", "description": "string"}]}
+  ],
+  "quests_update": [
+    {"slug": "existing-slug", "status": "active|completed|failed|abandoned",
+     "stages_complete": ["stage-id"],
+     "stages_add": [{"id": "kebab-id", "description": "string"}],
+     "progress_note": "one line of what moved",
+     "resolution": "required when status is completed/failed/abandoned"}
+  ]
+}
+
+If nothing quest-relevant happened, return {}.
+""".strip()
+
+
+QUEST_FROM_EVENT_PROMPT = """
+You structure a Game Master plot-hook event into a quest offer for a text
+roleplay engine. Quests are narrative arcs — mysteries, promises, social arcs,
+moral dilemmas, escalating threats — never fetch/kill checklists.
+
+Event Seed: {event_seed}
+
+Event Narrative:
+{description}
+
+World Context:
+{world_context}
+
+Return strict JSON with this exact shape:
+{{
+  "slug": "lowercase-kebab-id",
+  "title": "short evocative title",
+  "quest_type": "mystery|promise|social|dilemma|threat",
+  "description": "one or two sentences describing the arc",
+  "stakes": "what is lost if this is ignored or fails",
+  "stages": [
+    {{"id": "kebab-id", "description": "a plausible early milestone"}}
+  ]
+}}
+
+Give 2-4 stages. Stages are loose narrative milestones, not a rigid checklist.
+""".strip()
+
+
 # =============================================================================
 # GAME MASTER PROMPTS
 # =============================================================================
@@ -183,6 +253,10 @@ Current Location: {location}
 Time of Day: {time_of_day}
 Turn Count: {turn_count}
 
+Neglected Quests (the world should move on these — strongly prefer a
+"consequence" event that advances or complicates one of them):
+{quest_pressure}
+
 Available Event Types:
 - encounter: A meeting with NPCs (friendly, neutral, or hostile)
 - discovery: Finding something interesting (object, location, information)
@@ -216,6 +290,9 @@ Urgency: {urgency}
 
 World Context:
 {world_context}
+
+Active Quest Arcs (tie the event into one of these when natural):
+{quest_context}
 
 Recent Player Actions:
 {player_actions}

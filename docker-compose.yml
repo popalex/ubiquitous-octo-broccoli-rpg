@@ -132,6 +132,8 @@ services:
       # GM event settings
       EVENT_CHECK_INTERVAL: ${EVENT_CHECK_INTERVAL:-3}
       EVENT_PROBABILITY: ${EVENT_PROBABILITY:-0.4}
+      # Quest system (AI-tracked narrative arcs)
+      QUESTS_ENABLED: ${QUESTS_ENABLED:-true}
     depends_on:
       postgres:
         condition: service_healthy

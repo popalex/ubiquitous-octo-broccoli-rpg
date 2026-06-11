@@ -11,7 +11,33 @@
   "title": "RPG · Logs",
   "uid": "rpg-logs",
   "version": 1,
-  "templating": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": "label_values(service_name)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".+",
+        "multi": true,
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] }
+      },
+      {
+        "name": "level",
+        "label": "Level",
+        "type": "custom",
+        "query": "debug,info,warn,error",
+        "includeAll": true,
+        "allValue": ".+",
+        "multi": true,
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "options": []
+      }
+    ]
+  },
   "panels": [
     {
       "datasource": { "type": "loki", "uid": "loki" },
@@ -22,18 +48,18 @@
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" } }, "unit": "short" }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
-        { "datasource": { "type": "loki", "uid": "loki" }, "editorMode": "code", "expr": "sum by (detected_level) (count_over_time({service_name=\"rpg-backend\"} [$__interval]))", "legendFormat": "{{detected_level}}", "queryType": "range", "refId": "A" }
+        { "datasource": { "type": "loki", "uid": "loki" }, "editorMode": "code", "expr": "sum by (detected_level) (count_over_time({service_name=~\"$service\"} | detected_level=~\"$level\" [$__interval]))", "legendFormat": "{{detected_level}}", "queryType": "range", "refId": "A" }
       ]
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
-      "title": "Backend logs  (open a line → Tempo trace via trace_id)",
+      "title": "Logs  (open a line → Tempo trace via trace_id)",
       "type": "logs",
       "gridPos": { "h": 17, "w": 24, "x": 0, "y": 7 },
       "id": 2,
       "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
       "targets": [
-        { "datasource": { "type": "loki", "uid": "loki" }, "editorMode": "code", "expr": "{service_name=\"rpg-backend\"}", "queryType": "range", "refId": "A" }
+        { "datasource": { "type": "loki", "uid": "loki" }, "editorMode": "code", "expr": "{service_name=~\"$service\"} | detected_level=~\"$level\"", "queryType": "range", "refId": "A" }
       ]
     }
   ]

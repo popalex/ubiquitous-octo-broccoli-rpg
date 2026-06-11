@@ -197,12 +197,15 @@ class GameMasterService:
         session: ChatSession,
         location: str = "unknown",
         time_of_day: str = "unknown",
+        quest_pressure: str = "",
     ) -> EventCheckResult:
         """
         Determine if an event should trigger based on game state.
 
         Uses both probabilistic checks and LLM analysis to decide
-        whether the current moment warrants an event.
+        whether the current moment warrants an event. When neglected quests
+        are supplied via ``quest_pressure``, the probabilistic gate is skipped
+        so the LLM reliably gets the chance to move the world on them.
         """
         # Early exit based on interval
         if session.turn_count % self.settings.event_check_interval != 0:
@@ -215,7 +218,7 @@ class GameMasterService:
             )
 
         # Probabilistic gate
-        if random.random() > self.settings.event_probability:
+        if not quest_pressure and random.random() > self.settings.event_probability:
             return EventCheckResult(
                 should_trigger=False,
                 event_type="none",
@@ -240,6 +243,7 @@ class GameMasterService:
             location=location,
             time_of_day=time_of_day,
             turn_count=session.turn_count,
+            quest_pressure=quest_pressure or "None.",
         )
 
         try:
@@ -273,6 +277,7 @@ class GameMasterService:
         event_type: str,
         urgency: str,
         player_actions: str,
+        quest_context: str = "",
     ) -> GeneratedEvent:
         """
         Generate a full event narrative from a seed.
@@ -296,6 +301,7 @@ class GameMasterService:
             event_type=event_type,
             urgency=urgency,
             world_context=world_context,
+            quest_context=quest_context or "None.",
             player_actions=player_actions,
         )
 

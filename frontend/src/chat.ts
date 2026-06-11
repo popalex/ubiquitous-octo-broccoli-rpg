@@ -1,6 +1,45 @@
 import type { Dispatch, SetStateAction } from "react";
 import { withUiSpan } from "./telemetry";
-import type { ChatMessage, GMEvent, RetrievedMemory } from "./types";
+import type { ChatMessage, GMEvent, QuestUpdateNotification, RetrievedMemory } from "./types";
+
+/** Quest changes worth announcing as a narrator card (vs. status-bar only). */
+const ANNOUNCED_QUEST_CHANGES = ["offered", "started", "escalated", "completed", "failed"];
+
+function questAnnouncement(quest: QuestUpdateNotification): string {
+  const detail = quest.detail ? ` — ${quest.detail}` : "";
+  switch (quest.change) {
+    case "offered":
+      return `**A new thread beckons:** ${quest.title}${detail}`;
+    case "started":
+      return `**Quest taken up:** ${quest.title}${detail}`;
+    case "escalated":
+      return `**The world moves without you:** ${quest.title}${detail}`;
+    case "completed":
+      return `**Quest concluded:** ${quest.title}${detail}`;
+    case "failed":
+      return `**Quest failed:** ${quest.title}${detail}`;
+    default:
+      return `**Quest ${quest.change}:** ${quest.title}${detail}`;
+  }
+}
+
+function handleQuestUpdate(
+  quest: QuestUpdateNotification,
+  setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>,
+  setStatusText: (v: string) => void,
+): void {
+  setStatusText(`Quest ${quest.change}: ${quest.title}`);
+  if (!ANNOUNCED_QUEST_CHANGES.includes(quest.change)) return;
+  setChatMessages((current) => [
+    ...current,
+    {
+      id: crypto.randomUUID(),
+      role: "narrator",
+      content: questAnnouncement(quest),
+      messageType: "quest",
+    },
+  ]);
+}
 
 export type SendChatParams = {
   sessionId: string;
@@ -162,6 +201,8 @@ async function sendGMStream({
               },
             ]);
             setStatusText(`Event triggered: ${gmEvent.event_type}`);
+          } else if (event.type === "quest_update") {
+            handleQuestUpdate(event.quest as QuestUpdateNotification, setChatMessages, setStatusText);
           } else if (event.type === "error") {
             throw new Error(event.error as string);
           } else if (event.type === "done") {
@@ -260,6 +301,8 @@ async function sendStandardStream({
             setStatusText("Updating memory scrolls…");
           } else if (event.type === "memories") {
             setRetrievedMemories(event.memories as RetrievedMemory[]);
+          } else if (event.type === "quest_update") {
+            handleQuestUpdate(event.quest as QuestUpdateNotification, setChatMessages, setStatusText);
           } else if (event.type === "error") {
             throw new Error(event.error as string);
           } else if (event.type === "done") {

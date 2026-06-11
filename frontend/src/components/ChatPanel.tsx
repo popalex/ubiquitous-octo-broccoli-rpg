@@ -8,8 +8,6 @@ type Props = {
   isBusy: boolean;
   sessionId: string;
   characterName: string;
-  worldName: string;
-  gmEnabled: boolean;
   statusText: string;
   onSendChat: () => void;
 };
@@ -21,8 +19,6 @@ export function ChatPanel({
   isBusy,
   sessionId,
   characterName,
-  worldName,
-  gmEnabled,
   statusText,
   onSendChat,
 }: Props) {
@@ -31,27 +27,6 @@ export function ChatPanel({
       <div className="panel-header">
         <p className="eyebrow">Live Chronicle</p>
         <h2>The Unfolding Tale</h2>
-      </div>
-
-      <div className="session-meta">
-        <div>
-          <span className="meta-label">Protagonist</span>
-          <strong>{characterName || "—"}</strong>
-        </div>
-        <div>
-          <span className="meta-label">Chronicle</span>
-          <strong>{sessionId ? `#${sessionId.slice(0, 8)}` : "Awaiting"}</strong>
-        </div>
-        <div>
-          <span className="meta-label">Realm</span>
-          <strong>{worldName || "—"}</strong>
-        </div>
-        {gmEnabled && (
-          <div>
-            <span className="meta-label">Mode</span>
-            <strong className="gm-badge">✧ GM</strong>
-          </div>
-        )}
       </div>
 
       <div className="chat-log">

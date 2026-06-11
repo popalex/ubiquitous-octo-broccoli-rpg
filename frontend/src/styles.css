@@ -772,21 +772,6 @@ input:disabled {
    SESSION META
    ═══════════════════════════════════════════════════════════════════════════ */
 
-.session-meta {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.75rem;
-  margin-bottom: var(--space-lg);
-}
-
-.session-meta > div {
-  padding: var(--space-md);
-  background: var(--obsidian);
-  border: 1px solid var(--dust);
-  border-radius: 3px;
-  border-left: 3px solid var(--crimson);
-}
-
 .meta-label {
   display: block;
   margin-bottom: 0.35rem;
@@ -795,16 +780,6 @@ input:disabled {
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--text-muted);
-}
-
-.session-meta strong {
-  display: block;
-  font-family: "Cinzel", serif;
-  font-size: 0.95rem;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1805,3 +1780,21 @@ textarea:focus-visible {
   text-align: center;
 }
 
+
+/* Quest journal */
+.quest-stages {
+  margin: 0.4rem 0 0;
+  padding-left: 0.25rem;
+  list-style: none;
+  font-size: 0.85rem;
+}
+
+.quest-stages li {
+  margin: 0.15rem 0;
+}
+
+.quest-abandon {
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.7rem;
+}
