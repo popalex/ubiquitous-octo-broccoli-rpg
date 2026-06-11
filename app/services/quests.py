@@ -186,9 +186,9 @@ class QuestService:
                 stage_ids.add(stage.id)
             if update.stages_complete:
                 complete = set(update.stages_complete)
-                for stage in existing_stages:
-                    if stage.get("id") in complete:
-                        stage["done"] = True
+                for existing in existing_stages:
+                    if existing.get("id") in complete:
+                        existing["done"] = True
             quest.stages = existing_stages
 
             new_status = (update.status or "").strip().lower()
