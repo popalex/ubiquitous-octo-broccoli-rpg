@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { ChatMessage } from "../types";
 
@@ -22,6 +23,13 @@ export function ChatPanel({
   statusText,
   onSendChat,
 }: Props) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  function handleSend() {
+    onSendChat();
+    textareaRef.current?.focus();
+  }
+
   return (
     <section className="panel panel-center">
       <div className="panel-header">
@@ -29,7 +37,7 @@ export function ChatPanel({
         <h2>The Unfolding Tale</h2>
       </div>
 
-      <div className="chat-log">
+      <div className="chat-log" role="log" aria-live="polite" aria-label="Chat messages">
         {chatMessages.length === 0 ? (
           <div className="empty-state">
             <p>The pages await your tale</p>
@@ -58,10 +66,12 @@ export function ChatPanel({
         )}
       </div>
 
-      <div className="composer">
+      <div className="composer" aria-live="polite">
         <textarea
+          ref={textareaRef}
           rows={4}
           placeholder="Inscribe your next action or words..."
+          aria-label="Write your response"
           value={chatInput}
           onChange={(e) => setChatInput(e.target.value)}
         />
@@ -71,7 +81,7 @@ export function ChatPanel({
             className="btn btn-primary"
             type="button"
             disabled={isBusy || !sessionId}
-            onClick={onSendChat}
+            onClick={handleSend}
           >
             {isBusy ? "✦ Weaving..." : "▶ Send Turn"}
           </button>

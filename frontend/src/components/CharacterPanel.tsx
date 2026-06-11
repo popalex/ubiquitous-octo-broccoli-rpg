@@ -25,6 +25,19 @@ type Props = {
   onLoadOpening: () => void;
 };
 
+const desc = {
+  name: "character-name-desc",
+  session: "session-title-desc",
+  lore: "character-lore-desc",
+  laws: "sacred-laws-desc",
+  voice: "voice-style-desc",
+  realm: "realm-name-desc",
+  realmDesc: "realm-desc-desc",
+  canon: "established-canon-desc",
+  worldLaws: "world-laws-desc",
+  location: "current-location-desc",
+};
+
 export function CharacterPanel({
   templates,
   form,
@@ -76,16 +89,20 @@ export function CharacterPanel({
             <input
               value={form.name}
               placeholder="Enter name..."
+              aria-describedby={desc.name}
               onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))}
             />
+            <span id={desc.name} className="sr-only">The name of your character</span>
           </label>
           <label>
             Chronicle Title
             <input
               value={sessionTitle}
               placeholder="Name this session..."
+              aria-describedby={desc.session}
               onChange={(e) => setSessionTitle(e.target.value)}
             />
+            <span id={desc.session} className="sr-only">A title for this adventure</span>
           </label>
         </div>
 
@@ -94,9 +111,11 @@ export function CharacterPanel({
           <textarea
             rows={5}
             placeholder="Describe their history, personality, and motivations..."
+            aria-describedby={desc.lore}
             value={form.description}
             onChange={(e) => setForm((c) => ({ ...c, description: e.target.value }))}
           />
+          <span id={desc.lore} className="sr-only">Background story, personality, and motivations of your character</span>
         </label>
 
         <label>
@@ -104,9 +123,11 @@ export function CharacterPanel({
           <textarea
             rows={5}
             placeholder="Rules the character must never break..."
+            aria-describedby={desc.laws}
             value={listToText(form.hard_rules)}
             onChange={(e) => setForm((c) => ({ ...c, hard_rules: textToList(e.target.value) }))}
           />
+          <span id={desc.laws} className="sr-only">Hard rules your character must never break, one per line</span>
         </label>
 
         <label>
@@ -114,9 +135,11 @@ export function CharacterPanel({
           <textarea
             rows={3}
             placeholder="How they speak and carry themselves..."
+            aria-describedby={desc.voice}
             value={form.style_guide}
             onChange={(e) => setForm((c) => ({ ...c, style_guide: e.target.value }))}
           />
+          <span id={desc.voice} className="sr-only">How your character speaks and behaves</span>
         </label>
 
         <div className="form-row">
@@ -124,9 +147,11 @@ export function CharacterPanel({
             Realm Name
             <input
               placeholder="Name of the world..."
+              aria-describedby={desc.realm}
               value={form.world_name}
               onChange={(e) => setForm((c) => ({ ...c, world_name: e.target.value }))}
             />
+            <span id={desc.realm} className="sr-only">The name of the world your character inhabits</span>
           </label>
           <label>
             Challenge Rating
@@ -139,9 +164,11 @@ export function CharacterPanel({
           <textarea
             rows={4}
             placeholder="Paint the world in words..."
+            aria-describedby={desc.realmDesc}
             value={form.world_description}
             onChange={(e) => setForm((c) => ({ ...c, world_description: e.target.value }))}
           />
+          <span id={desc.realmDesc} className="sr-only">Description of the world or realm</span>
         </label>
 
         <label>
@@ -149,9 +176,11 @@ export function CharacterPanel({
           <textarea
             rows={4}
             placeholder="Known truths of this world..."
+            aria-describedby={desc.canon}
             value={form.world_canon}
             onChange={(e) => setForm((c) => ({ ...c, world_canon: e.target.value }))}
           />
+          <span id={desc.canon} className="sr-only">Known facts and history of this world</span>
         </label>
 
         <label>
@@ -159,11 +188,13 @@ export function CharacterPanel({
           <textarea
             rows={4}
             placeholder="Immutable rules of reality..."
+            aria-describedby={desc.worldLaws}
             value={listToText(form.world_hard_rules)}
             onChange={(e) =>
               setForm((c) => ({ ...c, world_hard_rules: textToList(e.target.value) }))
             }
           />
+          <span id={desc.worldLaws} className="sr-only">Immutable rules of this world, one per line</span>
         </label>
 
         <div className="tag-row">
@@ -194,9 +225,11 @@ export function CharacterPanel({
                   Current Location
                   <input
                     placeholder="Where in the world..."
+                    aria-describedby={desc.location}
                     value={currentLocation}
                     onChange={(e) => setCurrentLocation(e.target.value)}
                   />
+                  <span id={desc.location} className="sr-only">Where the story begins</span>
                 </label>
                 <label>
                   Time of Day

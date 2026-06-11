@@ -21,7 +21,11 @@ export function ChronicleHub() {
     setError(null);
     try {
       const data = await api<{ sessions: ChronicleListItem[] }>("/sessions");
-      setChronicles(data.sessions);
+      setChronicles(
+        (data.sessions ?? []).sort(
+          (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+        ),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load chronicles.");
     } finally {
@@ -64,8 +68,8 @@ export function ChronicleHub() {
           </p>
         </div>
         {chronicles.length > 0 && (
-          <button className="btn-primary hub-new-btn" onClick={() => navigate("/chronicle/new")}>
-            <span className="btn-rune">✦</span> Open New Chronicle
+          <button className="btn btn-primary hub-new-btn" onClick={() => navigate("/chronicle/new")}>
+            <span aria-hidden="true">✦</span> Open New Chronicle
           </button>
         )}
       </header>
@@ -81,7 +85,7 @@ export function ChronicleHub() {
         {error && (
           <div className="hub-error">
             <p>⚠ {error}</p>
-            <button className="btn-ghost" onClick={() => void loadChronicles()}>Retry</button>
+            <button className="btn btn-secondary" onClick={() => void loadChronicles()}>Retry</button>
           </div>
         )}
 
@@ -90,8 +94,8 @@ export function ChronicleHub() {
             <div className="hub-empty-icon">📜</div>
             <h2>The vault is empty</h2>
             <p>No chronicles have been written yet. Begin a new adventure.</p>
-            <button className="btn-primary hub-empty-btn" onClick={() => navigate("/chronicle/new")}>
-              <span className="btn-rune">✦</span> Open New Chronicle
+            <button className="btn btn-primary hub-empty-btn" onClick={() => navigate("/chronicle/new")}>
+              <span aria-hidden="true">✦</span> Open New Chronicle
             </button>
           </div>
         )}

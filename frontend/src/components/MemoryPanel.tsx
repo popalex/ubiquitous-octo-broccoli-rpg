@@ -14,7 +14,7 @@ export function MemoryPanel({ retrievedMemories, continuityIssues, memory }: Pro
         <h2>The Archive</h2>
       </div>
 
-      <div className="stack">
+      <div className="stack" aria-live="polite">
         <div className="subpanel">
           <h3>✧ Retrieved Echoes</h3>
           {retrievedMemories.length === 0 ? (

@@ -65,9 +65,9 @@ export function QuestJournal({ sessionId, quests }: Props) {
           )}
 
           {concluded.length > 0 && (
-            <details className="subpanel">
-              <summary>
-                <h3 style={{ display: "inline" }}>♦ Concluded ({concluded.length})</h3>
+            <details className="subpanel concluded-arcs">
+              <summary className="subpanel-summary">
+                <h3>♦ Concluded ({concluded.length})</h3>
               </summary>
               {concluded.map((q) => (
                 <div key={q.id} className="memory-card">
@@ -115,7 +115,7 @@ function QuestCard({ quest, onAbandon }: { quest: Quest; onAbandon?: () => void 
         </ul>
       )}
       {onAbandon && (
-        <button type="button" className="btn-ghost quest-abandon" onClick={onAbandon}>
+        <button type="button" className="btn btn-secondary quest-abandon" onClick={onAbandon}>
           Abandon
         </button>
       )}

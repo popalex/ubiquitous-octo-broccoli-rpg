@@ -8,37 +8,47 @@ type Props = {
 
 export function Masthead({ phase, health, onHome }: Props) {
   return (
-    <header className="masthead">
+    <header className="masthead" aria-current={phase === "chronicle" ? "page" : undefined}>
       <div>
-        <p className="eyebrow">Arcane Chronicle</p>
-        {phase === "codex" ? (
-          <>
-            <h1>
-              <button type="button" className="title-home" onClick={onHome} title="Return to the Vault">
-                ✦ Character Codex
-              </button>
-            </h1>
-            <p className="lede">
-              Craft your character, choose your world, and prepare for the adventure ahead.
-            </p>
-          </>
-        ) : (
-          <>
-            <h1>
-              <button type="button" className="title-home" onClick={onHome} title="Return to the Vault">
-                ✦ Live Chronicle
-              </button>
-            </h1>
-            <p className="lede">Your story unfolds — speak and the world responds.</p>
-          </>
-        )}
+        <p className="eyebrow">
+          <span className="eyebrow-vault">
+            <button type="button" className="vault-link" onClick={onHome}>The Vault</button>
+          </span>
+          <span aria-hidden="true"> / </span>
+          Arcane Chronicle
+        </p>
+        <h1>
+          <button type="button" className="title-home" onClick={onHome} title={`Return to the Vault — ${phase === "codex" ? "Character Codex" : "Live Chronicle"}`}>
+            {phase === "codex" ? "✦ Character Codex" : "✦ Live Chronicle"}
+          </button>
+        </h1>
+        <p className="lede">
+          {phase === "codex"
+            ? "Craft your character, choose your world, and prepare for the adventure ahead."
+            : "Your story unfolds — speak and the world responds."}
+        </p>
       </div>
-      <div className="status-strip">
-        <div className={`pill ${health?.status === "ok" ? "ok" : "warn"}`}>Realm {health?.status || "..."}</div>
-        <div className={`pill ${health?.database === "ok" ? "ok" : "warn"}`}>Archive {health?.database || "..."}</div>
-        <div className={`pill ${health?.mode === "DEV" ? "warn" : "ok"}`}>{health?.mode || "..."}</div>
-        <div className="pill neutral">Local Models</div>
-        <div className="pill neutral">Ollama</div>
+      <div className="status-strip" role="status" aria-live="polite">
+        <div className={`pill ${health?.status === "ok" ? "ok" : "warn"}`}>
+          <span className="sr-only">{health?.status === "ok" ? "Connected" : "Disconnected"}</span>
+          Realm {health?.status || "..."}
+        </div>
+        <div className={`pill ${health?.database === "ok" ? "ok" : "warn"}`}>
+          <span className="sr-only">{health?.database === "ok" ? "Connected" : "Disconnected"}</span>
+          Archive {health?.database || "..."}
+        </div>
+        <div className={`pill ${health?.mode === "DEV" ? "warn" : "ok"}`}>
+          <span className="sr-only">{health?.mode === "DEV" ? "Development mode" : "Production mode"}</span>
+          {health?.mode || "..."}
+        </div>
+        <div className="pill neutral">
+          <span className="sr-only">System</span>
+          Local Models
+        </div>
+        <div className="pill neutral">
+          <span className="sr-only">System</span>
+          Ollama
+        </div>
       </div>
     </header>
   );
