@@ -91,6 +91,7 @@ React 18 + react-router. `App.tsx` is the main stateful component; `api.ts` wrap
 The whole stack is OpenTelemetry-instrumented and ships traces/logs/metrics to a bundled Grafana LGTM container (:3000, admin/admin, RPG dashboards auto-provisioned from `observability/grafana/`). The browser starts a trace and injects a W3C `traceparent` on every `/api` call; FastAPI continues the same trace server-side. Backend telemetry helpers live in `app/telemetry.py` (`tracer`, metric instruments like `chat_turns`, `canon_size`); frontend in `src/telemetry.ts` (`withUiSpan`). Set `OTEL_EXPORTER_OTLP_ENDPOINT=""` to disable.
 
 ## Conventions
+- Create all git branches with a `feature/` prefix (e.g. `feature/ai-quests`).
 - All config is centralized in `app/config.py` `Settings` (pydantic-settings, loaded from `.env`). Add new tunables there; access via `get_settings()` (cached).
 - Post-turn side effects (memory, world-state) are wrapped in try/except and must never fail a chat turn — preserve that.
 - New DB-backed features: model in `app/models.py` → migration → pydantic schema in `app/schemas.py` → route in `app/main.py` → logic in a `app/services/` service.
