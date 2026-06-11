@@ -58,8 +58,8 @@ from app.schemas import (
     WorldStateResponse,
 )
 from app.services.orchestrator import get_orchestrator
-from app.services.quests import TERMINAL_STATUSES
-from app.telemetry import quest_updates, setup_telemetry
+from app.services.quests import TERMINAL_STATUSES, QuestService
+from app.telemetry import setup_telemetry
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -417,11 +417,14 @@ async def get_session_quests(
     query = select(Quest).where(Quest.session_id == session_id)
     if status is not None:
         query = query.where(Quest.status == status)
-    quests = (await db.scalars(query.order_by(Quest.updated_at.desc()))).all()
-    ordered = sorted(quests, key=lambda q: q.status in TERMINAL_STATUSES)
+    quests = (
+        await db.scalars(
+            query.order_by(Quest.status.in_(TERMINAL_STATUSES), Quest.updated_at.desc())
+        )
+    ).all()
     return SessionQuestsResponse(
         session_id=session_id,
-        quests=[QuestResponse.model_validate(q) for q in ordered],
+        quests=[QuestResponse.model_validate(q) for q in quests],
     )
 
 
@@ -444,12 +447,7 @@ async def patch_session_quest(
     if quest.status in TERMINAL_STATUSES:
         raise HTTPException(status_code=409, detail="Quest is already concluded.")
 
-    quest.status = payload.status
-    quest.resolved_turn = session.turn_count
-    quest.resolution = "Abandoned by the player."
-    await db.commit()
-    await db.refresh(quest)
-    quest_updates.add(1, {"change": payload.status})
+    quest = await QuestService.abandon(db, session, quest)
     return QuestResponse.model_validate(quest)
 
 
