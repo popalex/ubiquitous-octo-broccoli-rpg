@@ -152,12 +152,14 @@ metrics in `app/telemetry.py`; panel in the Grafana RPG dashboard
 
 ## Suggested sequencing
 
-1. **Quick wins (one sitting each):** 5c, 3-option-b.
-2. **Phase 1:** §1 (toggles).
+1. **Quick wins (one sitting each):** 5c, §3 (retcon note).
+2. **Phase 1:** §1 (toggles) → 4b (world sidebar) — the cheapest visible win
+   once the ledger can be enabled, and it makes ledger output inspectable
+   before §2 changes how it's extracted.
 3. **Phase 2:** 5a (eval harness) → §2 (unified judge, validated by the evals)
    + 5b (measure the savings).
-4. **Phase 3:** §4 features as appetite dictates — 4b is the cheapest visible
-   win once §1 ships; 4a is the most distinctive.
+4. **Phase 3:** remaining §4 features as appetite dictates — 4a (fork) is the
+   most distinctive; 4c/4d are nice-to-haves, cut first if time is short.
 
 ## Decisions (reviewed 2026-06-11)
 
