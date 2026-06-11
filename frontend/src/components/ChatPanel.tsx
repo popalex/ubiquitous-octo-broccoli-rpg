@@ -1,5 +1,8 @@
+import { useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { ChatMessage } from "../types";
+import { Button } from "./ui/Button";
+import { EmptyState } from "./ui/EmptyState";
 
 type Props = {
   chatMessages: ChatMessage[];
@@ -22,6 +25,21 @@ export function ChatPanel({
   statusText,
   onSendChat,
 }: Props) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  function handleSend() {
+    onSendChat();
+    textareaRef.current?.focus();
+  }
+
+  // Announce only completed assistant turns. A live region on the chat log
+  // itself would re-announce every streamed chunk.
+  const lastMessage = chatMessages[chatMessages.length - 1];
+  const announcement =
+    !isBusy && lastMessage && lastMessage.role !== "user"
+      ? `${lastMessage.role === "narrator" ? "Game Master" : characterName}: ${lastMessage.content}`
+      : "";
+
   return (
     <section className="panel panel-center">
       <div className="panel-header">
@@ -29,12 +47,12 @@ export function ChatPanel({
         <h2>The Unfolding Tale</h2>
       </div>
 
-      <div className="chat-log">
+      <div className="chat-log" role="region" aria-label="Chat messages">
         {chatMessages.length === 0 ? (
-          <div className="empty-state">
+          <EmptyState>
             <p>The pages await your tale</p>
             <span>Choose a character template, begin a chronicle, then speak your opening words</span>
-          </div>
+          </EmptyState>
         ) : (
           chatMessages.map((message) => (
             <article
@@ -58,23 +76,24 @@ export function ChatPanel({
         )}
       </div>
 
+      <div className="sr-only" role="status">
+        {announcement}
+      </div>
+
       <div className="composer">
         <textarea
+          ref={textareaRef}
           rows={4}
           placeholder="Inscribe your next action or words..."
+          aria-label="Write your response"
           value={chatInput}
           onChange={(e) => setChatInput(e.target.value)}
         />
         <div className="composer-actions">
           <div className="status-note">{statusText}</div>
-          <button
-            className="btn btn-primary"
-            type="button"
-            disabled={isBusy || !sessionId}
-            onClick={onSendChat}
-          >
+          <Button type="button" disabled={isBusy || !sessionId} onClick={handleSend}>
             {isBusy ? "✦ Weaving..." : "▶ Send Turn"}
-          </button>
+          </Button>
         </div>
       </div>
     </section>

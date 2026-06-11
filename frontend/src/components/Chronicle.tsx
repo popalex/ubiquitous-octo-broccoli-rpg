@@ -17,6 +17,8 @@ import { ChatPanel } from "./ChatPanel";
 import { CodexPanel } from "./CodexPanel";
 import { MemoryPanel } from "./MemoryPanel";
 import { QuestJournal } from "./QuestJournal";
+import { ErrorBanner } from "./ui/ErrorBanner";
+import { Spinner } from "./ui/Spinner";
 
 /**
  * Loads a chronicle's detail + turns via React Query, then hands the resolved
@@ -31,7 +33,13 @@ export function Chronicle({ sessionId }: { sessionId: string }) {
     const error = (detail.error ?? turns.error) as Error | null;
     return (
       <main className="dashboard dashboard-chronicle">
-        <p className="muted">{error?.message || "Failed to load chronicle."}</p>
+        <ErrorBanner
+          message={error?.message || "Failed to load chronicle."}
+          onRetry={() => {
+            void detail.refetch();
+            void turns.refetch();
+          }}
+        />
       </main>
     );
   }
@@ -39,7 +47,7 @@ export function Chronicle({ sessionId }: { sessionId: string }) {
   if (!detail.data || !turns.data) {
     return (
       <main className="dashboard dashboard-chronicle">
-        <p className="muted">Loading chronicle…</p>
+        <Spinner label="Loading chronicle…" />
       </main>
     );
   }

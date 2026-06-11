@@ -4,6 +4,9 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { withUiSpan } from "../telemetry";
 import type { ChronicleListItem } from "../types";
+import { Button } from "./ui/Button";
+import { ErrorBanner } from "./ui/ErrorBanner";
+import { Spinner } from "./ui/Spinner";
 
 export function ChronicleHub() {
   const navigate = useNavigate();
@@ -21,7 +24,11 @@ export function ChronicleHub() {
     setError(null);
     try {
       const data = await api<{ sessions: ChronicleListItem[] }>("/sessions");
-      setChronicles(data.sessions);
+      setChronicles(
+        (data.sessions ?? []).sort(
+          (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+        ),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load chronicles.");
     } finally {
@@ -64,35 +71,25 @@ export function ChronicleHub() {
           </p>
         </div>
         {chronicles.length > 0 && (
-          <button className="btn-primary hub-new-btn" onClick={() => navigate("/chronicle/new")}>
-            <span className="btn-rune">✦</span> Open New Chronicle
-          </button>
+          <Button className="hub-new-btn" onClick={() => navigate("/chronicle/new")}>
+            <span aria-hidden="true">✦</span> Open New Chronicle
+          </Button>
         )}
       </header>
 
       <main className="hub-main">
-        {loading && (
-          <div className="hub-loading">
-            <span className="hub-loading-rune">✦</span>
-            <p>Consulting the archive…</p>
-          </div>
-        )}
+        {loading && <Spinner label="Consulting the archive…" />}
 
-        {error && (
-          <div className="hub-error">
-            <p>⚠ {error}</p>
-            <button className="btn-ghost" onClick={() => void loadChronicles()}>Retry</button>
-          </div>
-        )}
+        {error && <ErrorBanner message={error} onRetry={() => void loadChronicles()} />}
 
         {!loading && !error && chronicles.length === 0 && (
           <div className="hub-empty">
             <div className="hub-empty-icon">📜</div>
             <h2>The vault is empty</h2>
             <p>No chronicles have been written yet. Begin a new adventure.</p>
-            <button className="btn-primary hub-empty-btn" onClick={() => navigate("/chronicle/new")}>
-              <span className="btn-rune">✦</span> Open New Chronicle
-            </button>
+            <Button className="hub-empty-btn" onClick={() => navigate("/chronicle/new")}>
+              <span aria-hidden="true">✦</span> Open New Chronicle
+            </Button>
           </div>
         )}
 

@@ -13,19 +13,24 @@ export default function App() {
 
   return (
     <div className="shell">
+      <a href="#main-content" className="skip-link">
+        Skip to content
+      </a>
       <div className="ambient ambient-left" />
       <div className="ambient ambient-right" />
       <Masthead phase={phase} health={health} onHome={() => navigate("/")} />
 
-      {sessionId ? (
-        <Chronicle sessionId={sessionId} />
-      ) : (
-        <CodexSetup
-          onStarted={(id, starter) =>
-            navigate(`/chronicle/${id}`, { replace: true, state: { starter } })
-          }
-        />
-      )}
+      <div id="main-content">
+        {sessionId ? (
+          <Chronicle sessionId={sessionId} />
+        ) : (
+          <CodexSetup
+            onStarted={(id, starter) =>
+              navigate(`/chronicle/${id}`, { replace: true, state: { starter } })
+            }
+          />
+        )}
+      </div>
     </div>
   );
 }
