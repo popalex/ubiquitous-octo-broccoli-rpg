@@ -9,6 +9,7 @@ services:
     # ── dev: enable the world-state ledger (ships dark in prod) ──────────
     environment:
       WORLD_STATE_ENABLED: ${WORLD_STATE_ENABLED:-true}
+      QUESTS_ENABLED: ${QUESTS_ENABLED:-true}
 
   frontend:
     # ── dev (Vite HMR) ──────────────────────────────────────

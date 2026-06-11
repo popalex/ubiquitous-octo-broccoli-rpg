@@ -78,6 +78,7 @@ class Session(TimestampMixin, Base):
     episode_summaries: Mapped[list[EpisodeSummary]] = relationship(back_populates="session", cascade="all, delete-orphan")
     relationship_states: Mapped[list[RelationshipState]] = relationship(back_populates="session", cascade="all, delete-orphan")
     world_state_ledgers: Mapped[list[WorldStateLedger]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    quests: Mapped[list[Quest]] = relationship(back_populates="session", cascade="all, delete-orphan")
 
 
 class Turn(TimestampMixin, Base):
@@ -153,6 +154,44 @@ class WorldStateLedger(Base):
     )
 
     session: Mapped[Session] = relationship(back_populates="world_state_ledgers")
+
+
+class Quest(TimestampMixin, Base):
+    """An AI-tracked narrative arc for a session — a mystery, a promise the
+    player made, a social arc, a moral dilemma, or an escalating threat.
+
+    Quests are offered by GM plot-hook events (``origin="gm_event"``) or
+    detected from player commitments in roleplay (``origin="emergent"``).
+    A post-turn LLM judge advances stages and resolves them; quests neglected
+    for too long escalate via GM consequence events. Distinct from ledger
+    threads (one-line canon notes) — quests carry stages, stakes, and turn
+    bookkeeping. Gated behind ``QUESTS_ENABLED``.
+    """
+
+    __tablename__ = "quests"
+    __table_args__ = (UniqueConstraint("session_id", "slug", name="uq_quest_session_slug"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
+    slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    # mystery | promise | social | dilemma | threat
+    quest_type: Mapped[str] = mapped_column(String(32), default="promise", nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    stakes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # rumored | offered | active | escalating | completed | failed | abandoned
+    status: Mapped[str] = mapped_column(String(32), default="offered", nullable=False, index=True)
+    origin: Mapped[str] = mapped_column(String(32), default="emergent", nullable=False)  # gm_event | emergent
+    stages: Mapped[list] = mapped_column(JSON, default=list, nullable=False)  # [{id, description, done}]
+    resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_turn: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    accepted_turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_progress_turn: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_escalation_turn: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    resolved_turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_turn_id: Mapped[str | None] = mapped_column(ForeignKey("turns.id", ondelete="SET NULL"), nullable=True)
+
+    session: Mapped[Session] = relationship(back_populates="quests")
 
 
 class RelationshipState(TimestampMixin, Base):

@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -60,12 +61,24 @@ class RetrievedMemoryItem(BaseModel):
     importance: float
 
 
+class QuestUpdateNotification(BaseModel):
+    """A quest change surfaced to the client (response field or SSE event)."""
+
+    quest_id: str
+    slug: str
+    title: str
+    status: str
+    change: str  # offered | started | advanced | escalated | completed | failed | abandoned
+    detail: str | None = None
+
+
 class ChatResponse(BaseModel):
     session_id: str
     reply: str
     continuity_applied: bool
     continuity_issues: list[str]
     retrieved_memories: list[RetrievedMemoryItem]
+    quest_updates: list[QuestUpdateNotification] = Field(default_factory=list)
 
 
 class MemoryFactResponse(ORMModel):
@@ -143,6 +156,40 @@ class SessionDetailResponse(BaseModel):
     time_of_day: str | None
 
 
+class QuestStageSchema(BaseModel):
+    id: str
+    description: str
+    done: bool = False
+
+
+class QuestResponse(ORMModel):
+    id: str
+    slug: str
+    title: str
+    quest_type: str
+    description: str
+    stakes: str | None
+    status: str
+    origin: str
+    stages: list[QuestStageSchema]
+    resolution: str | None
+    created_turn: int
+    accepted_turn: int | None
+    last_progress_turn: int
+    resolved_turn: int | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SessionQuestsResponse(BaseModel):
+    session_id: str
+    quests: list[QuestResponse]
+
+
+class QuestPatchRequest(BaseModel):
+    status: Literal["abandoned"]
+
+
 class WorldStateResponse(BaseModel):
     """Current (or a historical) world-state ledger snapshot for a session."""
 
@@ -156,6 +203,8 @@ class HealthResponse(BaseModel):
     status: str
     database: str
     mode: str
+    world_state_enabled: bool
+    quests_enabled: bool
 
 
 # =============================================================================
@@ -282,3 +331,4 @@ class GMChatResponse(BaseModel):
     continuity_applied: bool
     continuity_issues: list[str]
     retrieved_memories: list[RetrievedMemoryItem]
+    quest_updates: list[QuestUpdateNotification] = Field(default_factory=list)

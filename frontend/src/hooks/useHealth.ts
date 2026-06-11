@@ -3,7 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import type { Health } from "../types";
 
-const ERROR_HEALTH: Health = { status: "error", database: "error", mode: "unknown" };
+const ERROR_HEALTH: Health = {
+  status: "error",
+  database: "error",
+  mode: "unknown",
+  world_state_enabled: false,
+  quests_enabled: false,
+};
 
 /**
  * Polls /health every 15s. Returns a never-null Health: the query data while

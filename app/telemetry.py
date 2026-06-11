@@ -65,6 +65,12 @@ canon_size = _meter.create_histogram(
 canon_extract_failures = _meter.create_counter(
     "rpg.canon.extract_failures", description="World-state extraction failures (parse/provider)"
 )
+quest_updates = _meter.create_counter(
+    "rpg.quest.updates", description="Quest changes applied (offered/started/advanced/resolved)"
+)
+quest_extract_failures = _meter.create_counter(
+    "rpg.quest.extract_failures", description="Quest judge failures (parse/provider)"
+)
 
 
 def messages_to_json(messages: Sequence) -> str:

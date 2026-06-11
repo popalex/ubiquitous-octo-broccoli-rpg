@@ -406,3 +406,135 @@ async def test_established_death_is_injected_next_turn(
 
     block = await orchestrator._world_state_block(db_session, session)
     assert "Dead (must stay dead): Kael" in block
+
+
+# ---------------------------------------------------------------------------
+# Quest integration (flag on/off)
+# ---------------------------------------------------------------------------
+
+
+def _quest_orchestrator(mock_provider: MockProvider) -> OrchestratorService:
+    settings = make_test_settings(memory_summary_interval=100, quests_enabled=True)
+    with patch("app.services.orchestrator.build_provider", return_value=mock_provider):
+        return OrchestratorService(settings)
+
+
+_QUEST_DELTA = {
+    "quests_new": [
+        {
+            "slug": "find-marens-sister",
+            "title": "Find Maren's Sister",
+            "quest_type": "promise",
+            "description": "You promised Maren to find her sister.",
+            "stakes": "She is lost forever.",
+            "stages": [{"id": "ask-around", "description": "Ask around"}],
+        }
+    ]
+}
+
+
+@pytest.mark.asyncio
+async def test_chat_writes_quest_when_flag_on(
+    mock_provider: MockProvider, db_session: AsyncSession
+) -> None:
+    from app.models import Quest
+
+    orchestrator = _quest_orchestrator(mock_provider)
+    # generate_json is called for continuity first, then the quest judge.
+    mock_provider.set_json_responses([
+        {"ok": True, "issues": [], "revised_response": ""},
+        _QUEST_DELTA,
+    ])
+    session = SessionFactory(turn_count=0)
+    await db_session.flush()
+
+    result = await orchestrator.chat(db_session, session.id, "I'll find your sister, Maren.")
+
+    rows = (await db_session.scalars(
+        select(Quest).where(Quest.session_id == session.id)
+    )).all()
+    assert len(rows) == 1
+    assert rows[0].slug == "find-marens-sister"
+    assert len(result.quest_updates) == 1
+    assert result.quest_updates[0].change == "started"
+
+
+@pytest.mark.asyncio
+async def test_chat_no_quest_when_flag_off(
+    orchestrator: OrchestratorService, db_session: AsyncSession
+) -> None:
+    from app.models import Quest
+
+    session = SessionFactory(turn_count=0)
+    await db_session.flush()
+    await orchestrator.chat(db_session, session.id, "I'll find your sister, Maren.")
+
+    rows = (await db_session.scalars(
+        select(Quest).where(Quest.session_id == session.id)
+    )).all()
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_chat_survives_quest_extraction_failure(
+    mock_provider: MockProvider, db_session: AsyncSession
+) -> None:
+    orchestrator = _quest_orchestrator(mock_provider)
+    session = SessionFactory(turn_count=0)
+    await db_session.flush()
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("quest judge exploded")
+
+    orchestrator.quests.extract_and_apply = boom  # type: ignore[method-assign]
+
+    result = await orchestrator.chat(db_session, session.id, "Hello!")
+    assert isinstance(result, ChatResponse)
+    assert result.quest_updates == []
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_emits_quest_update_before_done(
+    mock_provider: MockProvider, db_session: AsyncSession
+) -> None:
+    orchestrator = _quest_orchestrator(mock_provider)
+    # chat_stream skips continuity, so the judge gets the only generate_json call.
+    mock_provider.set_json_response(_QUEST_DELTA)
+    session = SessionFactory(turn_count=0)
+    await db_session.flush()
+
+    chunks = []
+    async for chunk in orchestrator.chat_stream(db_session, session.id, "I'll find her."):
+        chunks.append(chunk)
+
+    events = [json.loads(c.removeprefix("data: ").strip()) for c in chunks]
+    types = [e.get("type") for e in events]
+    assert "quest_update" in types
+    assert types.index("quest_update") < types.index("done")
+    quest_event = events[types.index("quest_update")]
+    assert quest_event["quest"]["slug"] == "find-marens-sister"
+    assert quest_event["quest"]["change"] == "started"
+
+
+@pytest.mark.asyncio
+async def test_gm_chat_injects_quest_block_into_context(
+    mock_provider: MockProvider, db_session: AsyncSession
+) -> None:
+    from tests.factories import QuestFactory
+
+    orchestrator = _quest_orchestrator(mock_provider)
+    session = SessionFactory(gm_enabled=True, turn_count=1)  # 1 % 3 != 0: no event check
+    QuestFactory(session=session, slug="stop-the-cult", title="Stop the Cult", quest_type="threat")
+    await db_session.flush()
+
+    captured: list[str] = []
+    original = mock_provider.generate_text
+
+    async def capture(messages, **kwargs):
+        captured.append("\n".join(m.content for m in messages))
+        return await original(messages, **kwargs)
+
+    mock_provider.generate_text = capture  # type: ignore[method-assign]
+
+    await orchestrator.gm_chat(db_session, session.id, "I sharpen my blade.")
+    assert any("Stop the Cult" in text for text in captured)

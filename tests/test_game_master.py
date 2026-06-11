@@ -110,6 +110,55 @@ async def test_check_for_event_returns_valid_result_when_triggered(
 
 
 # ---------------------------------------------------------------------------
+# check_for_event — quest pressure bypasses the probability gate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_check_for_event_quest_pressure_bypasses_probability_gate(
+    mock_provider: MockProvider, db_session: AsyncSession
+) -> None:
+    settings = make_test_settings(event_check_interval=3, event_probability=0.0)
+    service = GameMasterService(mock_provider, settings)
+    session = SessionFactory(turn_count=3)
+    await db_session.flush()
+
+    mock_provider.set_json_response({
+        "should_trigger": True,
+        "event_type": "consequence",
+        "event_seed": "The cult moves on the neglected ritual.",
+        "urgency": "gradual",
+        "reasoning": "Quest pressure.",
+    })
+
+    # probability=0.0 means random.random() always exceeds it — without
+    # pressure the gate short-circuits before the LLM is consulted.
+    with patch("app.services.game_master.random.random", return_value=1.0):
+        baseline = await service.check_for_event(db_session, session)
+        pressured = await service.check_for_event(
+            db_session, session, quest_pressure="- Stop the cult ritual (threat)"
+        )
+    assert baseline.should_trigger is False
+    assert pressured.should_trigger is True
+    assert pressured.event_type == "consequence"
+
+
+@pytest.mark.asyncio
+async def test_check_for_event_quest_pressure_still_interval_gated(
+    mock_provider: MockProvider, db_session: AsyncSession
+) -> None:
+    settings = make_test_settings(event_check_interval=3, event_probability=1.0)
+    service = GameMasterService(mock_provider, settings)
+    session = SessionFactory(turn_count=4)  # 4 % 3 != 0
+    await db_session.flush()
+
+    result = await service.check_for_event(
+        db_session, session, quest_pressure="- Stop the cult ritual (threat)"
+    )
+    assert result.should_trigger is False
+
+
+# ---------------------------------------------------------------------------
 # generate_event — returns GeneratedEvent with expected fields
 # ---------------------------------------------------------------------------
 

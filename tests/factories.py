@@ -7,6 +7,7 @@ from app.models import (
     CharacterCard,
     EpisodeSummary,
     MemoryFact,
+    Quest,
     Turn,
     WorldState,
 )
@@ -94,3 +95,26 @@ class EpisodeSummaryFactory(SQLAlchemyModelFactory):
     content = "The adventurer explored the dungeon and found a clue."
     importance = 0.7
     embedding = factory.LazyFunction(lambda: [0.1] * EMBEDDING_DIM)
+
+
+class QuestFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = Quest
+        sqlalchemy_session = None
+        sqlalchemy_session_persistence = None
+
+    session = factory.SubFactory(SessionFactory)
+    slug = factory.Sequence(lambda n: f"quest-{n}")
+    title = factory.Sequence(lambda n: f"Quest {n}")
+    quest_type = "promise"
+    description = "Help Maren find her missing sister."
+    stakes = "Maren's sister is lost forever."
+    status = "active"
+    origin = "emergent"
+    stages = factory.LazyFunction(
+        lambda: [{"id": "ask-around", "description": "Ask around the village", "done": False}]
+    )
+    created_turn = 0
+    accepted_turn = 0
+    last_progress_turn = 0
+    last_escalation_turn = 0

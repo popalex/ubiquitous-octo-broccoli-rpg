@@ -12,7 +12,16 @@ from sqlalchemy.orm import joinedload
 
 from app.config import get_settings
 from app.db import get_db
-from app.models import CharacterCard, EpisodeSummary, MemoryFact, RelationshipState, Turn, WorldState, WorldStateLedger
+from app.models import (
+    CharacterCard,
+    EpisodeSummary,
+    MemoryFact,
+    Quest,
+    RelationshipState,
+    Turn,
+    WorldState,
+    WorldStateLedger,
+)
 from app.models import Session as ChatSession
 from app.providers.base import ProviderError
 from app.schemas import (
@@ -35,6 +44,8 @@ from app.schemas import (
     MemoryFactResponse,
     NPCDialogueRequest,
     NPCDialogueResponse,
+    QuestPatchRequest,
+    QuestResponse,
     RelationshipStateResponse,
     SessionDetailResponse,
     SessionInitRequest,
@@ -42,11 +53,13 @@ from app.schemas import (
     SessionListItem,
     SessionListResponse,
     SessionMemoryResponse,
+    SessionQuestsResponse,
     TurnResponse,
     WorldStateResponse,
 )
 from app.services.orchestrator import get_orchestrator
-from app.telemetry import setup_telemetry
+from app.services.quests import TERMINAL_STATUSES
+from app.telemetry import quest_updates, setup_telemetry
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -56,11 +69,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Startup: log the active configuration.
     settings = get_settings()
     if settings.dev_mode:
-        logger.info("+ DEV MODE ENABLED - model: %s, timeout: %.0fs, world_state: %s", settings.dev_model_name, settings.request_timeout_seconds, "on" if settings.world_state_enabled else "off")
+        logger.info("+ DEV MODE ENABLED - model: %s, timeout: %.0fs, world_state: %s, quests: %s", settings.dev_model_name, settings.request_timeout_seconds, "on" if settings.world_state_enabled else "off", "on" if settings.quests_enabled else "off")
     else:
-        logger.info("+ Production mode - Actor: %s, Memory: %s, GM: %s, world_state: %s",
+        logger.info("+ Production mode - Actor: %s, Memory: %s, GM: %s, world_state: %s, quests: %s",
                     settings.actor_model_name, settings.memory_model_name, settings.gm_model_name,
-                    "on" if settings.world_state_enabled else "off")
+                    "on" if settings.world_state_enabled else "off",
+                    "on" if settings.quests_enabled else "off")
 
     yield
 
@@ -80,7 +94,13 @@ async def health(db: AsyncSession = Depends(get_db)) -> HealthResponse:
     settings = get_settings()
     try:
         await db.execute(text("SELECT 1"))
-        return HealthResponse(status="ok", database="ok", mode="DEV" if settings.dev_mode else "PROD")
+        return HealthResponse(
+            status="ok",
+            database="ok",
+            mode="DEV" if settings.dev_mode else "PROD",
+            world_state_enabled=settings.world_state_enabled,
+            quests_enabled=settings.quests_enabled,
+        )
     except Exception as exc:  # pragma: no cover
         logger.exception("healthcheck failed")
         raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}") from exc
@@ -379,6 +399,58 @@ async def get_world_state(
         state=row.state,
         created_at=row.created_at,
     )
+
+
+@app.get("/session/{session_id}/quests", response_model=SessionQuestsResponse)
+async def get_session_quests(
+    session_id: str,
+    status: str | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> SessionQuestsResponse:
+    """Return a session's quests (optionally filtered by ``?status=``),
+    open arcs first, most recently touched first. Not gated on
+    ``QUESTS_ENABLED`` — arcs tracked while the flag was on stay visible."""
+    session = await db.scalar(select(ChatSession).where(ChatSession.id == session_id))
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    query = select(Quest).where(Quest.session_id == session_id)
+    if status is not None:
+        query = query.where(Quest.status == status)
+    quests = (await db.scalars(query.order_by(Quest.updated_at.desc()))).all()
+    ordered = sorted(quests, key=lambda q: q.status in TERMINAL_STATUSES)
+    return SessionQuestsResponse(
+        session_id=session_id,
+        quests=[QuestResponse.model_validate(q) for q in ordered],
+    )
+
+
+@app.patch("/session/{session_id}/quests/{quest_id}", response_model=QuestResponse)
+async def patch_session_quest(
+    session_id: str,
+    quest_id: str,
+    payload: QuestPatchRequest,
+    db: AsyncSession = Depends(get_db),
+) -> QuestResponse:
+    """Manually abandon a quest. Terminal quests are immutable (409)."""
+    session = await db.scalar(select(ChatSession).where(ChatSession.id == session_id))
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    quest = await db.scalar(
+        select(Quest).where(Quest.id == quest_id, Quest.session_id == session_id)
+    )
+    if quest is None:
+        raise HTTPException(status_code=404, detail="Quest not found.")
+    if quest.status in TERMINAL_STATUSES:
+        raise HTTPException(status_code=409, detail="Quest is already concluded.")
+
+    quest.status = payload.status
+    quest.resolved_turn = session.turn_count
+    quest.resolution = "Abandoned by the player."
+    await db.commit()
+    await db.refresh(quest)
+    quest_updates.add(1, {"change": payload.status})
+    return QuestResponse.model_validate(quest)
 
 
 # =============================================================================

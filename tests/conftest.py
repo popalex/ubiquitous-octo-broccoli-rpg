@@ -43,12 +43,18 @@ class MockProvider(BaseModelProvider):
             "issues": [],
             "revised_response": "Mock reply.",
         }
+        self._json_responses: list[dict] = []
 
     def set_text_response(self, text: str) -> None:
         self._text_response = text
 
     def set_json_response(self, payload: dict) -> None:
         self._json_response = payload
+
+    def set_json_responses(self, payloads: list[dict]) -> None:
+        """Queue distinct payloads for successive generate_json calls (FIFO);
+        falls back to the single set_json_response payload when exhausted."""
+        self._json_responses = list(payloads)
 
     async def generate_text(
         self,
@@ -79,6 +85,8 @@ class MockProvider(BaseModelProvider):
         temperature: float,
         max_tokens: int,
     ) -> dict:
+        if self._json_responses:
+            return self._json_responses.pop(0)
         return self._json_response
 
 
@@ -136,6 +144,7 @@ def _wire_factory_session(db_session: AsyncSession) -> None:
         CharacterCardFactory,
         EpisodeSummaryFactory,
         MemoryFactFactory,
+        QuestFactory,
         SessionFactory,
         TurnFactory,
         WorldStateFactory,
@@ -147,6 +156,7 @@ def _wire_factory_session(db_session: AsyncSession) -> None:
         TurnFactory,
         MemoryFactFactory,
         EpisodeSummaryFactory,
+        QuestFactory,
     ):
         klass._meta.sqlalchemy_session = db_session  # type: ignore[attr-defined]
 
