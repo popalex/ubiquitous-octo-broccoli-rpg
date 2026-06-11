@@ -20,9 +20,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic_core.core_schema import ValidationInfo
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
@@ -30,6 +31,7 @@ from app.models import Quest
 from app.models import Session as ChatSession
 from app.prompts import QUEST_FROM_EVENT_PROMPT, QUEST_JUDGE_PROMPT
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
+from app.schemas import QuestStageSchema as QuestStage
 from app.telemetry import quest_extract_failures, quest_updates, record_span_error, set_completion, tracer
 
 logger = logging.getLogger(__name__)
@@ -45,10 +47,9 @@ QUEST_TYPES = ("mystery", "promise", "social", "dilemma", "threat")
 # ---------------------------------------------------------------------------
 
 
-class QuestStage(BaseModel):
-    id: str
-    description: str
-    done: bool = False
+# Column limits on the quests table (models.py); judge output is truncated to
+# fit rather than rejected, so an over-long string can't sink a whole delta.
+_FIELD_LIMITS = {"slug": 120, "title": 200}
 
 
 class NewQuest(BaseModel):
@@ -58,6 +59,13 @@ class NewQuest(BaseModel):
     description: str
     stakes: str | None = None
     stages: list[QuestStage] = Field(default_factory=list)
+
+    @field_validator("slug", "title", mode="before")
+    @classmethod
+    def _truncate_to_column_limit(cls, value: object, info: ValidationInfo) -> object:
+        if isinstance(value, str):
+            return value[: _FIELD_LIMITS[info.field_name or "slug"]]
+        return value
 
 
 class QuestUpdateItem(BaseModel):
@@ -152,13 +160,20 @@ class QuestService:
     # ------------------------------------------------------------------
 
     def apply_delta(
-        self, quests: list[Quest], delta: QuestDelta, *, turn_count: int
+        self,
+        quests: list[Quest],
+        delta: QuestDelta,
+        *,
+        turn_count: int,
+        reserved_slugs: set[str] | None = None,
     ) -> list[QuestChange]:
         """Apply a judge delta to ORM quest objects, returning the changes.
 
         New quests are returned attached to the change list but NOT added to
-        the db session — the caller persists them. Invariants enforced here
-        (not trusted to the model):
+        the db session — the caller persists them. ``reserved_slugs`` holds
+        slugs of quests not in ``quests`` (terminal ones) that the unique
+        constraint still covers. Invariants enforced here (not trusted to the
+        model):
         - terminal quests are immutable;
         - "escalating"/"rumored"/"offered" are never settable by the model;
         - stage ``done`` flags never revert; stages merge by id, capped;
@@ -166,6 +181,7 @@ class QuestService:
         """
         changes: list[QuestChange] = []
         by_slug = {q.slug: q for q in quests}
+        taken_slugs = set(by_slug) | (reserved_slugs or set())
         open_count = sum(1 for q in quests if q.status in OPEN_STATUSES)
 
         for update in delta.quests_update:
@@ -226,7 +242,7 @@ class QuestService:
             changes.append(QuestChange(quest=quest, change=change_kind, detail=update.progress_note or update.resolution))
 
         for new in delta.quests_new:
-            if new.slug in by_slug or open_count >= self.settings.quest_max_active:
+            if new.slug in taken_slugs or open_count >= self.settings.quest_max_active:
                 continue
             quest_type = new.quest_type if new.quest_type in QUEST_TYPES else "promise"
             quest = Quest(
@@ -246,6 +262,7 @@ class QuestService:
                 last_progress_turn=turn_count,
             )
             by_slug[new.slug] = quest
+            taken_slugs.add(new.slug)
             open_count += 1
             changes.append(QuestChange(quest=quest, change="started", detail=new.description))
 
@@ -272,7 +289,18 @@ class QuestService:
             return []
         with tracer.start_as_current_span("orchestrator.quest_extract") as span:
             span.set_attribute("rpg.session_id", str(session.id))
-            quests = await self.load_open(db, session.id)
+            # Load ALL quests in one query: open ones go to the judge, while
+            # terminal slugs are reserved so a judge that reuses a concluded
+            # quest's slug can't trip the unique constraint and sink the delta.
+            all_quests = (
+                await db.scalars(
+                    select(Quest)
+                    .where(Quest.session_id == session.id)
+                    .order_by(Quest.created_at.asc())
+                )
+            ).all()
+            quests = [q for q in all_quests if q.status in OPEN_STATUSES]
+            reserved_slugs = {q.slug for q in all_quests if q.status not in OPEN_STATUSES}
             open_json = [
                 {
                     "slug": q.slug,
@@ -315,7 +343,9 @@ class QuestService:
                 span.set_attribute("rpg.quest.delta.empty", True)
                 return []
 
-            changes = self.apply_delta(quests, delta, turn_count=session.turn_count)
+            changes = self.apply_delta(
+                quests, delta, turn_count=session.turn_count, reserved_slugs=reserved_slugs
+            )
             if not changes:
                 return []
             for change in changes:
@@ -330,6 +360,14 @@ class QuestService:
                 await db.rollback()
                 logger.warning("quest write conflict for session=%s; skipping", session.id)
                 quest_extract_failures.add(1, {"reason": "conflict"})
+                record_span_error(span, exc)
+                return []
+            except SQLAlchemyError as exc:
+                # e.g. DataError from oversized judge output — roll back so the
+                # request's session isn't left in an aborted transaction.
+                await db.rollback()
+                logger.warning("quest write failed for session=%s: %s", session.id, exc)
+                quest_extract_failures.add(1, {"reason": "db"})
                 record_span_error(span, exc)
                 return []
 
@@ -419,8 +457,30 @@ class QuestService:
             await db.rollback()
             logger.warning("quest offer conflict for session=%s slug=%s", session.id, new.slug)
             return None
+        except SQLAlchemyError as exc:
+            await db.rollback()
+            logger.warning("quest offer write failed for session=%s: %s", session.id, exc)
+            quest_extract_failures.add(1, {"reason": "db"})
+            return None
         quest_updates.add(1, {"change": "offered"})
         logger.info("quest_offer session=%s slug=%s", session.id, quest.slug)
+        return quest
+
+    # ------------------------------------------------------------------
+    # Player-driven transitions
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def abandon(db: AsyncSession, session: ChatSession, quest: Quest) -> Quest:
+        """Player-driven terminal transition, mirroring apply_delta's terminal
+        branch so manual and judge-driven conclusions stay shaped alike."""
+        quest.status = "abandoned"
+        quest.resolved_turn = session.turn_count
+        quest.resolution = "Abandoned by the player."
+        quest.last_progress_turn = session.turn_count
+        await db.commit()
+        await db.refresh(quest)
+        quest_updates.add(1, {"change": "abandoned"})
         return quest
 
     # ------------------------------------------------------------------
@@ -454,3 +514,17 @@ class QuestService:
             await db.commit()
             quest_updates.add(len(changes), {"change": "escalated"})
         return changes
+
+    @staticmethod
+    async def throttle_pressure(
+        db: AsyncSession, session: ChatSession, quests: list[Quest]
+    ) -> None:
+        """Stamp the escalation clock after a pressure-driven event check that
+        did NOT produce a consequence event. Without this, the same neglected
+        quests would bypass the GM event probability gate on every subsequent
+        check, forcing an event-check LLM call (and event pressure) each time."""
+        if not quests:
+            return
+        for quest in quests:
+            quest.last_escalation_turn = session.turn_count
+        await db.commit()

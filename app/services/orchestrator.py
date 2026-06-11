@@ -836,8 +836,19 @@ class OrchestratorService:
                 )
                 if offer is not None:
                     changes.append(QuestChange(quest=offer, change="offered", detail=offer.description))
-            if pressure_quests and event_check.should_trigger and event_check.event_type == "consequence":
-                changes += await self.quests.mark_escalating(db, session, pressure_quests)
+            if pressure_quests:
+                consequence_fired = (
+                    event_check.should_trigger
+                    and event_check.event_type == "consequence"
+                    and bool(event_description)  # the event must actually exist in the fiction
+                )
+                if consequence_fired:
+                    changes += await self.quests.mark_escalating(db, session, pressure_quests)
+                else:
+                    # No consequence this time — stamp the escalation clock so
+                    # these quests don't bypass the event probability gate on
+                    # every subsequent check.
+                    await self.quests.throttle_pressure(db, session, pressure_quests)
         except Exception:
             logger.exception("post-event quest work skipped for session=%s", session.id)
         return changes

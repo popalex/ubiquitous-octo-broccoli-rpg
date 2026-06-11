@@ -87,6 +87,24 @@ def test_apply_delta_respects_max_active_cap() -> None:
     assert changes == []
 
 
+def test_apply_delta_reserved_slug_skips_new_quest() -> None:
+    """A judge re-emitting a concluded quest's slug must not sink the delta."""
+    svc = _service()
+    active = _quest()
+    delta = QuestDelta(
+        quests_new=[NewQuest(slug="old-arc", title="Old Arc", description="again")],
+        quests_update=[QuestUpdateItem(slug=active.slug, stages_complete=["ask-around"])],
+    )
+    changes = svc.apply_delta([active], delta, turn_count=9, reserved_slugs={"old-arc"})
+    assert [c.change for c in changes] == ["advanced"]
+
+
+def test_new_quest_strings_truncated_to_column_limits() -> None:
+    new = NewQuest(slug="s" * 300, title="t" * 300, description="d")
+    assert len(new.slug) == 120
+    assert len(new.title) == 200
+
+
 def test_apply_delta_normalizes_unknown_quest_type() -> None:
     svc = _service()
     delta = QuestDelta(quests_new=[NewQuest(slug="q", title="Q", quest_type="fetch", description="x")])
@@ -453,3 +471,16 @@ async def test_mark_escalating_sets_status_and_turn(db_session: AsyncSession) ->
     assert changes[0].change == "escalated"
     assert quest.status == "escalating"
     assert quest.last_escalation_turn == 20
+
+
+async def test_throttle_pressure_stamps_escalation_turn(db_session: AsyncSession) -> None:
+    """A pressure-driven check without a consequence still consumes the throttle."""
+    svc = _service(quest_escalation_turns=10)
+    session = SessionFactory(turn_count=20)
+    quest = QuestFactory(session=session, status="active", last_progress_turn=5, last_escalation_turn=0)
+    await db_session.flush()
+
+    await svc.throttle_pressure(db_session, session, [quest])
+    assert quest.status == "active"  # not escalated — just throttled
+    assert quest.last_escalation_turn == 20
+    assert await svc.neglected(db_session, session) == []

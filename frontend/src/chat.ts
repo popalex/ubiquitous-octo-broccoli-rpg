@@ -155,64 +155,66 @@ async function sendGMStream({
         const jsonStr = line.slice(6);
         if (!jsonStr.trim()) continue;
 
+        let event: Record<string, unknown>;
         try {
-          const event = JSON.parse(jsonStr) as Record<string, unknown>;
+          event = JSON.parse(jsonStr) as Record<string, unknown>;
+        } catch {
+          continue; // Skip malformed JSON lines
+        }
 
-          if (event.type === "phase" && event.phase === "character_reply") {
-            if (!hasAddedAssistant) {
-              hasAddedAssistant = true;
-              setChatMessages((current) => [
-                ...current,
-                { id: assistantMessageId, role: "assistant", content: "", messageType: "chat" },
-              ]);
-              setStatusText("Character responds...");
-            }
-          } else if (event.type === "phase" && event.phase === "summarizing") {
-            setStatusText("Updating memory scrolls…");
-          } else if (event.type === "pre_narration_chunk") {
-            hasPreNarration = true;
-            setChatMessages((current) =>
-              current.map((msg) =>
-                msg.id === preNarrationId
-                  ? { ...msg, content: msg.content + (event.content as string) }
-                  : msg
-              )
-            );
-          } else if (event.type === "chunk") {
-            setChatMessages((current) =>
-              current.map((msg) =>
-                msg.id === assistantMessageId
-                  ? { ...msg, content: msg.content + (event.content as string) }
-                  : msg
-              )
-            );
-          } else if (event.type === "memories") {
-            setRetrievedMemories(event.memories as RetrievedMemory[]);
-          } else if (event.type === "event") {
-            const gmEvent = event.event as GMEvent;
-            setLastEvent(gmEvent);
+        if (event.type === "phase" && event.phase === "character_reply") {
+          if (!hasAddedAssistant) {
+            hasAddedAssistant = true;
             setChatMessages((current) => [
               ...current,
-              {
-                id: crypto.randomUUID(),
-                role: "narrator",
-                content: gmEvent.description,
-                messageType: "event",
-              },
+              { id: assistantMessageId, role: "assistant", content: "", messageType: "chat" },
             ]);
-            setStatusText(`Event triggered: ${gmEvent.event_type}`);
-          } else if (event.type === "quest_update") {
-            handleQuestUpdate(event.quest as QuestUpdateNotification, setChatMessages, setStatusText);
-          } else if (event.type === "error") {
-            throw new Error(event.error as string);
-          } else if (event.type === "done") {
-            await refreshMemory(sessionId);
-            if (!hasPreNarration) {
-              setChatMessages((current) => current.filter((msg) => msg.id !== preNarrationId));
-            }
+            setStatusText("Character responds...");
           }
-        } catch {
-          // Skip malformed JSON lines
+        } else if (event.type === "phase" && event.phase === "summarizing") {
+          setStatusText("Updating memory scrolls…");
+        } else if (event.type === "pre_narration_chunk") {
+          hasPreNarration = true;
+          setChatMessages((current) =>
+            current.map((msg) =>
+              msg.id === preNarrationId
+                ? { ...msg, content: msg.content + (event.content as string) }
+                : msg
+            )
+          );
+        } else if (event.type === "chunk") {
+          setChatMessages((current) =>
+            current.map((msg) =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: msg.content + (event.content as string) }
+                : msg
+            )
+          );
+        } else if (event.type === "memories") {
+          setRetrievedMemories(event.memories as RetrievedMemory[]);
+        } else if (event.type === "event") {
+          const gmEvent = event.event as GMEvent;
+          setLastEvent(gmEvent);
+          setChatMessages((current) => [
+            ...current,
+            {
+              id: crypto.randomUUID(),
+              role: "narrator",
+              content: gmEvent.description,
+              messageType: "event",
+            },
+          ]);
+          setStatusText(`Event triggered: ${gmEvent.event_type}`);
+        } else if (event.type === "quest_update") {
+          handleQuestUpdate(event.quest as QuestUpdateNotification, setChatMessages, setStatusText);
+        } else if (event.type === "error") {
+          throw new Error((event.error as string) || "Stream failed.");
+        } else if (event.type === "done") {
+          // Best-effort: a failed refetch must not wipe the finished reply.
+          await refreshMemory(sessionId).catch(() => {});
+          if (!hasPreNarration) {
+            setChatMessages((current) => current.filter((msg) => msg.id !== preNarrationId));
+          }
         }
       }
     }
@@ -286,30 +288,32 @@ async function sendStandardStream({
         const jsonStr = line.slice(6);
         if (!jsonStr.trim()) continue;
 
+        let event: Record<string, unknown>;
         try {
-          const event = JSON.parse(jsonStr) as Record<string, unknown>;
-
-          if (event.type === "chunk") {
-            setChatMessages((current) =>
-              current.map((msg) =>
-                msg.id === assistantMessageId
-                  ? { ...msg, content: msg.content + (event.content as string) }
-                  : msg
-              )
-            );
-          } else if (event.type === "phase" && event.phase === "summarizing") {
-            setStatusText("Updating memory scrolls…");
-          } else if (event.type === "memories") {
-            setRetrievedMemories(event.memories as RetrievedMemory[]);
-          } else if (event.type === "quest_update") {
-            handleQuestUpdate(event.quest as QuestUpdateNotification, setChatMessages, setStatusText);
-          } else if (event.type === "error") {
-            throw new Error(event.error as string);
-          } else if (event.type === "done") {
-            await refreshMemory(sessionId);
-          }
+          event = JSON.parse(jsonStr) as Record<string, unknown>;
         } catch {
-          // Skip malformed JSON lines
+          continue; // Skip malformed JSON lines
+        }
+
+        if (event.type === "chunk") {
+          setChatMessages((current) =>
+            current.map((msg) =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: msg.content + (event.content as string) }
+                : msg
+            )
+          );
+        } else if (event.type === "phase" && event.phase === "summarizing") {
+          setStatusText("Updating memory scrolls…");
+        } else if (event.type === "memories") {
+          setRetrievedMemories(event.memories as RetrievedMemory[]);
+        } else if (event.type === "quest_update") {
+          handleQuestUpdate(event.quest as QuestUpdateNotification, setChatMessages, setStatusText);
+        } else if (event.type === "error") {
+          throw new Error((event.error as string) || "Stream failed.");
+        } else if (event.type === "done") {
+          // Best-effort: a failed refetch must not wipe the finished reply.
+          await refreshMemory(sessionId).catch(() => {});
         }
       }
     }
