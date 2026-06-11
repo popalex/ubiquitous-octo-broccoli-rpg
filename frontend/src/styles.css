@@ -45,14 +45,11 @@
   --transition-speed: 0.3s;
 
   /* Spacing rhythm */
-  --space-2xs: 0.2rem;
   --space-xs: 0.35rem;
   --space-sm: 0.65rem;
   --space-md: 1rem;
   --space-lg: 1.5rem;
   --space-xl: 2.5rem;
-  --space-2xl: 4rem;
-  --space-3xl: 6rem;
 
   /* Type scale */
   --text-xs: 0.65rem;
@@ -148,7 +145,7 @@ h1, h2, h3, h4 {
 }
 
 h1 {
-  font-size: clamp(2.2rem, 4vw, 3.5rem);
+  font-size: var(--text-2xl);
   font-weight: 600;
   background: linear-gradient(135deg, var(--gold-bright) 0%, var(--gold) 50%, var(--parchment-dark) 100%);
   -webkit-background-clip: text;
@@ -161,14 +158,14 @@ h1 {
 @media (forced-colors: active) {
   h1 {
     background: none;
-    -webkit-text-fill-color: ButtonText;
-    color: ButtonText;
+    -webkit-text-fill-color: CanvasText;
+    color: CanvasText;
     text-shadow: none;
   }
 }
 
 h2 {
-  font-size: 1.6rem;
+  font-size: var(--text-xl);
   color: var(--text-primary);
   position: relative;
   display: inline-block;
@@ -185,7 +182,7 @@ h2::after {
 }
 
 h3 {
-  font-size: 1.25rem;
+  font-size: var(--text-lg);
   color: var(--gold);
   margin-bottom: var(--space-sm);
 }
@@ -380,7 +377,7 @@ h4 {
   border-radius: var(--radius-sm);
   background: linear-gradient(135deg, rgba(42, 37, 32, 0.8), rgba(26, 23, 20, 0.9));
   box-shadow: var(--inner-shadow);
-  transition: all 0.3s ease;
+  transition: all var(--transition-speed) ease;
 }
 
 .pill::before {
@@ -627,7 +624,7 @@ h4 {
 .template-genre {
   display: block;
   font-family: "JetBrains Mono", monospace;
-  font-size: 0.65rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--gold);
@@ -637,7 +634,7 @@ h4 {
 .template-card strong {
   display: block;
   font-family: "Cinzel", serif;
-  font-size: 1rem;
+  font-size: var(--text-base);
   font-weight: 500;
   margin-bottom: 0.25rem;
 }
@@ -682,7 +679,7 @@ textarea {
   width: 100%;
   padding: 0.85rem 1rem;
   font-family: "Crimson Pro", Georgia, serif;
-  font-size: 1rem;
+  font-size: var(--text-base);
   color: var(--text-primary);
   background: var(--obsidian);
   border: 1px solid var(--dust);
@@ -828,7 +825,7 @@ input:disabled {
   display: block;
   margin-bottom: 0.35rem;
   font-family: "JetBrains Mono", monospace;
-  font-size: 0.65rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -1059,7 +1056,7 @@ input:disabled {
 
 .toggle-label {
   font-family: "Cinzel", serif;
-  font-size: 1rem;
+  font-size: var(--text-base);
   color: var(--gold);
   display: flex;
   align-items: center;
@@ -1076,7 +1073,7 @@ input:disabled {
   border-radius: 12px;
   position: relative;
   display: inline-block;
-  transition: all 0.3s ease;
+  transition: all var(--transition-speed) ease;
 }
 
 .toggle-label::after {
@@ -1089,7 +1086,7 @@ input:disabled {
   height: 20px;
   background: var(--text-muted);
   border-radius: 50%;
-  transition: all 0.3s ease;
+  transition: all var(--transition-speed) ease;
 }
 
 .gm-toggle input:checked + .toggle-label::before {
@@ -1104,7 +1101,7 @@ input:disabled {
 }
 
 .toggle-hint {
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   margin-left: calc(44px + var(--space-sm));
 }
@@ -1129,7 +1126,7 @@ input:disabled {
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-family: "Crimson Pro", Georgia, serif;
-  font-size: 1rem;
+  font-size: var(--text-base);
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -1604,7 +1601,7 @@ textarea:focus-visible {
 
 .hub-empty h2 {
   color: var(--text-primary);
-  font-size: 1.6rem;
+  font-size: var(--text-xl);
 }
 
 .hub-empty h2::after {
@@ -1639,7 +1636,7 @@ textarea:focus-visible {
   border-radius: var(--radius-md);
   box-shadow: var(--paper-shadow);
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all var(--transition-speed) ease;
   overflow: hidden;
   animation: fadeSlideIn 0.5s ease-out both;
 }
@@ -1787,7 +1784,7 @@ textarea:focus-visible {
 }
 
 .subject-icon {
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   opacity: 0.7;
 }
 

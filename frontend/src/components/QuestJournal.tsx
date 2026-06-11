@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { sessionKeys } from "../hooks/useSession";
 import type { Quest, SessionQuests } from "../types";
+import { Button } from "./ui/Button";
 
 type Props = {
   sessionId: string;
@@ -115,9 +116,9 @@ function QuestCard({ quest, onAbandon }: { quest: Quest; onAbandon?: () => void 
         </ul>
       )}
       {onAbandon && (
-        <button type="button" className="btn btn-secondary quest-abandon" onClick={onAbandon}>
+        <Button variant="secondary" className="quest-abandon" type="button" onClick={onAbandon}>
           Abandon
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -8,7 +8,7 @@ type Props = {
 
 export function Masthead({ phase, health, onHome }: Props) {
   return (
-    <header className="masthead" aria-current={phase === "chronicle" ? "page" : undefined}>
+    <header className="masthead">
       <div>
         <p className="eyebrow">
           <span className="eyebrow-vault">
@@ -41,14 +41,8 @@ export function Masthead({ phase, health, onHome }: Props) {
           <span className="sr-only">{health?.mode === "DEV" ? "Development mode" : "Production mode"}</span>
           {health?.mode || "..."}
         </div>
-        <div className="pill neutral">
-          <span className="sr-only">System</span>
-          Local Models
-        </div>
-        <div className="pill neutral">
-          <span className="sr-only">System</span>
-          Ollama
-        </div>
+        <div className="pill neutral">Local Models</div>
+        <div className="pill neutral">Ollama</div>
       </div>
     </header>
   );

@@ -4,6 +4,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type { RoleplayTemplate } from "../templates";
 import { listToText, textToList } from "../api";
 import type { CharacterLoadPayload } from "../types";
+import { Button } from "./ui/Button";
 
 type Props = {
   templates: RoleplayTemplate[];
@@ -92,8 +93,8 @@ export function CharacterPanel({
               aria-describedby={desc.name}
               onChange={(e) => setForm((c) => ({ ...c, name: e.target.value }))}
             />
-            <span id={desc.name} className="sr-only">The name of your character</span>
           </label>
+          <span id={desc.name} className="sr-only">The name of your character</span>
           <label>
             Chronicle Title
             <input
@@ -102,8 +103,8 @@ export function CharacterPanel({
               aria-describedby={desc.session}
               onChange={(e) => setSessionTitle(e.target.value)}
             />
-            <span id={desc.session} className="sr-only">A title for this adventure</span>
           </label>
+          <span id={desc.session} className="sr-only">A title for this adventure</span>
         </div>
 
         <label>
@@ -115,8 +116,8 @@ export function CharacterPanel({
             value={form.description}
             onChange={(e) => setForm((c) => ({ ...c, description: e.target.value }))}
           />
-          <span id={desc.lore} className="sr-only">Background story, personality, and motivations of your character</span>
         </label>
+        <span id={desc.lore} className="sr-only">Background story, personality, and motivations of your character</span>
 
         <label>
           Sacred Laws
@@ -127,8 +128,8 @@ export function CharacterPanel({
             value={listToText(form.hard_rules)}
             onChange={(e) => setForm((c) => ({ ...c, hard_rules: textToList(e.target.value) }))}
           />
-          <span id={desc.laws} className="sr-only">Hard rules your character must never break, one per line</span>
         </label>
+        <span id={desc.laws} className="sr-only">Hard rules your character must never break, one per line</span>
 
         <label>
           Voice &amp; Style
@@ -139,8 +140,8 @@ export function CharacterPanel({
             value={form.style_guide}
             onChange={(e) => setForm((c) => ({ ...c, style_guide: e.target.value }))}
           />
-          <span id={desc.voice} className="sr-only">How your character speaks and behaves</span>
         </label>
+        <span id={desc.voice} className="sr-only">How your character speaks and behaves</span>
 
         <div className="form-row">
           <label>
@@ -151,8 +152,8 @@ export function CharacterPanel({
               value={form.world_name}
               onChange={(e) => setForm((c) => ({ ...c, world_name: e.target.value }))}
             />
-            <span id={desc.realm} className="sr-only">The name of the world your character inhabits</span>
           </label>
+          <span id={desc.realm} className="sr-only">The name of the world your character inhabits</span>
           <label>
             Challenge Rating
             <input value={selectedTemplate.difficulty} disabled />
@@ -168,8 +169,8 @@ export function CharacterPanel({
             value={form.world_description}
             onChange={(e) => setForm((c) => ({ ...c, world_description: e.target.value }))}
           />
-          <span id={desc.realmDesc} className="sr-only">Description of the world or realm</span>
         </label>
+        <span id={desc.realmDesc} className="sr-only">Description of the world or realm</span>
 
         <label>
           Established Canon
@@ -180,8 +181,8 @@ export function CharacterPanel({
             value={form.world_canon}
             onChange={(e) => setForm((c) => ({ ...c, world_canon: e.target.value }))}
           />
-          <span id={desc.canon} className="sr-only">Known facts and history of this world</span>
         </label>
+        <span id={desc.canon} className="sr-only">Known facts and history of this world</span>
 
         <label>
           World Laws
@@ -194,8 +195,8 @@ export function CharacterPanel({
               setForm((c) => ({ ...c, world_hard_rules: textToList(e.target.value) }))
             }
           />
-          <span id={desc.worldLaws} className="sr-only">Immutable rules of this world, one per line</span>
         </label>
+        <span id={desc.worldLaws} className="sr-only">Immutable rules of this world, one per line</span>
 
         <div className="tag-row">
           {selectedTemplate.tags.map((tag) => (
@@ -229,8 +230,8 @@ export function CharacterPanel({
                     value={currentLocation}
                     onChange={(e) => setCurrentLocation(e.target.value)}
                   />
-                  <span id={desc.location} className="sr-only">Where the story begins</span>
                 </label>
+                <span id={desc.location} className="sr-only">Where the story begins</span>
                 <label>
                   Time of Day
                   <select value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)}>
@@ -250,20 +251,15 @@ export function CharacterPanel({
         </div>
 
         <div className="button-row">
-          <button className="btn btn-primary" type="submit" disabled={isBusy}>
+          <Button type="submit" disabled={isBusy}>
             ⚔ Summon Character
-          </button>
-          <button
-            className="btn btn-secondary"
-            type="button"
-            disabled={isBusy}
-            onClick={onStartSession}
-          >
+          </Button>
+          <Button variant="secondary" type="button" disabled={isBusy} onClick={onStartSession}>
             ✦ Begin Chronicle
-          </button>
-          <button className="btn btn-secondary" type="button" onClick={onLoadOpening}>
+          </Button>
+          <Button variant="secondary" type="button" onClick={onLoadOpening}>
             ↯ Load Opening
-          </button>
+          </Button>
         </div>
       </form>
     </section>
