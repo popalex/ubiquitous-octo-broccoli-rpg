@@ -179,18 +179,22 @@ class QuestService:
             # skip the UPDATE on the JSON column.
             existing_stages = [dict(s) for s in (quest.stages or [])]
             stage_ids = {s.get("id") for s in existing_stages}
+            stages_changed = False
             for stage in update.stages_add:
                 if stage.id in stage_ids or len(existing_stages) >= self.settings.quest_max_stages:
                     continue
                 existing_stages.append({"id": stage.id, "description": stage.description, "done": False})
                 stage_ids.add(stage.id)
+                stages_changed = True
             if update.stages_complete:
                 complete = set(update.stages_complete)
                 for existing in existing_stages:
-                    if existing.get("id") in complete:
+                    if existing.get("id") in complete and not existing.get("done"):
                         existing["done"] = True
+                        stages_changed = True
             quest.stages = existing_stages
 
+            status_changed = False
             new_status = (update.status or "").strip().lower()
             if new_status and new_status != quest.status:
                 if new_status == "active" and quest.status in ("rumored", "offered", "escalating"):
@@ -198,13 +202,22 @@ class QuestService:
                     if quest.accepted_turn is None:
                         quest.accepted_turn = turn_count
                     change_kind = "started"
+                    status_changed = True
                 elif new_status in TERMINAL_STATUSES:
                     quest.status = new_status
                     quest.resolved_turn = turn_count
-                    quest.resolution = update.resolution or update.progress_note
+                    quest.resolution = update.resolution or update.progress_note or "Concluded."
                     change_kind = new_status
+                    status_changed = True
+                    open_count -= 1  # frees a slot for quests_new in this same delta
                 # Anything else (escalating, rumored, offered, unknown) is
                 # reserved for code-driven transitions — ignore it.
+
+            # Only real changes count as progress: an update carrying nothing
+            # but a slug (or an ignored status) must not reset the neglect
+            # clock, or the judge could keep quests from ever escalating.
+            if not (stages_changed or status_changed or (update.progress_note or "").strip()):
+                continue
 
             # Progress of any kind un-escalates and resets the neglect clock.
             if quest.status == "escalating":

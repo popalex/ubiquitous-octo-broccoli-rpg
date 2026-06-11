@@ -408,8 +408,8 @@ async def get_session_quests(
     db: AsyncSession = Depends(get_db),
 ) -> SessionQuestsResponse:
     """Return a session's quests (optionally filtered by ``?status=``),
-    open arcs first, most recently touched first. Empty list when the quest
-    feature is dark or nothing has been tracked yet."""
+    open arcs first, most recently touched first. Not gated on
+    ``QUESTS_ENABLED`` — arcs tracked while the flag was on stay visible."""
     session = await db.scalar(select(ChatSession).where(ChatSession.id == session_id))
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")

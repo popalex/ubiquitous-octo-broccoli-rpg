@@ -185,6 +185,43 @@ def test_apply_delta_llm_cannot_set_escalating() -> None:
     assert quest.status == "active"
 
 
+def test_apply_delta_no_real_change_is_not_progress() -> None:
+    """A bare slug (or an ignored status) must not reset the neglect clock."""
+    svc = _service()
+    quest = _quest(status="escalating", last_progress_turn=2)
+    delta = QuestDelta(
+        quests_update=[
+            QuestUpdateItem(slug=quest.slug),
+            QuestUpdateItem(slug=quest.slug, status="offered"),
+        ]
+    )
+    changes = svc.apply_delta([quest], delta, turn_count=20)
+    assert changes == []
+    assert quest.status == "escalating"
+    assert quest.last_progress_turn == 2
+
+
+def test_apply_delta_terminal_update_frees_cap_slot() -> None:
+    """Concluding a quest in a delta frees its slot for quests_new in the same delta."""
+    svc = _service(quest_max_active=1)
+    existing = _quest()
+    delta = QuestDelta(
+        quests_update=[QuestUpdateItem(slug=existing.slug, status="completed", resolution="Done.")],
+        quests_new=[NewQuest(slug="another", title="Another", description="x")],
+    )
+    changes = svc.apply_delta([existing], delta, turn_count=9)
+    assert [c.change for c in changes] == ["completed", "started"]
+
+
+def test_apply_delta_terminal_without_resolution_gets_fallback() -> None:
+    svc = _service()
+    quest = _quest()
+    delta = QuestDelta(quests_update=[QuestUpdateItem(slug=quest.slug, status="failed")])
+    svc.apply_delta([quest], delta, turn_count=9)
+    assert quest.status == "failed"
+    assert quest.resolution == "Concluded."
+
+
 def test_apply_delta_progress_unescalates() -> None:
     svc = _service()
     quest = _quest(status="escalating")

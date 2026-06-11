@@ -836,7 +836,7 @@ class OrchestratorService:
                 )
                 if offer is not None:
                     changes.append(QuestChange(quest=offer, change="offered", detail=offer.description))
-            if pressure_quests and event_check.should_trigger:
+            if pressure_quests and event_check.should_trigger and event_check.event_type == "consequence":
                 changes += await self.quests.mark_escalating(db, session, pressure_quests)
         except Exception:
             logger.exception("post-event quest work skipped for session=%s", session.id)
