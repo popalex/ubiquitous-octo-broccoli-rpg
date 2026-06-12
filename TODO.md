@@ -121,12 +121,15 @@ supports time travel.
   summaries, and ledger versions. Revisit only if forking proves clumsy for
   the "fix a bad turn" case.
 
-### 4b. World sidebar fed by the ledger
-The `WorldStateLedger` already tracks entities/inventory/threads/location as
-JSON; `/session/{id}/world-state` already serves it. Render it: a live panel
-(alongside `MemoryPanel`) showing location, inventory, known entities, open
-threads. Pure frontend + maybe a leaner summary endpoint. Depends on §1 so
-users can actually enable the ledger.
+### 4b. World sidebar fed by the ledger — ✅ DONE (already shipped)
+Turned out to be already built: `CodexPanel.tsx` (landed with the world-state
+work, polished in the ui-improvements PR) renders location, dramatis personae,
+the fallen, inventory, open threads, and canon facts from `useWorldState`, and
+`useRefreshMemory` invalidates the query after every streamed turn — so it is
+live. With §1's toggles users can now actually enable it. Added
+`CodexPanel.test.tsx` (2026-06-12) to pin the rendering. The "leaner summary
+endpoint" idea was a *maybe* and is skipped until the full payload proves
+heavy.
 
 ### 4c. Dice / skill checks
 Lightweight d20 texture for GM mode, not a combat engine.
