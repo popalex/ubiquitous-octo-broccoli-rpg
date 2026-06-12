@@ -233,7 +233,7 @@ export function CharacterPanel({
               checked={worldStateEnabled}
               onChange={(e) => setWorldStateEnabled(e.target.checked)}
             />
-            <span className="toggle-label">⛬ World Ledger</span>
+            <span className="toggle-label">◈ World Ledger</span>
             <span className="toggle-hint">
               {worldStateEnabled ? "Canon tracked turn by turn" : "No structured canon"}
             </span>
