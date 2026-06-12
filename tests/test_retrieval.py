@@ -18,9 +18,7 @@ def service(mock_provider: MockProvider) -> RetrievalService:
 
 
 @pytest.mark.asyncio
-async def test_returns_empty_list_when_no_memories(
-    service: RetrievalService, db_session: AsyncSession
-) -> None:
+async def test_returns_empty_list_when_no_memories(service: RetrievalService, db_session: AsyncSession) -> None:
     session = SessionFactory()
     await db_session.flush()
 
@@ -29,9 +27,7 @@ async def test_returns_empty_list_when_no_memories(
 
 
 @pytest.mark.asyncio
-async def test_returns_facts_ranked_by_weighted_score(
-    service: RetrievalService, db_session: AsyncSession
-) -> None:
+async def test_returns_facts_ranked_by_weighted_score(service: RetrievalService, db_session: AsyncSession) -> None:
     session = SessionFactory()
     # Low-importance fact
     MemoryFactFactory(session=session, content="Minor detail.", importance=0.1)
@@ -47,9 +43,7 @@ async def test_returns_facts_ranked_by_weighted_score(
 
 
 @pytest.mark.asyncio
-async def test_returns_episode_summaries_alongside_facts(
-    service: RetrievalService, db_session: AsyncSession
-) -> None:
+async def test_returns_episode_summaries_alongside_facts(service: RetrievalService, db_session: AsyncSession) -> None:
     session = SessionFactory()
     MemoryFactFactory(session=session, content="A fact.")
     EpisodeSummaryFactory(session=session, content="A summary.")
@@ -62,9 +56,7 @@ async def test_returns_episode_summaries_alongside_facts(
 
 
 @pytest.mark.asyncio
-async def test_respects_retrieval_top_k(
-    db_session: AsyncSession, mock_provider: MockProvider
-) -> None:
+async def test_respects_retrieval_top_k(db_session: AsyncSession, mock_provider: MockProvider) -> None:
     settings = make_test_settings(retrieval_top_k=2, retrieval_candidate_pool=20)
     service = RetrievalService(mock_provider, settings)
 
@@ -78,9 +70,7 @@ async def test_respects_retrieval_top_k(
 
 
 @pytest.mark.asyncio
-async def test_recency_scoring_decays_older_memories(
-    db_session: AsyncSession, mock_provider: MockProvider
-) -> None:
+async def test_recency_scoring_decays_older_memories(db_session: AsyncSession, mock_provider: MockProvider) -> None:
     settings = make_test_settings(recency_half_life_hours=72)
     service = RetrievalService(mock_provider, settings)
 
@@ -105,9 +95,7 @@ async def test_recency_scoring_decays_older_memories(
 
 
 @pytest.mark.asyncio
-async def test_importance_score_contributes_to_ranking(
-    service: RetrievalService, db_session: AsyncSession
-) -> None:
+async def test_importance_score_contributes_to_ranking(service: RetrievalService, db_session: AsyncSession) -> None:
     session = SessionFactory()
     low = MemoryFactFactory(session=session, content="Low importance.", importance=0.1)
     high = MemoryFactFactory(session=session, content="High importance.", importance=1.0)
@@ -119,9 +107,7 @@ async def test_importance_score_contributes_to_ranking(
 
 
 @pytest.mark.asyncio
-async def test_mixed_facts_and_summaries_merged_and_sorted(
-    service: RetrievalService, db_session: AsyncSession
-) -> None:
+async def test_mixed_facts_and_summaries_merged_and_sorted(service: RetrievalService, db_session: AsyncSession) -> None:
     session = SessionFactory()
     MemoryFactFactory(session=session, content="Fact A.", importance=0.6)
     MemoryFactFactory(session=session, content="Fact B.", importance=0.4)

@@ -4,6 +4,7 @@ Game Master Service
 Handles narration, event generation, NPC orchestration, and story progression.
 Acts as the world's voice, separate from individual character actors.
 """
+
 from __future__ import annotations
 
 import logging
@@ -228,15 +229,12 @@ class GameMasterService:
             )
 
         # Get recent transcript for context
-        recent_turns = (await db.scalars(
-            select(Turn)
-            .where(Turn.session_id == session.id)
-            .order_by(Turn.turn_index.desc())
-            .limit(6)
-        )).all()
-        recent_transcript = "\n".join(
-            f"{turn.role.upper()}: {turn.content}" for turn in reversed(recent_turns)
-        )
+        recent_turns = (
+            await db.scalars(
+                select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(6)
+            )
+        ).all()
+        recent_transcript = "\n".join(f"{turn.role.upper()}: {turn.content}" for turn in reversed(recent_turns))
 
         prompt = GM_EVENT_CHECK_PROMPT.format(
             recent_transcript=recent_transcript,

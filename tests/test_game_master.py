@@ -94,13 +94,15 @@ async def test_check_for_event_returns_valid_result_when_triggered(
     session = SessionFactory(turn_count=3)  # 3 % 3 == 0
     await db_session.flush()
 
-    mock_provider.set_json_response({
-        "should_trigger": True,
-        "event_type": "ambush",
-        "event_seed": "Bandits attack from the shadows.",
-        "urgency": "immediate",
-        "reasoning": "Perfect ambush conditions.",
-    })
+    mock_provider.set_json_response(
+        {
+            "should_trigger": True,
+            "event_type": "ambush",
+            "event_seed": "Bandits attack from the shadows.",
+            "urgency": "immediate",
+            "reasoning": "Perfect ambush conditions.",
+        }
+    )
 
     result = await service.check_for_event(db_session, session)
     assert isinstance(result, EventCheckResult)
@@ -123,21 +125,21 @@ async def test_check_for_event_quest_pressure_bypasses_probability_gate(
     session = SessionFactory(turn_count=3)
     await db_session.flush()
 
-    mock_provider.set_json_response({
-        "should_trigger": True,
-        "event_type": "consequence",
-        "event_seed": "The cult moves on the neglected ritual.",
-        "urgency": "gradual",
-        "reasoning": "Quest pressure.",
-    })
+    mock_provider.set_json_response(
+        {
+            "should_trigger": True,
+            "event_type": "consequence",
+            "event_seed": "The cult moves on the neglected ritual.",
+            "urgency": "gradual",
+            "reasoning": "Quest pressure.",
+        }
+    )
 
     # probability=0.0 means random.random() always exceeds it — without
     # pressure the gate short-circuits before the LLM is consulted.
     with patch("app.services.game_master.random.random", return_value=1.0):
         baseline = await service.check_for_event(db_session, session)
-        pressured = await service.check_for_event(
-            db_session, session, quest_pressure="- Stop the cult ritual (threat)"
-        )
+        pressured = await service.check_for_event(db_session, session, quest_pressure="- Stop the cult ritual (threat)")
     assert baseline.should_trigger is False
     assert pressured.should_trigger is True
     assert pressured.event_type == "consequence"
@@ -152,9 +154,7 @@ async def test_check_for_event_quest_pressure_still_interval_gated(
     session = SessionFactory(turn_count=4)  # 4 % 3 != 0
     await db_session.flush()
 
-    result = await service.check_for_event(
-        db_session, session, quest_pressure="- Stop the cult ritual (threat)"
-    )
+    result = await service.check_for_event(db_session, session, quest_pressure="- Stop the cult ritual (threat)")
     assert result.should_trigger is False
 
 
@@ -199,11 +199,13 @@ async def test_generate_scene_transition_returns_full_result(
     service = GameMasterService(mock_provider, settings)
     world = WorldStateFactory.build()
 
-    mock_provider.set_json_response({
-        "narration": "You arrive at the tavern after a long journey.",
-        "time_passed": "2 hours",
-        "new_scene_elements": ["roaring fireplace", "suspicious patrons"],
-    })
+    mock_provider.set_json_response(
+        {
+            "narration": "You arrive at the tavern after a long journey.",
+            "time_passed": "2 hours",
+            "new_scene_elements": ["roaring fireplace", "suspicious patrons"],
+        }
+    )
 
     result = await service.generate_scene_transition(
         world_state=world,
@@ -257,19 +259,21 @@ async def test_analyze_world_state_changes_returns_result(
     settings = make_test_settings()
     service = GameMasterService(mock_provider, settings)
 
-    mock_provider.set_json_response({
-        "updates": [
-            {
-                "entity": "Dragon",
-                "change_type": "killed",
-                "old_value": "alive",
-                "new_value": "dead",
-                "permanence": "permanent",
-            }
-        ],
-        "flags_set": ["dragon_slain"],
-        "flags_cleared": ["dragon_threat"],
-    })
+    mock_provider.set_json_response(
+        {
+            "updates": [
+                {
+                    "entity": "Dragon",
+                    "change_type": "killed",
+                    "old_value": "alive",
+                    "new_value": "dead",
+                    "permanence": "permanent",
+                }
+            ],
+            "flags_set": ["dragon_slain"],
+            "flags_cleared": ["dragon_threat"],
+        }
+    )
 
     result = await service.analyze_world_state_changes(
         events_summary="The dragon was slain by the hero.",

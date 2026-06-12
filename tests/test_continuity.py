@@ -14,9 +14,7 @@ def service(mock_provider: MockProvider) -> ContinuityService:
     return ContinuityService(mock_provider)
 
 
-async def test_no_issues_returns_draft_unchanged(
-    service: ContinuityService, mock_provider: MockProvider
-) -> None:
+async def test_no_issues_returns_draft_unchanged(service: ContinuityService, mock_provider: MockProvider) -> None:
     mock_provider.set_json_response({"ok": True, "issues": [], "revised_response": ""})
     result = await service.validate(
         hard_rules="No killing.",
@@ -30,9 +28,7 @@ async def test_no_issues_returns_draft_unchanged(
     assert result.issues == []
 
 
-async def test_issues_present_triggers_revision(
-    service: ContinuityService, mock_provider: MockProvider
-) -> None:
+async def test_issues_present_triggers_revision(service: ContinuityService, mock_provider: MockProvider) -> None:
     mock_provider.set_json_response(
         {
             "ok": False,
@@ -52,12 +48,8 @@ async def test_issues_present_triggers_revision(
     assert "Character used magic they don't possess" in result.issues
 
 
-async def test_whitespace_revised_falls_back_to_draft(
-    service: ContinuityService, mock_provider: MockProvider
-) -> None:
-    mock_provider.set_json_response(
-        {"ok": True, "issues": [], "revised_response": "   "}
-    )
+async def test_whitespace_revised_falls_back_to_draft(service: ContinuityService, mock_provider: MockProvider) -> None:
+    mock_provider.set_json_response({"ok": True, "issues": [], "revised_response": "   "})
     result = await service.validate(
         hard_rules="",
         world_canon="",
@@ -71,9 +63,7 @@ async def test_whitespace_revised_falls_back_to_draft(
 async def test_applied_true_when_revised_differs_from_draft(
     service: ContinuityService, mock_provider: MockProvider
 ) -> None:
-    mock_provider.set_json_response(
-        {"ok": True, "issues": [], "revised_response": "Different reply."}
-    )
+    mock_provider.set_json_response({"ok": True, "issues": [], "revised_response": "Different reply."})
     result = await service.validate(
         hard_rules="",
         world_canon="",
@@ -85,12 +75,8 @@ async def test_applied_true_when_revised_differs_from_draft(
     assert result.final_reply == "Different reply."
 
 
-async def test_provider_error_propagates(
-    service: ContinuityService, mock_provider: MockProvider
-) -> None:
-    with patch.object(
-        mock_provider, "generate_json", side_effect=ProviderError("LLM failure")
-    ):
+async def test_provider_error_propagates(service: ContinuityService, mock_provider: MockProvider) -> None:
+    with patch.object(mock_provider, "generate_json", side_effect=ProviderError("LLM failure")):
         with pytest.raises(ProviderError, match="LLM failure"):
             await service.validate(
                 hard_rules="",
@@ -101,9 +87,7 @@ async def test_provider_error_propagates(
             )
 
 
-async def test_empty_issues_list_in_response(
-    service: ContinuityService, mock_provider: MockProvider
-) -> None:
+async def test_empty_issues_list_in_response(service: ContinuityService, mock_provider: MockProvider) -> None:
     mock_provider.set_json_response({"ok": True})
     result = await service.validate(
         hard_rules="",

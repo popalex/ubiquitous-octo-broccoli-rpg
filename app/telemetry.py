@@ -47,18 +47,10 @@ _meter = metrics.get_meter("rpg-backend")
 # Units intentionally omitted so the Prometheus series names stay predictable
 # (no unit suffix): rpg_llm_tokens_total, rpg_llm_latency_bucket, etc. Display
 # units are set on the Grafana panels instead. Latency is recorded in ms.
-llm_tokens = _meter.create_counter(
-    "rpg.llm.tokens", description="LLM tokens consumed, by direction"
-)
-llm_latency = _meter.create_histogram(
-    "rpg.llm.latency", description="LLM call wall-clock latency (ms)"
-)
-chat_turns = _meter.create_counter(
-    "rpg.chat.turns", description="Completed chat turns"
-)
-retrieval_selected = _meter.create_histogram(
-    "rpg.retrieval.selected", description="Memories selected per retrieval"
-)
+llm_tokens = _meter.create_counter("rpg.llm.tokens", description="LLM tokens consumed, by direction")
+llm_latency = _meter.create_histogram("rpg.llm.latency", description="LLM call wall-clock latency (ms)")
+chat_turns = _meter.create_counter("rpg.chat.turns", description="Completed chat turns")
+retrieval_selected = _meter.create_histogram("rpg.retrieval.selected", description="Memories selected per retrieval")
 canon_size = _meter.create_histogram(
     "rpg.canon.size", description="World-state ledger size (entities+threads+facts) per turn"
 )
@@ -210,9 +202,7 @@ def setup_telemetry(app) -> None:
         # exclude_spans drops the per-ASGI-event "http send"/"http receive"
         # spans — otherwise SSE streaming (/chat/stream) emits one span per
         # chunk, producing hundreds of spans that bury the meaningful ones.
-        FastAPIInstrumentor.instrument_app(
-            app, excluded_urls="health", exclude_spans=["receive", "send"]
-        )
+        FastAPIInstrumentor.instrument_app(app, excluded_urls="health", exclude_spans=["receive", "send"])
         SQLAlchemyInstrumentor().instrument(engine=engine)
         HTTPXClientInstrumentor().instrument()
 

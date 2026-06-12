@@ -156,9 +156,7 @@ async def test_delete_session_returns_204(async_client: AsyncClient, db_session)
 
 
 @pytest.mark.asyncio
-async def test_delete_session_removes_from_db(
-    async_client: AsyncClient, db_session
-) -> None:
+async def test_delete_session_removes_from_db(async_client: AsyncClient, db_session) -> None:
     from app.models import Session as ChatSession
 
     session = SessionFactory()
@@ -376,9 +374,7 @@ async def test_gm_narration_returns_narration_text(async_client: AsyncClient, db
     from app.services.orchestrator import get_orchestrator
 
     mock_orch = MagicMock()
-    mock_orch.game_master.generate_narration = AsyncMock(
-        return_value="The wind howls through the trees."
-    )
+    mock_orch.game_master.generate_narration = AsyncMock(return_value="The wind howls through the trees.")
     get_orchestrator.cache_clear()
     with patch("app.main.get_orchestrator", return_value=mock_orch):
         response = await async_client.post(
@@ -506,9 +502,7 @@ async def test_gm_npc_dialogue_returns_dialogue_text(async_client: AsyncClient, 
     from app.services.orchestrator import get_orchestrator
 
     mock_orch = MagicMock()
-    mock_orch.game_master.generate_npc_dialogue = AsyncMock(
-        return_value="What do you want, stranger?"
-    )
+    mock_orch.game_master.generate_npc_dialogue = AsyncMock(return_value="What do you want, stranger?")
     get_orchestrator.cache_clear()
     with patch("app.main.get_orchestrator", return_value=mock_orch):
         response = await async_client.post(
@@ -636,9 +630,7 @@ async def test_patch_quest_abandons(async_client: AsyncClient, db_session) -> No
     quest = QuestFactory(session=session, status="active")
     await db_session.flush()
 
-    response = await async_client.patch(
-        f"/session/{session.id}/quests/{quest.id}", json={"status": "abandoned"}
-    )
+    response = await async_client.patch(f"/session/{session.id}/quests/{quest.id}", json={"status": "abandoned"})
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "abandoned"
@@ -654,9 +646,7 @@ async def test_patch_quest_terminal_returns_409(async_client: AsyncClient, db_se
     quest = QuestFactory(session=session, status="completed", resolution="Done.")
     await db_session.flush()
 
-    response = await async_client.patch(
-        f"/session/{session.id}/quests/{quest.id}", json={"status": "abandoned"}
-    )
+    response = await async_client.patch(f"/session/{session.id}/quests/{quest.id}", json={"status": "abandoned"})
     assert response.status_code == 409
 
 
@@ -664,7 +654,5 @@ async def test_patch_quest_terminal_returns_409(async_client: AsyncClient, db_se
 async def test_patch_quest_unknown_quest_404(async_client: AsyncClient, db_session) -> None:
     session = SessionFactory()
     await db_session.flush()
-    response = await async_client.patch(
-        f"/session/{session.id}/quests/nonexistent", json={"status": "abandoned"}
-    )
+    response = await async_client.patch(f"/session/{session.id}/quests/nonexistent", json={"status": "abandoned"})
     assert response.status_code == 404

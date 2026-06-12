@@ -58,8 +58,12 @@ class OllamaProvider(BaseModelProvider):
 
         content_parts: list[str] = []
         with llm_span(
-            "llm.generate_text", "ollama", self.model_name,
-            messages=messages, temperature=temperature, max_tokens=max_tokens,
+            "llm.generate_text",
+            "ollama",
+            self.model_name,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
         ) as span:
             input_tokens = output_tokens = None
             try:
@@ -82,10 +86,16 @@ class OllamaProvider(BaseModelProvider):
                         except json.JSONDecodeError:
                             logger.warning("Skipped non-JSON line: %s", line[:100])
                             continue
-                logger.info("Ollama stream completed, total parts=%d, total_len=%d", len(content_parts), len("".join(content_parts)))
+                logger.info(
+                    "Ollama stream completed, total parts=%d, total_len=%d",
+                    len(content_parts),
+                    len("".join(content_parts)),
+                )
             except httpx.HTTPError as exc:
                 logger.exception("Ollama chat API error for model=%s", self.model_name)
-                raise ProviderError(f"Failed to call Ollama chat API at {self.settings.ollama_base_url}: {exc}") from exc
+                raise ProviderError(
+                    f"Failed to call Ollama chat API at {self.settings.ollama_base_url}: {exc}"
+                ) from exc
 
             content = "".join(content_parts)
             if not content:
@@ -150,7 +160,9 @@ class OllamaProvider(BaseModelProvider):
         except httpx.HTTPError as exc:
             logger.exception("Ollama stream API error for model=%s", self.model_name)
             record_span_error(span, exc)
-            raise ProviderError(f"Failed to stream from Ollama chat API at {self.settings.ollama_base_url}: {exc}") from exc
+            raise ProviderError(
+                f"Failed to stream from Ollama chat API at {self.settings.ollama_base_url}: {exc}"
+            ) from exc
         except Exception as exc:
             record_span_error(span, exc)
             raise
@@ -173,7 +185,9 @@ class OllamaProvider(BaseModelProvider):
                 response.raise_for_status()
             except httpx.HTTPError as exc:
                 logger.exception("Ollama embedding API error for model=%s", self.model_name)
-                raise ProviderError(f"Failed to call Ollama embedding API at {self.settings.ollama_base_url}: {exc}") from exc
+                raise ProviderError(
+                    f"Failed to call Ollama embedding API at {self.settings.ollama_base_url}: {exc}"
+                ) from exc
 
             embeddings = response.json().get("embeddings")
             if not embeddings:

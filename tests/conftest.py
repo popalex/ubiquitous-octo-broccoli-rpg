@@ -32,6 +32,7 @@ def make_test_settings(**overrides) -> Settings:
 # Mock provider
 # ---------------------------------------------------------------------------
 
+
 class MockProvider(BaseModelProvider):
     """Deterministic, configurable provider for unit tests."""
 
@@ -94,6 +95,7 @@ class MockProvider(BaseModelProvider):
 # Database fixtures (testcontainers)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="session")
 def pg_container():
     with PostgresContainer(image=PGVECTOR_IMAGE, driver="psycopg") as pg:
@@ -137,6 +139,7 @@ async def db_session(db_engine) -> AsyncIterator[AsyncSession]:
 # Factory session wiring (autouse so factories always use the right session)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _wire_factory_session(db_session: AsyncSession) -> None:
     """Keep factory-boy in sync with the per-test database session."""
@@ -149,6 +152,7 @@ def _wire_factory_session(db_session: AsyncSession) -> None:
         TurnFactory,
         WorldStateFactory,
     )
+
     for klass in (
         CharacterCardFactory,
         WorldStateFactory,
@@ -165,6 +169,7 @@ def _wire_factory_session(db_session: AsyncSession) -> None:
 # Provider fixture
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def mock_provider() -> MockProvider:
     return MockProvider()
@@ -173,6 +178,7 @@ def mock_provider() -> MockProvider:
 # ---------------------------------------------------------------------------
 # FastAPI client fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest_asyncio.fixture()
 async def async_client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
@@ -213,9 +219,7 @@ async def async_client_mocked_orchestrator(
     app.dependency_overrides[get_db] = _override_db
     get_orchestrator.cache_clear()
     with patch("app.main.get_orchestrator", return_value=mock_orch):
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             yield client, mock_orch
     app.dependency_overrides.clear()
     get_orchestrator.cache_clear()

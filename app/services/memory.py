@@ -39,7 +39,11 @@ class MemoryService:
     _MAX_TURNS_PER_SUMMARY = 20
 
     async def maybe_refresh(
-        self, db: AsyncSession, session: ChatSession, *, force: bool = False,
+        self,
+        db: AsyncSession,
+        session: ChatSession,
+        *,
+        force: bool = False,
     ) -> MemoryRefreshResult:
         turns_since_last = session.turn_count - session.last_summarized_turn
         if not force:
@@ -49,11 +53,13 @@ class MemoryService:
             if session.turn_count == 0 or turns_since_last == 0:
                 return MemoryRefreshResult(summary_created=False, facts_written=0, relationships_written=0)
 
-        turns = (await db.scalars(
-            select(Turn)
-            .where(Turn.session_id == session.id, Turn.turn_index > session.last_summarized_turn)
-            .order_by(Turn.turn_index)
-        )).all()
+        turns = (
+            await db.scalars(
+                select(Turn)
+                .where(Turn.session_id == session.id, Turn.turn_index > session.last_summarized_turn)
+                .order_by(Turn.turn_index)
+            )
+        ).all()
         if not turns:
             return MemoryRefreshResult(summary_created=False, facts_written=0, relationships_written=0)
 
@@ -155,7 +161,9 @@ class MemoryService:
             facts_written,
             relationships_written,
         )
-        return MemoryRefreshResult(summary_created=True, facts_written=facts_written, relationships_written=relationships_written)
+        return MemoryRefreshResult(
+            summary_created=True, facts_written=facts_written, relationships_written=relationships_written
+        )
 
     @staticmethod
     def _format_turns(turns: Sequence[Turn]) -> str:

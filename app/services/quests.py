@@ -132,9 +132,7 @@ class QuestService:
             "ACTIVE QUESTS — open story arcs; play toward them, but never resolve them for the player:",
         ]
         for quest in quests:
-            next_stage = next(
-                (s.get("description") for s in quest.stages if not s.get("done")), None
-            )
+            next_stage = next((s.get("description") for s in quest.stages if not s.get("done")), None)
             label = "offered, not yet taken up" if quest.status in ("rumored", "offered") else quest.status
             bits = [f"- [{label}] {quest.title} ({quest.quest_type}) — {quest.description}"]
             if next_stage:
@@ -150,8 +148,7 @@ class QuestService:
         if not quests:
             return ""
         return "\n".join(
-            f"- {q.title} ({q.quest_type}): {q.description}"
-            + (f" Stakes: {q.stakes}" if q.stakes else "")
+            f"- {q.title} ({q.quest_type}): {q.description}" + (f" Stakes: {q.stakes}" if q.stakes else "")
             for q in quests
         )
 
@@ -239,7 +236,9 @@ class QuestService:
             if quest.status == "escalating":
                 quest.status = "active"
             quest.last_progress_turn = turn_count
-            changes.append(QuestChange(quest=quest, change=change_kind, detail=update.progress_note or update.resolution))
+            changes.append(
+                QuestChange(quest=quest, change=change_kind, detail=update.progress_note or update.resolution)
+            )
 
         for new in delta.quests_new:
             if new.slug in taken_slugs or open_count >= self.settings.quest_max_active:
@@ -293,11 +292,7 @@ class QuestService:
             # terminal slugs are reserved so a judge that reuses a concluded
             # quest's slug can't trip the unique constraint and sink the delta.
             all_quests = (
-                await db.scalars(
-                    select(Quest)
-                    .where(Quest.session_id == session.id)
-                    .order_by(Quest.created_at.asc())
-                )
+                await db.scalars(select(Quest).where(Quest.session_id == session.id).order_by(Quest.created_at.asc()))
             ).all()
             quests = [q for q in all_quests if q.status in OPEN_STATUSES]
             reserved_slugs = {q.slug for q in all_quests if q.status not in OPEN_STATUSES}
@@ -313,8 +308,7 @@ class QuestService:
                 for q in quests
             ]
             user_content = (
-                f"OPEN QUESTS:\n{open_json}\n\n"
-                f"LATEST EXCHANGE:\nPLAYER: {user_message}\nRESPONSE: {response_text}"
+                f"OPEN QUESTS:\n{open_json}\n\nLATEST EXCHANGE:\nPLAYER: {user_message}\nRESPONSE: {response_text}"
             )
             try:
                 payload = await self.judge_provider.generate_json(
@@ -343,9 +337,7 @@ class QuestService:
                 span.set_attribute("rpg.quest.delta.empty", True)
                 return []
 
-            changes = self.apply_delta(
-                quests, delta, turn_count=session.turn_count, reserved_slugs=reserved_slugs
-            )
+            changes = self.apply_delta(quests, delta, turn_count=session.turn_count, reserved_slugs=reserved_slugs)
             if not changes:
                 return []
             for change in changes:
@@ -427,9 +419,7 @@ class QuestService:
             quest_extract_failures.add(1, {"reason": "offer"})
             return None
 
-        existing = await db.scalar(
-            select(Quest).where(Quest.session_id == session.id, Quest.slug == new.slug)
-        )
+        existing = await db.scalar(select(Quest).where(Quest.session_id == session.id, Quest.slug == new.slug))
         if existing is not None:
             return None
 
@@ -501,9 +491,7 @@ class QuestService:
         )
         return list(quests.all())
 
-    async def mark_escalating(
-        self, db: AsyncSession, session: ChatSession, quests: list[Quest]
-    ) -> list[QuestChange]:
+    async def mark_escalating(self, db: AsyncSession, session: ChatSession, quests: list[Quest]) -> list[QuestChange]:
         """Flag quests as escalating after a consequence event fired for them."""
         changes: list[QuestChange] = []
         for quest in quests:
@@ -516,9 +504,7 @@ class QuestService:
         return changes
 
     @staticmethod
-    async def throttle_pressure(
-        db: AsyncSession, session: ChatSession, quests: list[Quest]
-    ) -> None:
+    async def throttle_pressure(db: AsyncSession, session: ChatSession, quests: list[Quest]) -> None:
         """Stamp the escalation clock after a pressure-driven event check that
         did NOT produce a consequence event. Without this, the same neglected
         quests would bypass the GM event probability gate on every subsequent

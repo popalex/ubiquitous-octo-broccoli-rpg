@@ -207,8 +207,7 @@ class WorldStateService:
 
         if ledger.inventory:
             inv = ", ".join(
-                f"{item.item} x{item.qty}" if item.qty is not None else item.item
-                for item in ledger.inventory
+                f"{item.item} x{item.qty}" if item.qty is not None else item.item for item in ledger.inventory
             )
             lines.append(f"Inventory: {inv}")
 
@@ -264,10 +263,7 @@ class WorldStateService:
         if delta.entities_remove:
             remove = set(delta.entities_remove)
             # Never drop a dead entity — deaths are permanent canon.
-            new.entities = [
-                e for e in new.entities
-                if e.id not in remove or (e.status or "").lower() == "dead"
-            ]
+            new.entities = [e for e in new.entities if e.id not in remove or (e.status or "").lower() == "dead"]
 
         # Inventory math.
         inv_by_item = {item.item: item for item in new.inventory}
@@ -439,6 +435,9 @@ class WorldStateService:
             canon_size.record(new_ledger.size)
             logger.info(
                 "state_extract session=%s version=%s size=%s delta=%s",
-                session.id, base_version + 1, new_ledger.size, delta.summary_counts(),
+                session.id,
+                base_version + 1,
+                new_ledger.size,
+                delta.summary_counts(),
             )
             return row

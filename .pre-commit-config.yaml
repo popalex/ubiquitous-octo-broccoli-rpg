@@ -1,0 +1,17 @@
+# Install once with: pip install pre-commit && pre-commit install
+# Mirrors the CI checks (ruff lint+format, ESLint) so pushes don't bounce.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.16  # keep in lockstep with ruff== in requirements.txt
+    hooks:
+      - id: ruff-check
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint (frontend)
+        language: system
+        entry: bash -c 'cd frontend && pnpm lint'
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false

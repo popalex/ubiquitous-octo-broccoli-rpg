@@ -58,8 +58,12 @@ class OpenAIProvider(BaseModelProvider):
             kwargs["response_format"] = {"type": "json_object"}
 
         with llm_span(
-            "llm.generate_text", "openai", self.model_name,
-            messages=messages, temperature=temperature, max_tokens=max_tokens,
+            "llm.generate_text",
+            "openai",
+            self.model_name,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
         ) as span:
             response = await self.client.chat.completions.create(**kwargs)
             content = response.choices[0].message.content

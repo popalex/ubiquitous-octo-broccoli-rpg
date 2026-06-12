@@ -58,6 +58,7 @@ def _make_ollama() -> OllamaProvider:
 
 def _make_streaming_response(chunks: list[dict]) -> MagicMock:
     """Build a fake httpx streaming context manager."""
+
     async def aiter_lines():
         for chunk in chunks:
             yield json.dumps(chunk)

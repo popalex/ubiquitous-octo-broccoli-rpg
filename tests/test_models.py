@@ -88,17 +88,13 @@ async def test_session_cascades_to_turns_on_delete(db_session: AsyncSession) -> 
     await db_session.flush()
 
     # Verify turns exist
-    turns_before = (await db_session.scalars(
-        select(Turn).where(Turn.session_id == session.id)
-    )).all()
+    turns_before = (await db_session.scalars(select(Turn).where(Turn.session_id == session.id))).all()
     assert len(turns_before) == 2
 
     await db_session.delete(session)
     await db_session.flush()
 
-    turns_after = (await db_session.scalars(
-        select(Turn).where(Turn.session_id == session.id)
-    )).all()
+    turns_after = (await db_session.scalars(select(Turn).where(Turn.session_id == session.id))).all()
     assert len(turns_after) == 0
 
 

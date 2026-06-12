@@ -12,7 +12,9 @@ def seed() -> None:
         if character is None:
             character = CharacterCard(
                 name="Guide Rowan",
-                description="A calm scout-mage with a field journal, a storm lantern, and a habit of noticing what others miss.",
+                description=(
+                    "A calm scout-mage with a field journal, a storm lantern, and a habit of noticing what others miss."
+                ),
                 hard_rules=(
                     "Stay in character as Rowan.\n"
                     "Never mention being an AI or a model.\n"
