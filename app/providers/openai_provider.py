@@ -20,8 +20,8 @@ from app.telemetry import (
 
 
 class OpenAIProvider(BaseModelProvider):
-    def __init__(self, model_name: str, settings: Any) -> None:
-        super().__init__(model_name=model_name, settings=settings)
+    def __init__(self, model_name: str, settings: Any, slot: str = "unknown") -> None:
+        super().__init__(model_name=model_name, settings=settings, slot=slot)
         if not self.settings.openai_api_key:
             raise ProviderError("OPENAI_API_KEY is required when an OpenAI provider is selected.")
 
@@ -61,6 +61,7 @@ class OpenAIProvider(BaseModelProvider):
             "llm.generate_text",
             "openai",
             self.model_name,
+            slot=self.slot,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -74,7 +75,9 @@ class OpenAIProvider(BaseModelProvider):
             if usage:
                 span.set_attribute("gen_ai.usage.input_tokens", usage.prompt_tokens)
                 span.set_attribute("gen_ai.usage.output_tokens", usage.completion_tokens)
-                record_llm_tokens("openai", self.model_name, usage.prompt_tokens, usage.completion_tokens)
+                record_llm_tokens(
+                    "openai", self.model_name, usage.prompt_tokens, usage.completion_tokens, slot=self.slot
+                )
             return content
 
     async def generate_text_stream(
@@ -89,6 +92,7 @@ class OpenAIProvider(BaseModelProvider):
         span = tracer.start_span("llm.generate_text_stream")
         span.set_attribute("gen_ai.system", "openai")
         span.set_attribute("gen_ai.request.model", self.model_name)
+        span.set_attribute("rpg.slot", self.slot)
         span.set_attribute("gen_ai.request.temperature", temperature)
         span.set_attribute("gen_ai.request.max_tokens", max_tokens)
         set_prompt(span, messages)
@@ -114,7 +118,9 @@ class OpenAIProvider(BaseModelProvider):
             if usage:
                 span.set_attribute("gen_ai.usage.input_tokens", usage.prompt_tokens)
                 span.set_attribute("gen_ai.usage.output_tokens", usage.completion_tokens)
-                record_llm_tokens("openai", self.model_name, usage.prompt_tokens, usage.completion_tokens)
+                record_llm_tokens(
+                    "openai", self.model_name, usage.prompt_tokens, usage.completion_tokens, slot=self.slot
+                )
         except Exception as exc:
             record_span_error(span, exc)
             raise
@@ -126,7 +132,7 @@ class OpenAIProvider(BaseModelProvider):
             span.end()
 
     async def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
-        with llm_span("llm.embed_texts", "openai", self.model_name) as span:
+        with llm_span("llm.embed_texts", "openai", self.model_name, slot=self.slot) as span:
             span.set_attribute("gen_ai.embed.input_count", len(texts))
             response = await self.client.embeddings.create(
                 model=self.model_name,
@@ -135,5 +141,5 @@ class OpenAIProvider(BaseModelProvider):
             )
             if response.usage:
                 span.set_attribute("gen_ai.usage.input_tokens", response.usage.prompt_tokens)
-                record_llm_tokens("openai", self.model_name, response.usage.prompt_tokens, None)
+                record_llm_tokens("openai", self.model_name, response.usage.prompt_tokens, None, slot=self.slot)
             return [item.embedding for item in response.data]

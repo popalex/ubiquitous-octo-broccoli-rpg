@@ -120,6 +120,31 @@
       "targets": [
         { "datasource": { "type": "prometheus", "uid": "prometheus" }, "editorMode": "code", "expr": "sum by (reason) (rate(rpg_quest_extract_failures_total[$__rate_interval])) * 60", "legendFormat": "{{reason}}", "range": true, "refId": "A" }
       ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "title": "LLM tokens/sec by provider slot",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "id": 10,
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 15, "stacking": { "mode": "normal" } }, "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "editorMode": "code", "expr": "sum by (rpg_slot, gen_ai_token_direction) (rate(rpg_llm_tokens_total[$__rate_interval]))", "legendFormat": "{{rpg_slot}}/{{gen_ai_token_direction}}", "range": true, "refId": "A" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "title": "Avg tokens per chat turn by slot",
+      "description": "Quantifies post-turn LLM cost per slot — the yardstick for what the unified post-turn judge (TODO §2) saves.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "id": 11,
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 }, "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "editorMode": "code", "expr": "sum by (rpg_slot) (increase(rpg_llm_tokens_total[$__rate_interval])) / ignoring(rpg_slot) group_left sum(increase(rpg_chat_turns_total[$__rate_interval]))", "legendFormat": "{{rpg_slot}}", "range": true, "refId": "A" }
+      ]
     }
   ]
 }

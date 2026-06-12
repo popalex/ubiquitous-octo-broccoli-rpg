@@ -92,8 +92,10 @@ def record_span_error(span, exc: BaseException) -> None:
     span.set_status(Status(StatusCode.ERROR, str(exc)))
 
 
-def record_llm_tokens(system: str, model: str, input_tokens: int | None, output_tokens: int | None) -> None:
-    attrs = {"gen_ai.system": system, "gen_ai.request.model": model}
+def record_llm_tokens(
+    system: str, model: str, input_tokens: int | None, output_tokens: int | None, slot: str = "unknown"
+) -> None:
+    attrs = {"gen_ai.system": system, "gen_ai.request.model": model, "rpg.slot": slot}
     if input_tokens is not None:
         llm_tokens.add(input_tokens, {**attrs, "gen_ai.token.direction": "input"})
     if output_tokens is not None:
@@ -106,6 +108,7 @@ def llm_span(
     system: str,
     model: str,
     *,
+    slot: str | None = None,
     messages: Sequence | None = None,
     temperature: float | None = None,
     max_tokens: int | None = None,
@@ -119,6 +122,8 @@ def llm_span(
     with tracer.start_as_current_span(operation) as span:
         span.set_attribute("gen_ai.system", system)
         span.set_attribute("gen_ai.request.model", model)
+        if slot is not None:
+            span.set_attribute("rpg.slot", slot)
         if temperature is not None:
             span.set_attribute("gen_ai.request.temperature", temperature)
         if max_tokens is not None:

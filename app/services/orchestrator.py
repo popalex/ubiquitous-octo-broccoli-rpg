@@ -40,15 +40,17 @@ class OrchestratorService:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
         self.actor_provider = build_provider(
-            self.settings.actor_provider, self.settings.actor_model_name, self.settings
+            self.settings.actor_provider, self.settings.actor_model_name, self.settings, slot="actor"
         )
         self.memory_provider = build_provider(
-            self.settings.memory_provider, self.settings.memory_model_name, self.settings
+            self.settings.memory_provider, self.settings.memory_model_name, self.settings, slot="memory"
         )
         self.embedding_provider = build_provider(
-            self.settings.embedding_provider, self.settings.embedding_model_name, self.settings
+            self.settings.embedding_provider, self.settings.embedding_model_name, self.settings, slot="embedding"
         )
-        self.gm_provider = build_provider(self.settings.gm_provider, self.settings.gm_model_name, self.settings)
+        self.gm_provider = build_provider(
+            self.settings.gm_provider, self.settings.gm_model_name, self.settings, slot="gm"
+        )
         self.retrieval = RetrievalService(self.embedding_provider, self.settings)
         self.memory = MemoryService(self.memory_provider, self.embedding_provider, self.settings)
         self.continuity = ContinuityService(self.memory_provider)

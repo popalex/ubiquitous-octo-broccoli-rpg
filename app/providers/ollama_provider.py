@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 
 class OllamaProvider(BaseModelProvider):
-    def __init__(self, model_name: str, settings) -> None:
-        super().__init__(model_name=model_name, settings=settings)
+    def __init__(self, model_name: str, settings, slot: str = "unknown") -> None:
+        super().__init__(model_name=model_name, settings=settings, slot=slot)
         # Use longer read timeout for streaming responses
         self.client = httpx.AsyncClient(
             base_url=self.settings.ollama_base_url,
@@ -61,6 +61,7 @@ class OllamaProvider(BaseModelProvider):
             "llm.generate_text",
             "ollama",
             self.model_name,
+            slot=self.slot,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -104,7 +105,7 @@ class OllamaProvider(BaseModelProvider):
             if input_tokens or output_tokens:
                 span.set_attribute("gen_ai.usage.input_tokens", input_tokens or 0)
                 span.set_attribute("gen_ai.usage.output_tokens", output_tokens or 0)
-                record_llm_tokens("ollama", self.model_name, input_tokens, output_tokens)
+                record_llm_tokens("ollama", self.model_name, input_tokens, output_tokens, slot=self.slot)
             return content
 
     async def generate_text_stream(
@@ -129,6 +130,7 @@ class OllamaProvider(BaseModelProvider):
         span = tracer.start_span("llm.generate_text_stream")
         span.set_attribute("gen_ai.system", "ollama")
         span.set_attribute("gen_ai.request.model", self.model_name)
+        span.set_attribute("rpg.slot", self.slot)
         span.set_attribute("gen_ai.request.temperature", temperature)
         span.set_attribute("gen_ai.request.max_tokens", max_tokens)
         set_prompt(span, messages)
@@ -156,7 +158,7 @@ class OllamaProvider(BaseModelProvider):
             if input_tokens or output_tokens:
                 span.set_attribute("gen_ai.usage.input_tokens", input_tokens or 0)
                 span.set_attribute("gen_ai.usage.output_tokens", output_tokens or 0)
-                record_llm_tokens("ollama", self.model_name, input_tokens, output_tokens)
+                record_llm_tokens("ollama", self.model_name, input_tokens, output_tokens, slot=self.slot)
         except httpx.HTTPError as exc:
             logger.exception("Ollama stream API error for model=%s", self.model_name)
             record_span_error(span, exc)
@@ -178,7 +180,7 @@ class OllamaProvider(BaseModelProvider):
             "model": self.model_name,
             "input": list(texts),
         }
-        with llm_span("llm.embed_texts", "ollama", self.model_name) as span:
+        with llm_span("llm.embed_texts", "ollama", self.model_name, slot=self.slot) as span:
             span.set_attribute("gen_ai.embed.input_count", len(texts))
             try:
                 response = await self.client.post("/api/embed", json=payload)

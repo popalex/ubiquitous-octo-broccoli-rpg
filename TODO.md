@@ -152,10 +152,13 @@ accuracy (memory/ledger/quests), and GM narration constraints. Runs locally
 against real models on demand (`make eval` or a `pytest -m eval` marker
 excluded from CI). Prerequisite for safely landing §2 and any prompt changes.
 
-### 5b. Token/cost visibility
-Per-turn token counts per provider slot (actor/memory/embedding/GM) as OTel
-metrics in `app/telemetry.py`; panel in the Grafana RPG dashboard
-(`observability/grafana/`). Quantifies what §2 saves.
+### 5b. Token/cost visibility — ✅ DONE (2026-06-12)
+Shipped on `feature/roadmap-quick-wins`: providers carry a `slot` label
+(actor/memory/embedding/gm, threaded through `build_provider` — distinct even
+in DEV_MODE where the slots share a model name), attached to the
+`rpg.llm.tokens` metric (`rpg.slot` attribute) and to LLM spans. Two new
+Grafana panels: tokens/sec by slot, and avg tokens per chat turn by slot —
+the yardstick for what §2 saves.
 
 ### 5c. Carried over from the old TODO — ✅ DONE (2026-06-12)
 - ~~`ruff format` + `--check` in CI + `.pre-commit-config.yaml` (ruff + eslint);
