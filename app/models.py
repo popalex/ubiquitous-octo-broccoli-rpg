@@ -92,6 +92,9 @@ class Turn(TimestampMixin, Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_estimate: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     continuity_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Continuity violations found *after* a streamed reply was already shown;
+    # injected into the next context packet as a hard constraint (retcon).
+    retcon_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # GM mode field: 'chat', 'gm_narration', 'gm_event'
     turn_type: Mapped[str] = mapped_column(String(32), default="chat", nullable=False)

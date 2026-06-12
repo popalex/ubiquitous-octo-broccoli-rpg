@@ -71,6 +71,9 @@ quest_updates = _meter.create_counter(
 quest_extract_failures = _meter.create_counter(
     "rpg.quest.extract_failures", description="Quest judge failures (parse/provider)"
 )
+continuity_revisions = _meter.create_counter(
+    "rpg.continuity.revisions", description="Continuity violations caught post-stream (retcon notes recorded)"
+)
 
 
 def messages_to_json(messages: Sequence) -> str:

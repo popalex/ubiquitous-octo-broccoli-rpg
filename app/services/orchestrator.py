@@ -29,7 +29,7 @@ from app.services.memory import MemoryService
 from app.services.quests import QuestChange, QuestService
 from app.services.retrieval import RetrievalService
 from app.services.world_state import WorldStateService
-from app.telemetry import chat_turns, retrieval_selected, tracer
+from app.telemetry import chat_turns, continuity_revisions, retrieval_selected, tracer
 
 logger = logging.getLogger(__name__)
 
@@ -591,10 +591,25 @@ class OrchestratorService:
             )
         )
 
+        # Rendered before commit: relationships expire on refresh (async lazy-load trap)
+        hard_rules = self._hard_rules_text(session.character_card, session.world_state)
+        world_canon = self._continuity_canon(session, world_state_block)
+
         db.add_all(turns_to_add)
         session.turn_count = current_index
         await db.commit()
         await db.refresh(session)
+
+        # Post-stream continuity check → retcon note (reply already shown)
+        await self._post_stream_continuity(
+            db, session,
+            user_message=user_message,
+            reply_text=character_reply,
+            hard_rules=hard_rules,
+            world_canon=world_canon,
+            recent_transcript=self._recent_turns_text(recent_turns),
+            assistant_turn=turns_to_add[-1],
+        )
 
         # Memory refresh
         yield f"data: {json.dumps({'type': 'phase', 'phase': 'summarizing'})}\n\n"
@@ -683,6 +698,10 @@ class OrchestratorService:
 
         full_reply = "".join(full_reply_parts)
 
+        # Rendered before commit: relationships expire on refresh (async lazy-load trap)
+        hard_rules = self._hard_rules_text(session.character_card, session.world_state)
+        world_canon = self._continuity_canon(session, world_state_block)
+
         # Persist turns to database
         next_user_index = session.turn_count + 1
         next_actor_index = session.turn_count + 2
@@ -709,6 +728,17 @@ class OrchestratorService:
         await db.commit()
         await db.refresh(session)
 
+        # Post-stream continuity check → retcon note (reply already shown)
+        await self._post_stream_continuity(
+            db, session,
+            user_message=user_message,
+            reply_text=full_reply,
+            hard_rules=hard_rules,
+            world_canon=world_canon,
+            recent_transcript=self._recent_turns_text(recent_turns),
+            assistant_turn=assistant_turn,
+        )
+
         # Memory refresh
         yield f"data: {json.dumps({'type': 'phase', 'phase': 'summarizing'})}\n\n"
         try:
@@ -730,6 +760,46 @@ class OrchestratorService:
 
         # Send completion signal
         yield f"data: {json.dumps({'type': 'done', 'session_id': session.id})}\n\n"
+
+    async def _post_stream_continuity(
+        self,
+        db: AsyncSession,
+        session: ChatSession,
+        *,
+        user_message: str,
+        reply_text: str,
+        hard_rules: str,
+        world_canon: str,
+        recent_transcript: str,
+        assistant_turn: Turn,
+    ) -> None:
+        """Streaming skips the inline continuity check, so validate after the
+        reply is already persisted. The text the user read is never rewritten;
+        on contradiction we record a retcon note on the turn, which the next
+        context packet injects as a hard constraint so the actor/GM
+        self-corrects narratively. Best-effort: never breaks the turn.
+
+        Takes pre-rendered text blocks (not the ORM session relationships):
+        it runs after commit/refresh, where touching an expired relationship
+        would trigger a sync lazy-load inside the async session."""
+        try:
+            continuity = await self.continuity.validate(
+                hard_rules=hard_rules,
+                world_canon=world_canon,
+                recent_transcript=recent_transcript,
+                user_message=user_message,
+                draft_reply=reply_text,
+            )
+            if continuity.issues:
+                assistant_turn.retcon_note = "\n".join(continuity.issues)
+                await db.commit()
+                continuity_revisions.add(1)
+                logger.info(
+                    "retcon note recorded for session=%s turn_index=%s issues=%d",
+                    session.id, assistant_turn.turn_index, len(continuity.issues),
+                )
+        except Exception:
+            logger.exception("post-stream continuity check skipped for session=%s", session.id)
 
     async def _world_state_block(self, db: AsyncSession, session: ChatSession) -> str:
         """Load + render the canonical world-state ledger for injection.
@@ -891,6 +961,17 @@ class OrchestratorService:
 
         hard_rules = self._hard_rules_text(session.character_card, session.world_state)
         remaining_budget = self._append_section(sections, "Hard Rules And Canon", hard_rules, remaining_budget, required=True)
+
+        retcon_notes = "\n".join(f"- {turn.retcon_note}" for turn in recent_turns if turn.retcon_note)
+        if retcon_notes:
+            retcon_body = (
+                "Earlier replies contradicted established canon. The corrections below are canon; "
+                "quietly conform to them in the narrative without mentioning the mistake:\n"
+                f"{retcon_notes}"
+            )
+            remaining_budget = self._append_section(
+                sections, "Continuity Corrections", retcon_body, remaining_budget, required=True
+            )
 
         recent_text = self._recent_turns_text(recent_turns)
         remaining_budget = self._append_section(sections, "Recent Turns", recent_text, remaining_budget)

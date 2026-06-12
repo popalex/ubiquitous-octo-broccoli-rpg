@@ -498,7 +498,8 @@ async def test_chat_stream_emits_quest_update_before_done(
     mock_provider: MockProvider, db_session: AsyncSession
 ) -> None:
     orchestrator = _quest_orchestrator(mock_provider)
-    # chat_stream skips continuity, so the judge gets the only generate_json call.
+    # Every generate_json call (post-stream continuity, then the quest judge)
+    # gets this payload; continuity sees no "issues" key and passes through.
     mock_provider.set_json_response(_QUEST_DELTA)
     session = SessionFactory(turn_count=0)
     await db_session.flush()
@@ -514,6 +515,139 @@ async def test_chat_stream_emits_quest_update_before_done(
     quest_event = events[types.index("quest_update")]
     assert quest_event["quest"]["slug"] == "find-marens-sister"
     assert quest_event["quest"]["change"] == "started"
+
+
+# ---------------------------------------------------------------------------
+# Post-stream continuity → retcon note (streaming skips the inline check)
+# ---------------------------------------------------------------------------
+
+
+async def _drain(stream) -> list[dict]:
+    return [json.loads(c.removeprefix("data: ").strip()) async for c in stream]
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_records_retcon_note_on_violation(
+    orchestrator: OrchestratorService, mock_provider: MockProvider, db_session: AsyncSession
+) -> None:
+    session = SessionFactory(turn_count=0)
+    await db_session.flush()
+    session_id = session.id
+
+    mock_provider.set_json_response({
+        "ok": False,
+        "issues": ["Kael was established dead and cannot speak."],
+        "revised_response": "irrelevant — streamed text is never rewritten",
+    })
+
+    events = await _drain(orchestrator.chat_stream(db_session, session_id, "I ask Kael for help."))
+    assert events[-1]["type"] == "done"
+
+    db_session.expire_all()
+    turns = (await db_session.scalars(
+        select(Turn).where(Turn.session_id == session_id, Turn.role == "assistant")
+    )).all()
+    assert len(turns) == 1
+    assert turns[0].retcon_note == "Kael was established dead and cannot speak."
+    # The streamed reply itself must stay what the user saw.
+    assert turns[0].content == "Mock reply."
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_no_retcon_note_when_clean(
+    orchestrator: OrchestratorService, db_session: AsyncSession
+) -> None:
+    session = SessionFactory(turn_count=0)
+    await db_session.flush()
+    session_id = session.id
+
+    await _drain(orchestrator.chat_stream(db_session, session_id, "Hello!"))
+
+    db_session.expire_all()
+    turns = (await db_session.scalars(
+        select(Turn).where(Turn.session_id == session_id, Turn.role == "assistant")
+    )).all()
+    assert turns[0].retcon_note is None
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_survives_continuity_failure(
+    orchestrator: OrchestratorService, db_session: AsyncSession
+) -> None:
+    session = SessionFactory(turn_count=0)
+    await db_session.flush()
+    session_id = session.id
+
+    async def boom(**kwargs):
+        raise RuntimeError("continuity judge exploded")
+
+    orchestrator.continuity.validate = boom  # type: ignore[method-assign]
+
+    events = await _drain(orchestrator.chat_stream(db_session, session_id, "Hello!"))
+    assert events[-1]["type"] == "done"
+
+    db_session.expire_all()
+    turns = (await db_session.scalars(
+        select(Turn).where(Turn.session_id == session_id)
+    )).all()
+    assert len(turns) == 2  # turn persisted despite the failure
+
+
+@pytest.mark.asyncio
+async def test_gm_chat_stream_records_retcon_note(
+    orchestrator: OrchestratorService, mock_provider: MockProvider, db_session: AsyncSession
+) -> None:
+    # turn_count=1 with default event_check_interval=3 → no event check LLM call
+    session = SessionFactory(gm_enabled=True, turn_count=1)
+    await db_session.flush()
+    session_id = session.id
+
+    mock_provider.set_json_response({
+        "ok": False,
+        "issues": ["The city gates were sealed last turn."],
+        "revised_response": "",
+    })
+
+    events = await _drain(orchestrator.gm_chat_stream(db_session, session_id, "I stroll through the gates."))
+    assert events[-1]["type"] == "done"
+
+    db_session.expire_all()
+    turns = (await db_session.scalars(
+        select(Turn)
+        .where(Turn.session_id == session_id, Turn.role == "assistant", Turn.turn_type == "chat")
+        .order_by(Turn.turn_index.desc())
+    )).all()
+    assert turns[0].retcon_note == "The city gates were sealed last turn."
+
+
+@pytest.mark.asyncio
+async def test_retcon_note_injected_into_next_context(
+    orchestrator: OrchestratorService, mock_provider: MockProvider, db_session: AsyncSession
+) -> None:
+    session = SessionFactory(turn_count=2)
+    TurnFactory(session=session, turn_index=1, role="user", content="I ask Kael for help.")
+    TurnFactory(
+        session=session,
+        turn_index=2,
+        role="assistant",
+        content="Kael nods and agrees.",
+        retcon_note="Kael was established dead and cannot speak.",
+    )
+    await db_session.flush()
+
+    captured: list[str] = []
+    original = mock_provider.generate_text
+
+    async def capture(messages, **kwargs):
+        captured.append("\n".join(m.content for m in messages))
+        return await original(messages, **kwargs)
+
+    mock_provider.generate_text = capture  # type: ignore[method-assign]
+
+    await orchestrator.chat(db_session, session.id, "What did Kael say?")
+
+    assert any("Continuity Corrections" in text for text in captured)
+    assert any("Kael was established dead and cannot speak." in text for text in captured)
 
 
 @pytest.mark.asyncio
