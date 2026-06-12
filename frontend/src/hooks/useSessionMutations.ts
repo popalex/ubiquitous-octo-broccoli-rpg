@@ -17,6 +17,9 @@ type SessionInitResult = {
   gm_enabled: boolean;
   current_location: string | null;
   time_of_day: string | null;
+  // Resolved per-session feature flags (session override → global).
+  world_state_enabled: boolean;
+  quests_enabled: boolean;
 };
 
 export type SessionInitInput = {
@@ -26,6 +29,9 @@ export type SessionInitInput = {
   gm_enabled: boolean;
   current_location: string | null;
   time_of_day: string | null;
+  // null inherits the backend's global setting.
+  world_state_enabled: boolean | null;
+  quests_enabled: boolean | null;
 };
 
 /** POST /character/load — upserts the character + world templates. */

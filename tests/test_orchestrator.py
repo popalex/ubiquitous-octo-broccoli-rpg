@@ -637,3 +637,95 @@ async def test_gm_chat_injects_quest_block_into_context(mock_provider: MockProvi
 
     await orchestrator.gm_chat(db_session, session.id, "I sharpen my blade.")
     assert any("Stop the Cult" in text for text in captured)
+
+
+# ---------------------------------------------------------------------------
+# Per-session feature overrides (override → global resolution)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_session_override_enables_ledger_despite_global_off(
+    orchestrator: OrchestratorService, mock_provider: MockProvider, db_session: AsyncSession
+) -> None:
+    from app.models import WorldStateLedger
+
+    # `orchestrator` fixture has world_state_enabled=False globally.
+    mock_provider.set_json_response({"entities_upsert": [{"id": "kael", "name": "Kael", "status": "dead"}]})
+    session = SessionFactory(turn_count=0, world_state_enabled=True)
+    await db_session.flush()
+
+    await orchestrator.chat(db_session, session.id, "I slay Kael.")
+
+    rows = (await db_session.scalars(select(WorldStateLedger).where(WorldStateLedger.session_id == session.id))).all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_session_override_disables_ledger_despite_global_on(
+    mock_provider: MockProvider, db_session: AsyncSession
+) -> None:
+    from app.models import WorldStateLedger
+
+    orchestrator = _world_state_orchestrator(mock_provider)  # global flag ON
+    mock_provider.set_json_response({"entities_upsert": [{"id": "kael", "name": "Kael", "status": "dead"}]})
+    session = SessionFactory(turn_count=0, world_state_enabled=False)
+    await db_session.flush()
+
+    await orchestrator.chat(db_session, session.id, "I slay Kael.")
+
+    rows = (await db_session.scalars(select(WorldStateLedger).where(WorldStateLedger.session_id == session.id))).all()
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_session_override_enables_quests_despite_global_off(
+    orchestrator: OrchestratorService, mock_provider: MockProvider, db_session: AsyncSession
+) -> None:
+    from app.models import Quest
+
+    # `orchestrator` fixture has quests_enabled=False globally.
+    mock_provider.set_json_responses(
+        [
+            {"ok": True, "issues": [], "revised_response": ""},  # continuity
+            _QUEST_DELTA,  # quest judge
+        ]
+    )
+    session = SessionFactory(turn_count=0, quests_enabled=True)
+    await db_session.flush()
+
+    await orchestrator.chat(db_session, session.id, "I'll find your sister, Maren.")
+
+    rows = (await db_session.scalars(select(Quest).where(Quest.session_id == session.id))).all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_session_override_disables_quests_despite_global_on(
+    mock_provider: MockProvider, db_session: AsyncSession
+) -> None:
+    from app.models import Quest
+
+    orchestrator = _quest_orchestrator(mock_provider)  # global flag ON
+    session = SessionFactory(turn_count=0, quests_enabled=False)
+    await db_session.flush()
+
+    await orchestrator.chat(db_session, session.id, "I'll find your sister, Maren.")
+
+    rows = (await db_session.scalars(select(Quest).where(Quest.session_id == session.id))).all()
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_null_override_inherits_global(mock_provider: MockProvider, db_session: AsyncSession) -> None:
+    from app.models import WorldStateLedger
+
+    orchestrator = _world_state_orchestrator(mock_provider)  # global flag ON
+    mock_provider.set_json_response({"entities_upsert": [{"id": "kael", "name": "Kael", "status": "dead"}]})
+    session = SessionFactory(turn_count=0)  # overrides stay NULL
+    await db_session.flush()
+
+    await orchestrator.chat(db_session, session.id, "I slay Kael.")
+
+    rows = (await db_session.scalars(select(WorldStateLedger).where(WorldStateLedger.session_id == session.id))).all()
+    assert len(rows) == 1

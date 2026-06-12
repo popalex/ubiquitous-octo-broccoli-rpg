@@ -17,6 +17,10 @@ type Props = {
   isBusy: boolean;
   gmEnabled: boolean;
   setGmEnabled: (v: boolean) => void;
+  worldStateEnabled: boolean;
+  setWorldStateEnabled: (v: boolean) => void;
+  questsEnabled: boolean;
+  setQuestsEnabled: (v: boolean) => void;
   currentLocation: string;
   setCurrentLocation: (v: string) => void;
   timeOfDay: string;
@@ -50,6 +54,10 @@ export function CharacterPanel({
   isBusy,
   gmEnabled,
   setGmEnabled,
+  worldStateEnabled,
+  setWorldStateEnabled,
+  questsEnabled,
+  setQuestsEnabled,
   currentLocation,
   setCurrentLocation,
   timeOfDay,
@@ -216,6 +224,30 @@ export function CharacterPanel({
             <span className="toggle-label">✧ Game Master Mode</span>
             <span className="toggle-hint">
               {gmEnabled ? "World narration & events active" : "Character-only mode"}
+            </span>
+          </label>
+
+          <label className="gm-toggle">
+            <input
+              type="checkbox"
+              checked={worldStateEnabled}
+              onChange={(e) => setWorldStateEnabled(e.target.checked)}
+            />
+            <span className="toggle-label">⛬ World Ledger</span>
+            <span className="toggle-hint">
+              {worldStateEnabled ? "Canon tracked turn by turn" : "No structured canon"}
+            </span>
+          </label>
+
+          <label className="gm-toggle">
+            <input
+              type="checkbox"
+              checked={questsEnabled}
+              onChange={(e) => setQuestsEnabled(e.target.checked)}
+            />
+            <span className="toggle-label">❖ Quests</span>
+            <span className="toggle-hint">
+              {questsEnabled ? "Promises & threats become quests" : "No quest journal"}
             </span>
           </label>
 

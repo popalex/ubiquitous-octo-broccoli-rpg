@@ -35,6 +35,12 @@ export function CodexSetup({ onStarted }: Props) {
     () => localStorage.getItem(storageKeys.selectedTemplate) || baseTemplates[0].id,
   );
   const [gmEnabled, setGmEnabled] = useState(() => localStorage.getItem(storageKeys.gmEnabled) === "true");
+  const [worldStateEnabled, setWorldStateEnabled] = useState(
+    () => localStorage.getItem(storageKeys.worldStateEnabled) === "true",
+  );
+  const [questsEnabled, setQuestsEnabled] = useState(
+    () => localStorage.getItem(storageKeys.questsEnabled) === "true",
+  );
   const [timeOfDay, setTimeOfDay] = useState("morning");
   const [ids, setIds] = useState(() => ({
     characterCardId: localStorage.getItem(storageKeys.characterCardId) || "",
@@ -53,6 +59,16 @@ export function CodexSetup({ onStarted }: Props) {
     localStorage.setItem(storageKeys.gmEnabled, String(value));
   }
 
+  function handleSetWorldStateEnabled(value: boolean) {
+    setWorldStateEnabled(value);
+    localStorage.setItem(storageKeys.worldStateEnabled, String(value));
+  }
+
+  function handleSetQuestsEnabled(value: boolean) {
+    setQuestsEnabled(value);
+    localStorage.setItem(storageKeys.questsEnabled, String(value));
+  }
+
   return (
     <CodexForm
       key={selectedTemplate.id}
@@ -62,6 +78,10 @@ export function CodexSetup({ onStarted }: Props) {
       onSelectTemplate={handleSelectTemplate}
       gmEnabled={gmEnabled}
       setGmEnabled={handleSetGmEnabled}
+      worldStateEnabled={worldStateEnabled}
+      setWorldStateEnabled={handleSetWorldStateEnabled}
+      questsEnabled={questsEnabled}
+      setQuestsEnabled={handleSetQuestsEnabled}
       timeOfDay={timeOfDay}
       setTimeOfDay={setTimeOfDay}
       ids={ids}
@@ -78,6 +98,10 @@ type CodexFormProps = {
   onSelectTemplate: (id: string) => void;
   gmEnabled: boolean;
   setGmEnabled: (v: boolean) => void;
+  worldStateEnabled: boolean;
+  setWorldStateEnabled: (v: boolean) => void;
+  questsEnabled: boolean;
+  setQuestsEnabled: (v: boolean) => void;
   timeOfDay: string;
   setTimeOfDay: (v: string) => void;
   ids: { characterCardId: string; worldStateId: string };
@@ -92,6 +116,10 @@ function CodexForm({
   onSelectTemplate,
   gmEnabled,
   setGmEnabled,
+  worldStateEnabled,
+  setWorldStateEnabled,
+  questsEnabled,
+  setQuestsEnabled,
   timeOfDay,
   setTimeOfDay,
   ids,
@@ -138,6 +166,10 @@ function CodexForm({
         gm_enabled: gmEnabled,
         current_location: currentLocation || null,
         time_of_day: timeOfDay || null,
+        // Send the explicit choice; the backend stores it per-session
+        // (globals currently ship off, so the toggle is the only way in).
+        world_state_enabled: worldStateEnabled,
+        quests_enabled: questsEnabled,
       });
       localStorage.setItem(storageKeys.sessionTitle, sessionTitle);
       onStarted(payload.session_id, starterPrompt);
@@ -159,6 +191,10 @@ function CodexForm({
         isBusy={isBusy}
         gmEnabled={gmEnabled}
         setGmEnabled={setGmEnabled}
+        worldStateEnabled={worldStateEnabled}
+        setWorldStateEnabled={setWorldStateEnabled}
+        questsEnabled={questsEnabled}
+        setQuestsEnabled={setQuestsEnabled}
         currentLocation={currentLocation}
         setCurrentLocation={setCurrentLocation}
         timeOfDay={timeOfDay}

@@ -71,6 +71,11 @@ class Session(TimestampMixin, Base):
     time_of_day: Mapped[str | None] = mapped_column(String(50), nullable=True)
     last_event_turn: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
+    # Per-session feature overrides; NULL inherits the global Settings flag
+    # (resolution in app/services/features.py).
+    world_state_enabled: Mapped[bool | None] = mapped_column(nullable=True)
+    quests_enabled: Mapped[bool | None] = mapped_column(nullable=True)
+
     character_card: Mapped[CharacterCard] = relationship(back_populates="sessions")
     world_state: Mapped[WorldState | None] = relationship(back_populates="sessions")
     turns: Mapped[list[Turn]] = relationship(back_populates="session", cascade="all, delete-orphan")

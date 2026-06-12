@@ -25,6 +25,7 @@ from app.schemas import (
     RetrievedMemoryItem,
 )
 from app.services.continuity import ContinuityResult, ContinuityService
+from app.services.features import quests_on, world_state_on
 from app.services.game_master import GameMasterService
 from app.services.memory import MemoryService
 from app.services.quests import QuestChange, QuestService
@@ -218,7 +219,7 @@ class OrchestratorService:
 
         # Neglected quests pressure the event check toward consequence events
         pressure_quests = []
-        if self.settings.quests_enabled:
+        if quests_on(session, self.settings):
             try:
                 pressure_quests = await self.quests.neglected(db, session)
             except SQLAlchemyError:
@@ -472,7 +473,7 @@ class OrchestratorService:
 
         # Neglected quests pressure the event check toward consequence events
         pressure_quests = []
-        if self.settings.quests_enabled:
+        if quests_on(session, self.settings):
             try:
                 pressure_quests = await self.quests.neglected(db, session)
             except SQLAlchemyError:
@@ -889,7 +890,7 @@ class OrchestratorService:
 
         Returns "" (no-op) when the feature flag is off or the ledger is empty.
         """
-        if not self.settings.world_state_enabled:
+        if not world_state_on(session, self.settings):
             return ""
         with tracer.start_as_current_span("orchestrator.state_inject") as span:
             span.set_attribute("rpg.session_id", str(session.id))
@@ -911,7 +912,7 @@ class OrchestratorService:
         turn_id: str | None = None,
     ) -> None:
         """Fire the after-turn world-state extraction; never break the turn."""
-        if not self.settings.world_state_enabled:
+        if not world_state_on(session, self.settings):
             return
         try:
             await self.world_state.extract_and_apply(
@@ -930,7 +931,7 @@ class OrchestratorService:
 
         Returns "" (no-op) when the feature flag is off or no quests are open.
         """
-        if not self.settings.quests_enabled:
+        if not quests_on(session, self.settings):
             return ""
         try:
             quests = await self.quests.load_open(db, session.id)
@@ -949,7 +950,7 @@ class OrchestratorService:
         turn_id: str | None = None,
     ) -> list[QuestChange]:
         """Fire the after-turn quest judge; never break the turn."""
-        if not self.settings.quests_enabled:
+        if not quests_on(session, self.settings):
             return []
         try:
             return await self.quests.extract_and_apply(
@@ -977,7 +978,7 @@ class OrchestratorService:
         """After-commit GM event follow-up: plot hooks become quest offers and
         pressured quests escalate once a consequence event fired. Never breaks
         the turn."""
-        if not self.settings.quests_enabled:
+        if not quests_on(session, self.settings):
             return []
         changes: list[QuestChange] = []
         try:

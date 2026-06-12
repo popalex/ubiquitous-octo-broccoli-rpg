@@ -58,6 +58,7 @@ from app.schemas import (
     TurnResponse,
     WorldStateResponse,
 )
+from app.services.features import quests_on, world_state_on
 from app.services.orchestrator import get_orchestrator
 from app.services.quests import TERMINAL_STATUSES, QuestService
 from app.telemetry import setup_telemetry
@@ -179,11 +180,14 @@ async def init_session(payload: SessionInitRequest, db: AsyncSession = Depends(g
         gm_enabled=payload.gm_enabled,
         current_location=payload.current_location,
         time_of_day=payload.time_of_day,
+        world_state_enabled=payload.world_state_enabled,
+        quests_enabled=payload.quests_enabled,
     )
     db.add(session)
     await db.commit()
     await db.refresh(session)
 
+    settings = get_settings()
     return SessionInitResponse(
         session_id=session.id,
         character_card_id=session.character_card_id,
@@ -193,6 +197,8 @@ async def init_session(payload: SessionInitRequest, db: AsyncSession = Depends(g
         gm_enabled=session.gm_enabled,
         current_location=session.current_location,
         time_of_day=session.time_of_day,
+        world_state_enabled=world_state_on(session, settings),
+        quests_enabled=quests_on(session, settings),
     )
 
 
@@ -206,6 +212,7 @@ async def list_sessions(db: AsyncSession = Depends(get_db)) -> SessionListRespon
             .order_by(ChatSession.updated_at.desc())
         )
     ).all()
+    settings = get_settings()
     items = []
     for s in sessions:
         latest_summary = await db.scalar(
@@ -240,6 +247,8 @@ async def list_sessions(db: AsyncSession = Depends(get_db)) -> SessionListRespon
                 character_name=s.character_card.name if s.character_card else None,
                 world_name=s.world_state.name if s.world_state else None,
                 summary=summary,
+                world_state_enabled=world_state_on(s, settings),
+                quests_enabled=quests_on(s, settings),
             )
         )
     return SessionListResponse(sessions=items)
@@ -268,6 +277,8 @@ async def get_session(session_id: str, db: AsyncSession = Depends(get_db)) -> Se
         world_name=session.world_state.name if session.world_state else None,
         current_location=session.current_location,
         time_of_day=session.time_of_day,
+        world_state_enabled=world_state_on(session, get_settings()),
+        quests_enabled=quests_on(session, get_settings()),
     )
 
 

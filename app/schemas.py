@@ -33,6 +33,9 @@ class SessionInitRequest(BaseModel):
     gm_enabled: bool = False
     current_location: str | None = None
     time_of_day: str | None = None
+    # Per-session feature overrides; None inherits the global setting.
+    world_state_enabled: bool | None = None
+    quests_enabled: bool | None = None
 
 
 class SessionInitResponse(ORMModel):
@@ -44,6 +47,9 @@ class SessionInitResponse(ORMModel):
     gm_enabled: bool
     current_location: str | None
     time_of_day: str | None
+    # Resolved (override → global), not the raw nullable override.
+    world_state_enabled: bool
+    quests_enabled: bool
 
 
 class ChatRequest(BaseModel):
@@ -134,6 +140,9 @@ class SessionListItem(BaseModel):
     character_name: str | None
     world_name: str | None
     summary: str | None
+    # Resolved (override → global), not the raw nullable override.
+    world_state_enabled: bool
+    quests_enabled: bool
 
 
 class SessionListResponse(BaseModel):
@@ -154,6 +163,9 @@ class SessionDetailResponse(BaseModel):
     world_name: str | None
     current_location: str | None
     time_of_day: str | None
+    # Resolved (override → global), not the raw nullable override.
+    world_state_enabled: bool
+    quests_enabled: bool
 
 
 class QuestStageSchema(BaseModel):

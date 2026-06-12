@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useLocation } from "react-router-dom";
 
 import { sendChat } from "../chat";
-import { useHealth } from "../hooks/useHealth";
 import {
   useRefreshMemory,
   useSessionDetail,
@@ -75,7 +74,6 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
   );
   const [isBusy, setIsBusy] = useState(false);
 
-  const health = useHealth();
   const memory = useSessionMemory(sessionId);
   const worldState = useWorldState(sessionId);
   const quests = useSessionQuests(sessionId);
@@ -132,11 +130,11 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
         </div>
         <div className="summary-item">
           <span className="meta-label">World Ledger</span>
-          <strong>{health ? (health.world_state_enabled ? "On" : "Off") : "—"}</strong>
+          <strong>{detail.world_state_enabled ? "On" : "Off"}</strong>
         </div>
         <div className="summary-item">
           <span className="meta-label">Quests</span>
-          <strong>{health ? (health.quests_enabled ? "On" : "Off") : "—"}</strong>
+          <strong>{detail.quests_enabled ? "On" : "Off"}</strong>
         </div>
       </div>
       <main className="dashboard dashboard-chronicle">
