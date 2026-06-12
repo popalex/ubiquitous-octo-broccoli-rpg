@@ -22,9 +22,13 @@ class ProviderMessage:
 
 
 class BaseModelProvider(ABC):
-    def __init__(self, model_name: str, settings: Settings | None = None) -> None:
+    def __init__(self, model_name: str, settings: Settings | None = None, slot: str = "unknown") -> None:
         self.model_name = model_name
         self.settings = settings or get_settings()
+        # Orchestrator slot this instance serves (actor/memory/embedding/gm).
+        # Attached to token metrics/spans so slots stay distinguishable even in
+        # DEV_MODE, where the text slots all share one model name.
+        self.slot = slot
 
     async def aclose(self) -> None:
         """Release the underlying HTTP client, if any. Idempotent.
@@ -86,16 +90,18 @@ class BaseModelProvider(ABC):
             raise ProviderError(f"{self.__class__.__name__} returned invalid JSON: {raw_text}") from exc
 
 
-def build_provider(provider_name: str, model_name: str, settings: Settings | None = None) -> BaseModelProvider:
+def build_provider(
+    provider_name: str, model_name: str, settings: Settings | None = None, slot: str = "unknown"
+) -> BaseModelProvider:
     resolved_settings = settings or get_settings()
     if provider_name == "openai":
         from app.providers.openai_provider import OpenAIProvider
 
-        return OpenAIProvider(model_name=model_name, settings=resolved_settings)
+        return OpenAIProvider(model_name=model_name, settings=resolved_settings, slot=slot)
 
     if provider_name == "ollama":
         from app.providers.ollama_provider import OllamaProvider
 
-        return OllamaProvider(model_name=model_name, settings=resolved_settings)
+        return OllamaProvider(model_name=model_name, settings=resolved_settings, slot=slot)
 
     raise ProviderError(f"Unsupported provider: {provider_name}")

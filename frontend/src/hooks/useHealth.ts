@@ -7,6 +7,7 @@ const ERROR_HEALTH: Health = {
   status: "error",
   database: "error",
   mode: "unknown",
+  gm_enabled: false,
   world_state_enabled: false,
   quests_enabled: false,
 };

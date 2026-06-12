@@ -1,12 +1,14 @@
 [tool.ruff]
-target-version = "py314"
+# Pinned to the lowest interpreter the tree must run on (local dev venvs are
+# 3.12; CI/Docker run 3.14). With py314, ruff format rewrites parenthesized
+# `except (A, B):` to PEP 758 `except A, B:` — a SyntaxError before 3.14.
+target-version = "py312"
 line-length = 120
 extend-exclude = ["alembic/versions", ".venv"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "W", "B"]
 ignore = [
-    "E501",  # line too long — many pre-existing long lines; not worth a mass reformat
     "B008",  # function call in default arg — this is the standard FastAPI Depends() pattern
 ]
 

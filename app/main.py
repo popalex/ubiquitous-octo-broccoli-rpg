@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -57,6 +58,7 @@ from app.schemas import (
     TurnResponse,
     WorldStateResponse,
 )
+from app.services.features import quests_on, world_state_on
 from app.services.orchestrator import get_orchestrator
 from app.services.quests import TERMINAL_STATUSES, QuestService
 from app.telemetry import setup_telemetry
@@ -64,17 +66,28 @@ from app.telemetry import setup_telemetry
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Startup: log the active configuration.
     settings = get_settings()
     if settings.dev_mode:
-        logger.info("+ DEV MODE ENABLED - model: %s, timeout: %.0fs, world_state: %s, quests: %s", settings.dev_model_name, settings.request_timeout_seconds, "on" if settings.world_state_enabled else "off", "on" if settings.quests_enabled else "off")
+        logger.info(
+            "+ DEV MODE ENABLED - model: %s, timeout: %.0fs, world_state: %s, quests: %s",
+            settings.dev_model_name,
+            settings.request_timeout_seconds,
+            "on" if settings.world_state_enabled else "off",
+            "on" if settings.quests_enabled else "off",
+        )
     else:
-        logger.info("+ Production mode - Actor: %s, Memory: %s, GM: %s, world_state: %s, quests: %s",
-                    settings.actor_model_name, settings.memory_model_name, settings.gm_model_name,
-                    "on" if settings.world_state_enabled else "off",
-                    "on" if settings.quests_enabled else "off")
+        logger.info(
+            "+ Production mode - Actor: %s, Memory: %s, GM: %s, world_state: %s, quests: %s",
+            settings.actor_model_name,
+            settings.memory_model_name,
+            settings.gm_model_name,
+            "on" if settings.world_state_enabled else "off",
+            "on" if settings.quests_enabled else "off",
+        )
 
     yield
 
@@ -98,6 +111,7 @@ async def health(db: AsyncSession = Depends(get_db)) -> HealthResponse:
             status="ok",
             database="ok",
             mode="DEV" if settings.dev_mode else "PROD",
+            gm_enabled=settings.gm_enabled,
             world_state_enabled=settings.world_state_enabled,
             quests_enabled=settings.quests_enabled,
         )
@@ -160,13 +174,16 @@ async def init_session(payload: SessionInitRequest, db: AsyncSession = Depends(g
         if world is None:
             raise HTTPException(status_code=404, detail="World state not found.")
 
+    settings = get_settings()
     session = ChatSession(
         character_card_id=character.id,
         world_state_id=world.id if world else None,
         title=payload.title,
-        gm_enabled=payload.gm_enabled,
+        gm_enabled=payload.gm_enabled if payload.gm_enabled is not None else settings.gm_enabled,
         current_location=payload.current_location,
         time_of_day=payload.time_of_day,
+        world_state_enabled=payload.world_state_enabled,
+        quests_enabled=payload.quests_enabled,
     )
     db.add(session)
     await db.commit()
@@ -181,17 +198,22 @@ async def init_session(payload: SessionInitRequest, db: AsyncSession = Depends(g
         gm_enabled=session.gm_enabled,
         current_location=session.current_location,
         time_of_day=session.time_of_day,
+        world_state_enabled=world_state_on(session, settings),
+        quests_enabled=quests_on(session, settings),
     )
 
 
 @app.get("/sessions", response_model=SessionListResponse)
 async def list_sessions(db: AsyncSession = Depends(get_db)) -> SessionListResponse:
-    sessions = (await db.scalars(
-        select(ChatSession)
-        .where(ChatSession.status != "archived")
-        .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
-        .order_by(ChatSession.updated_at.desc())
-    )).all()
+    sessions = (
+        await db.scalars(
+            select(ChatSession)
+            .where(ChatSession.status != "archived")
+            .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
+            .order_by(ChatSession.updated_at.desc())
+        )
+    ).all()
+    settings = get_settings()
     items = []
     for s in sessions:
         latest_summary = await db.scalar(
@@ -212,20 +234,24 @@ async def list_sessions(db: AsyncSession = Depends(get_db)) -> SessionListRespon
             )
             if last_turn:
                 summary = last_turn.content[:200]
-        items.append(SessionListItem(
-            id=s.id,
-            title=s.title,
-            status=s.status,
-            gm_enabled=s.gm_enabled,
-            turn_count=s.turn_count,
-            created_at=s.created_at,
-            updated_at=s.updated_at,
-            character_card_id=s.character_card_id,
-            world_state_id=s.world_state_id,
-            character_name=s.character_card.name if s.character_card else None,
-            world_name=s.world_state.name if s.world_state else None,
-            summary=summary,
-        ))
+        items.append(
+            SessionListItem(
+                id=s.id,
+                title=s.title,
+                status=s.status,
+                gm_enabled=s.gm_enabled,
+                turn_count=s.turn_count,
+                created_at=s.created_at,
+                updated_at=s.updated_at,
+                character_card_id=s.character_card_id,
+                world_state_id=s.world_state_id,
+                character_name=s.character_card.name if s.character_card else None,
+                world_name=s.world_state.name if s.world_state else None,
+                summary=summary,
+                world_state_enabled=world_state_on(s, settings),
+                quests_enabled=quests_on(s, settings),
+            )
+        )
     return SessionListResponse(sessions=items)
 
 
@@ -252,6 +278,8 @@ async def get_session(session_id: str, db: AsyncSession = Depends(get_db)) -> Se
         world_name=session.world_state.name if session.world_state else None,
         current_location=session.current_location,
         time_of_day=session.time_of_day,
+        world_state_enabled=world_state_on(session, get_settings()),
+        quests_enabled=quests_on(session, get_settings()),
     )
 
 
@@ -260,11 +288,7 @@ async def get_session_turns(session_id: str, db: AsyncSession = Depends(get_db))
     session = await db.scalar(select(ChatSession).where(ChatSession.id == session_id))
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
-    turns = (await db.scalars(
-        select(Turn)
-        .where(Turn.session_id == session_id)
-        .order_by(Turn.turn_index.asc())
-    )).all()
+    turns = (await db.scalars(select(Turn).where(Turn.session_id == session_id).order_by(Turn.turn_index.asc()))).all()
     return [TurnResponse.model_validate(t) for t in turns]
 
 
@@ -314,16 +338,20 @@ async def get_session_memory(session_id: str, db: AsyncSession = Depends(get_db)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
 
-    summaries = (await db.scalars(
-        select(EpisodeSummary)
-        .where(EpisodeSummary.session_id == session_id)
-        .order_by(EpisodeSummary.created_at.desc())
-    )).all()
+    summaries = (
+        await db.scalars(
+            select(EpisodeSummary)
+            .where(EpisodeSummary.session_id == session_id)
+            .order_by(EpisodeSummary.created_at.desc())
+        )
+    ).all()
 
     # Delete broken placeholder summaries left by the old bug so we can regenerate.
     placeholder_ids = [s.id for s in summaries if s.content.strip() == "No summary produced."]
     if placeholder_ids:
-        logger.info("backfill_summary CLEANUP session=%s removing %s placeholder summaries", session_id, len(placeholder_ids))
+        logger.info(
+            "backfill_summary CLEANUP session=%s removing %s placeholder summaries", session_id, len(placeholder_ids)
+        )
         await db.execute(delete(EpisodeSummary).where(EpisodeSummary.id.in_(placeholder_ids)))
         session.last_summarized_turn = 0
         await db.commit()
@@ -333,33 +361,44 @@ async def get_session_memory(session_id: str, db: AsyncSession = Depends(get_db)
     if not summaries and session.turn_count > session.last_summarized_turn:
         logger.info(
             "backfill_summary START session=%s turn_count=%s last_summarized=%s",
-            session_id, session.turn_count, session.last_summarized_turn,
+            session_id,
+            session.turn_count,
+            session.last_summarized_turn,
         )
         try:
             orchestrator = get_orchestrator()
             result = await orchestrator.memory.maybe_refresh(db, session, force=True)
-            summaries = (await db.scalars(
-                select(EpisodeSummary)
-                .where(EpisodeSummary.session_id == session_id)
-                .order_by(EpisodeSummary.created_at.desc())
-            )).all()
+            summaries = (
+                await db.scalars(
+                    select(EpisodeSummary)
+                    .where(EpisodeSummary.session_id == session_id)
+                    .order_by(EpisodeSummary.created_at.desc())
+                )
+            ).all()
             logger.info(
                 "backfill_summary DONE session=%s summary_created=%s facts=%s relationships=%s summaries_now=%s",
-                session_id, result.summary_created, result.facts_written, result.relationships_written, len(summaries),
+                session_id,
+                result.summary_created,
+                result.facts_written,
+                result.relationships_written,
+                len(summaries),
             )
-        except Exception:
+        # RuntimeError: get_orchestrator() when provider construction fails.
+        except (RuntimeError, ProviderError, SQLAlchemyError):
             logger.exception("backfill summary failed for session=%s", session_id)
 
-    facts = (await db.scalars(
-        select(MemoryFact)
-        .where(MemoryFact.session_id == session_id)
-        .order_by(MemoryFact.created_at.desc())
-    )).all()
-    relationships = (await db.scalars(
-        select(RelationshipState)
-        .where(RelationshipState.session_id == session_id)
-        .order_by(RelationshipState.updated_at.desc())
-    )).all()
+    facts = (
+        await db.scalars(
+            select(MemoryFact).where(MemoryFact.session_id == session_id).order_by(MemoryFact.created_at.desc())
+        )
+    ).all()
+    relationships = (
+        await db.scalars(
+            select(RelationshipState)
+            .where(RelationshipState.session_id == session_id)
+            .order_by(RelationshipState.updated_at.desc())
+        )
+    ).all()
 
     return SessionMemoryResponse(
         session_id=session_id,
@@ -417,11 +456,7 @@ async def get_session_quests(
     query = select(Quest).where(Quest.session_id == session_id)
     if status is not None:
         query = query.where(Quest.status == status)
-    quests = (
-        await db.scalars(
-            query.order_by(Quest.status.in_(TERMINAL_STATUSES), Quest.updated_at.desc())
-        )
-    ).all()
+    quests = (await db.scalars(query.order_by(Quest.status.in_(TERMINAL_STATUSES), Quest.updated_at.desc()))).all()
     return SessionQuestsResponse(
         session_id=session_id,
         quests=[QuestResponse.model_validate(q) for q in quests],
@@ -439,9 +474,7 @@ async def patch_session_quest(
     session = await db.scalar(select(ChatSession).where(ChatSession.id == session_id))
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
-    quest = await db.scalar(
-        select(Quest).where(Quest.id == quest_id, Quest.session_id == session_id)
-    )
+    quest = await db.scalar(select(Quest).where(Quest.id == quest_id, Quest.session_id == session_id))
     if quest is None:
         raise HTTPException(status_code=404, detail="Quest not found.")
     if quest.status in TERMINAL_STATUSES:
@@ -516,9 +549,7 @@ async def gm_narration(
 ) -> GMNarrationResponse:
     """Generate standalone GM narration for a scene."""
     session = await db.scalar(
-        select(ChatSession)
-        .options(joinedload(ChatSession.world_state))
-        .where(ChatSession.id == payload.session_id),
+        select(ChatSession).options(joinedload(ChatSession.world_state)).where(ChatSession.id == payload.session_id),
     )
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
@@ -547,9 +578,7 @@ async def gm_event_check(
 ) -> GMEventCheckResponse:
     """Check if an event should trigger in the current game state."""
     session = await db.scalar(
-        select(ChatSession)
-        .options(joinedload(ChatSession.world_state))
-        .where(ChatSession.id == payload.session_id),
+        select(ChatSession).options(joinedload(ChatSession.world_state)).where(ChatSession.id == payload.session_id),
     )
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
@@ -581,9 +610,7 @@ async def gm_event_generate(
 ) -> GMEventGenerateResponse:
     """Generate a full event narrative from a seed."""
     session = await db.scalar(
-        select(ChatSession)
-        .options(joinedload(ChatSession.world_state))
-        .where(ChatSession.id == payload.session_id),
+        select(ChatSession).options(joinedload(ChatSession.world_state)).where(ChatSession.id == payload.session_id),
     )
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
@@ -615,9 +642,7 @@ async def gm_scene_transition(
 ) -> GMSceneTransitionResponse:
     """Generate narration for a scene transition."""
     session = await db.scalar(
-        select(ChatSession)
-        .options(joinedload(ChatSession.world_state))
-        .where(ChatSession.id == payload.session_id),
+        select(ChatSession).options(joinedload(ChatSession.world_state)).where(ChatSession.id == payload.session_id),
     )
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
@@ -647,9 +672,7 @@ async def gm_npc_dialogue(
 ) -> NPCDialogueResponse:
     """Generate dialogue for a specific NPC."""
     session = await db.scalar(
-        select(ChatSession)
-        .options(joinedload(ChatSession.world_state))
-        .where(ChatSession.id == payload.session_id),
+        select(ChatSession).options(joinedload(ChatSession.world_state)).where(ChatSession.id == payload.session_id),
     )
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")

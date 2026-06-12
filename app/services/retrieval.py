@@ -41,7 +41,9 @@ class RetrievalService:
         logger.info("retrieval session=%s candidates=%s selected=%s", session.id, len(combined), len(ranked))
         return ranked
 
-    async def _fetch_facts(self, db: AsyncSession, session_id: str, query_embedding: list[float]) -> list[RetrievedMemory]:
+    async def _fetch_facts(
+        self, db: AsyncSession, session_id: str, query_embedding: list[float]
+    ) -> list[RetrievedMemory]:
         distance = MemoryFact.embedding.cosine_distance(query_embedding).label("distance")
         stmt: Select = (
             select(MemoryFact, distance)
@@ -55,7 +57,9 @@ class RetrievalService:
             for record, score in rows
         ]
 
-    async def _fetch_summaries(self, db: AsyncSession, session_id: str, query_embedding: list[float]) -> list[RetrievedMemory]:
+    async def _fetch_summaries(
+        self, db: AsyncSession, session_id: str, query_embedding: list[float]
+    ) -> list[RetrievedMemory]:
         distance = EpisodeSummary.embedding.cosine_distance(query_embedding).label("distance")
         stmt: Select = (
             select(EpisodeSummary, distance)

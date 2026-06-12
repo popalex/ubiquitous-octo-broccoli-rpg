@@ -267,9 +267,7 @@ async def test_extract_increments_version(db_session: AsyncSession) -> None:
     row = await svc.extract_and_apply(db_session, session, user_message="c", gm_response="d")
     assert row.version == 2
 
-    rows = (await db_session.scalars(
-        select(WorldStateLedger).where(WorldStateLedger.session_id == session.id)
-    )).all()
+    rows = (await db_session.scalars(select(WorldStateLedger).where(WorldStateLedger.session_id == session.id))).all()
     assert len(rows) == 2
     ledger = await svc.load_current(db_session, session.id)
     assert ledger.facts == ["fact one", "fact two"]

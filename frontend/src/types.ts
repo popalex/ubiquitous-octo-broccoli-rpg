@@ -2,6 +2,7 @@ export type Health = {
   status: string;
   database: string;
   mode: string;
+  gm_enabled: boolean;
   world_state_enabled: boolean;
   quests_enabled: boolean;
 };
@@ -19,6 +20,9 @@ export type ChronicleListItem = {
   character_name: string | null;
   world_name: string | null;
   summary: string | null;
+  // Resolved per-session feature flags (session override → global).
+  world_state_enabled: boolean;
+  quests_enabled: boolean;
 };
 
 export type SessionDetail = {
@@ -35,6 +39,9 @@ export type SessionDetail = {
   world_name: string | null;
   current_location: string | null;
   time_of_day: string | null;
+  // Resolved per-session feature flags (session override → global).
+  world_state_enabled: boolean;
+  quests_enabled: boolean;
 };
 
 export type TurnRecord = {

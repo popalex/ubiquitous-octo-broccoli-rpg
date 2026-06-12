@@ -9,7 +9,17 @@ Postgres+pgvector**, 4 configurable LLM provider slots (Ollama-first).
 
 ---
 
-## 1. Graduate the dark features (per-session toggles)
+## 1. Graduate the dark features (per-session toggles) — ✅ DONE (2026-06-12)
+
+Shipped on `feature/roadmap-quick-wins`: nullable `Session` overrides +
+migration, `app/services/features.py` resolution (override → global), flags
+accepted by `/session/init` and returned resolved in init/list/detail, UI
+toggles in chronicle creation, per-session state in the summary bar, hub-card
+badges. Per the bake-first decision the globals still ship `false` —
+**flipping the defaults after real-session baking remains a follow-up.**
+Follow-up shipped 2026-06-12: the UI toggles (incl. a new global GM default,
+`GM_ENABLED`) now seed from the compose-provided globals via `/health`;
+an explicit user choice in localStorage still wins.
 
 **Problem:** `world_state_enabled` and `quests_enabled` are env-level flags
 defaulting to `false` — the two flagship features are invisible unless you edit
@@ -68,7 +78,13 @@ are disconnected).
 **Effort:** medium. **Risk:** medium (extraction quality on small models with a
 bigger combined schema — needs real-model spot-checking, see §5 eval harness).
 
-## 3. Continuity check for streaming
+## 3. Continuity check for streaming — ✅ DONE (2026-06-12)
+
+Shipped on `feature/roadmap-quick-wins`: post-stream `ContinuityService` run in
+both stream paths, violations persisted as `Turn.retcon_note` (new migration),
+injected into the next context packet as a required "Continuity Corrections"
+section, `rpg.continuity.revisions` counter added. Phase-2 annotation chip not
+built (metric-driven, as decided).
 
 **Problem:** `chat_stream` / `gm_chat_stream` skip the continuity check
 entirely for speed — and streaming is the primary UX path, so the continuity
@@ -108,12 +124,15 @@ supports time travel.
   summaries, and ledger versions. Revisit only if forking proves clumsy for
   the "fix a bad turn" case.
 
-### 4b. World sidebar fed by the ledger
-The `WorldStateLedger` already tracks entities/inventory/threads/location as
-JSON; `/session/{id}/world-state` already serves it. Render it: a live panel
-(alongside `MemoryPanel`) showing location, inventory, known entities, open
-threads. Pure frontend + maybe a leaner summary endpoint. Depends on §1 so
-users can actually enable the ledger.
+### 4b. World sidebar fed by the ledger — ✅ DONE (already shipped)
+Turned out to be already built: `CodexPanel.tsx` (landed with the world-state
+work, polished in the ui-improvements PR) renders location, dramatis personae,
+the fallen, inventory, open threads, and canon facts from `useWorldState`, and
+`useRefreshMemory` invalidates the query after every streamed turn — so it is
+live. With §1's toggles users can now actually enable it. Added
+`CodexPanel.test.tsx` (2026-06-12) to pin the rendering. The "leaner summary
+endpoint" idea was a *maybe* and is skipped until the full payload proves
+heavy.
 
 ### 4c. Dice / skill checks
 Lightweight d20 texture for GM mode, not a combat engine.
@@ -136,17 +155,25 @@ accuracy (memory/ledger/quests), and GM narration constraints. Runs locally
 against real models on demand (`make eval` or a `pytest -m eval` marker
 excluded from CI). Prerequisite for safely landing §2 and any prompt changes.
 
-### 5b. Token/cost visibility
-Per-turn token counts per provider slot (actor/memory/embedding/GM) as OTel
-metrics in `app/telemetry.py`; panel in the Grafana RPG dashboard
-(`observability/grafana/`). Quantifies what §2 saves.
+### 5b. Token/cost visibility — ✅ DONE (2026-06-12)
+Shipped on `feature/roadmap-quick-wins`: providers carry a `slot` label
+(actor/memory/embedding/gm, threaded through `build_provider` — distinct even
+in DEV_MODE where the slots share a model name), attached to the
+`rpg.llm.tokens` metric (`rpg.slot` attribute) and to LLM spans. Two new
+Grafana panels: tokens/sec by slot, and avg tokens per chat turn by slot —
+the yardstick for what §2 saves.
 
-### 5c. Carried over from the old TODO
-- `ruff format` + `--check` in CI + `.pre-commit-config.yaml` (ruff + eslint);
-  consider dropping the `E501` ignore.
-- Narrow the broad `except Exception` blocks in
+### 5c. Carried over from the old TODO — ✅ DONE (2026-06-12)
+- ~~`ruff format` + `--check` in CI + `.pre-commit-config.yaml` (ruff + eslint);
+  consider dropping the `E501` ignore.~~ Done; `E501` ignore dropped too. Note:
+  ruff `target-version` pinned to `py312` so the formatter doesn't emit
+  PEP 758 syntax the local 3.12 venvs can't parse (see `pyproject.toml`).
+- ~~Narrow the broad `except Exception` blocks in
   `app/services/orchestrator.py` and the `get_session_memory` backfill in
-  `app/main.py`.
+  `app/main.py`.~~ Done where the failure mode is identifiable (DB-only
+  queries → `SQLAlchemyError`; backfill → `RuntimeError`/`ProviderError`/
+  `SQLAlchemyError`). The post-turn guards stay deliberately broad — the
+  never-fail-the-turn convention — and are commented as such.
 
 ---
 

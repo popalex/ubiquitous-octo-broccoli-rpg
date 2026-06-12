@@ -47,18 +47,10 @@ _meter = metrics.get_meter("rpg-backend")
 # Units intentionally omitted so the Prometheus series names stay predictable
 # (no unit suffix): rpg_llm_tokens_total, rpg_llm_latency_bucket, etc. Display
 # units are set on the Grafana panels instead. Latency is recorded in ms.
-llm_tokens = _meter.create_counter(
-    "rpg.llm.tokens", description="LLM tokens consumed, by direction"
-)
-llm_latency = _meter.create_histogram(
-    "rpg.llm.latency", description="LLM call wall-clock latency (ms)"
-)
-chat_turns = _meter.create_counter(
-    "rpg.chat.turns", description="Completed chat turns"
-)
-retrieval_selected = _meter.create_histogram(
-    "rpg.retrieval.selected", description="Memories selected per retrieval"
-)
+llm_tokens = _meter.create_counter("rpg.llm.tokens", description="LLM tokens consumed, by direction")
+llm_latency = _meter.create_histogram("rpg.llm.latency", description="LLM call wall-clock latency (ms)")
+chat_turns = _meter.create_counter("rpg.chat.turns", description="Completed chat turns")
+retrieval_selected = _meter.create_histogram("rpg.retrieval.selected", description="Memories selected per retrieval")
 canon_size = _meter.create_histogram(
     "rpg.canon.size", description="World-state ledger size (entities+threads+facts) per turn"
 )
@@ -70,6 +62,9 @@ quest_updates = _meter.create_counter(
 )
 quest_extract_failures = _meter.create_counter(
     "rpg.quest.extract_failures", description="Quest judge failures (parse/provider)"
+)
+continuity_revisions = _meter.create_counter(
+    "rpg.continuity.revisions", description="Continuity violations caught post-stream (retcon notes recorded)"
 )
 
 
@@ -97,8 +92,10 @@ def record_span_error(span, exc: BaseException) -> None:
     span.set_status(Status(StatusCode.ERROR, str(exc)))
 
 
-def record_llm_tokens(system: str, model: str, input_tokens: int | None, output_tokens: int | None) -> None:
-    attrs = {"gen_ai.system": system, "gen_ai.request.model": model}
+def record_llm_tokens(
+    system: str, model: str, input_tokens: int | None, output_tokens: int | None, slot: str = "unknown"
+) -> None:
+    attrs = {"gen_ai.system": system, "gen_ai.request.model": model, "rpg.slot": slot}
     if input_tokens is not None:
         llm_tokens.add(input_tokens, {**attrs, "gen_ai.token.direction": "input"})
     if output_tokens is not None:
@@ -111,6 +108,7 @@ def llm_span(
     system: str,
     model: str,
     *,
+    slot: str | None = None,
     messages: Sequence | None = None,
     temperature: float | None = None,
     max_tokens: int | None = None,
@@ -124,6 +122,8 @@ def llm_span(
     with tracer.start_as_current_span(operation) as span:
         span.set_attribute("gen_ai.system", system)
         span.set_attribute("gen_ai.request.model", model)
+        if slot is not None:
+            span.set_attribute("rpg.slot", slot)
         if temperature is not None:
             span.set_attribute("gen_ai.request.temperature", temperature)
         if max_tokens is not None:
@@ -207,9 +207,7 @@ def setup_telemetry(app) -> None:
         # exclude_spans drops the per-ASGI-event "http send"/"http receive"
         # spans — otherwise SSE streaming (/chat/stream) emits one span per
         # chunk, producing hundreds of spans that bury the meaningful ones.
-        FastAPIInstrumentor.instrument_app(
-            app, excluded_urls="health", exclude_spans=["receive", "send"]
-        )
+        FastAPIInstrumentor.instrument_app(app, excluded_urls="health", exclude_spans=["receive", "send"])
         SQLAlchemyInstrumentor().instrument(engine=engine)
         HTTPXClientInstrumentor().instrument()
 

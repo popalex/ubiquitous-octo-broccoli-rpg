@@ -8,6 +8,7 @@ from functools import lru_cache
 
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -24,12 +25,13 @@ from app.schemas import (
     RetrievedMemoryItem,
 )
 from app.services.continuity import ContinuityResult, ContinuityService
+from app.services.features import quests_on, world_state_on
 from app.services.game_master import GameMasterService
 from app.services.memory import MemoryService
 from app.services.quests import QuestChange, QuestService
 from app.services.retrieval import RetrievalService
 from app.services.world_state import WorldStateService
-from app.telemetry import chat_turns, retrieval_selected, tracer
+from app.telemetry import chat_turns, continuity_revisions, retrieval_selected, tracer
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +39,18 @@ logger = logging.getLogger(__name__)
 class OrchestratorService:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
-        self.actor_provider = build_provider(self.settings.actor_provider, self.settings.actor_model_name, self.settings)
-        self.memory_provider = build_provider(self.settings.memory_provider, self.settings.memory_model_name, self.settings)
-        self.embedding_provider = build_provider(self.settings.embedding_provider, self.settings.embedding_model_name, self.settings)
-        self.gm_provider = build_provider(self.settings.gm_provider, self.settings.gm_model_name, self.settings)
+        self.actor_provider = build_provider(
+            self.settings.actor_provider, self.settings.actor_model_name, self.settings, slot="actor"
+        )
+        self.memory_provider = build_provider(
+            self.settings.memory_provider, self.settings.memory_model_name, self.settings, slot="memory"
+        )
+        self.embedding_provider = build_provider(
+            self.settings.embedding_provider, self.settings.embedding_model_name, self.settings, slot="embedding"
+        )
+        self.gm_provider = build_provider(
+            self.settings.gm_provider, self.settings.gm_model_name, self.settings, slot="gm"
+        )
         self.retrieval = RetrievalService(self.embedding_provider, self.settings)
         self.memory = MemoryService(self.memory_provider, self.embedding_provider, self.settings)
         self.continuity = ContinuityService(self.memory_provider)
@@ -68,9 +78,11 @@ class OrchestratorService:
             raise HTTPException(status_code=404, detail="Session not found.")
 
         retrieved = await self.retrieval.retrieve(db, session, user_message)
-        recent_turns = (await db.scalars(
-            select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
-        )).all()
+        recent_turns = (
+            await db.scalars(
+                select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
+            )
+        ).all()
         recent_turns = list(reversed(recent_turns))
 
         world_state_block = await self._world_state_block(db, session)
@@ -134,12 +146,22 @@ class OrchestratorService:
         except ProviderError:
             logger.exception("memory refresh skipped for session=%s", session.id)
         await self._extract_world_state(
-            db, session, user_message=user_message, gm_response=continuity.final_reply, turn_id=assistant_turn.id,
+            db,
+            session,
+            user_message=user_message,
+            gm_response=continuity.final_reply,
+            turn_id=assistant_turn.id,
         )
         quest_changes = await self._extract_quests(
-            db, session, user_message=user_message, response_text=continuity.final_reply, turn_id=assistant_turn.id,
+            db,
+            session,
+            user_message=user_message,
+            response_text=continuity.final_reply,
+            turn_id=assistant_turn.id,
         )
-        logger.info("chat session=%s turn_count=%s continuity_applied=%s", session.id, session.turn_count, continuity.applied)
+        logger.info(
+            "chat session=%s turn_count=%s continuity_applied=%s", session.id, session.turn_count, continuity.applied
+        )
 
         return ChatResponse(
             session_id=session.id,
@@ -189,18 +211,20 @@ class OrchestratorService:
 
         # Retrieve memories and recent turns for context
         retrieved = await self.retrieval.retrieve(db, session, user_message)
-        recent_turns = (await db.scalars(
-            select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
-        )).all()
+        recent_turns = (
+            await db.scalars(
+                select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
+            )
+        ).all()
         recent_turns = list(reversed(recent_turns))
         recent_events = self._recent_turns_text(recent_turns[-4:]) if recent_turns else ""
 
         # Neglected quests pressure the event check toward consequence events
         pressure_quests = []
-        if self.settings.quests_enabled:
+        if quests_on(session, self.settings):
             try:
                 pressure_quests = await self.quests.neglected(db, session)
-            except Exception:
+            except SQLAlchemyError:
                 logger.exception("quest pressure check skipped for session=%s", session.id)
 
         # Check for event trigger
@@ -345,7 +369,10 @@ class OrchestratorService:
         except ProviderError:
             logger.exception("memory refresh skipped for session=%s", session.id)
         await self._extract_world_state(
-            db, session, user_message=user_message, gm_response=full_assistant_content,
+            db,
+            session,
+            user_message=user_message,
+            gm_response=full_assistant_content,
             turn_id=turns_to_add[-1].id,
         )
         quest_changes = await self._post_event_quest_work(
@@ -357,7 +384,10 @@ class OrchestratorService:
             turn_id=turns_to_add[-1].id,
         )
         quest_changes += await self._extract_quests(
-            db, session, user_message=user_message, response_text=full_assistant_content,
+            db,
+            session,
+            user_message=user_message,
+            response_text=full_assistant_content,
             turn_id=turns_to_add[-1].id,
         )
 
@@ -426,22 +456,29 @@ class OrchestratorService:
             retrieved = await self.retrieval.retrieve(db, session, user_message)
             _span.set_attribute("rpg.retrieved_count", len(retrieved))
             retrieval_selected.record(len(retrieved))
-        logger.info("gm_chat_stream session=%s retrieval duration=%.2fs candidates=%d", session_id, time.perf_counter() - retrieval_start, len(retrieved))
-        recent_turns = (await db.scalars(
-            select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
-        )).all()
+        logger.info(
+            "gm_chat_stream session=%s retrieval duration=%.2fs candidates=%d",
+            session_id,
+            time.perf_counter() - retrieval_start,
+            len(retrieved),
+        )
+        recent_turns = (
+            await db.scalars(
+                select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
+            )
+        ).all()
         recent_turns = list(reversed(recent_turns))
         recent_events = self._recent_turns_text(recent_turns[-4:]) if recent_turns else ""
 
         # Send retrieved memories
-        yield f"data: {json.dumps({'type': 'memories', 'memories': [{'id': item.id, 'kind': item.kind, 'content': item.content, 'weighted_score': item.weighted_score, 'semantic_score': item.semantic_score, 'recency_score': item.recency_score, 'importance': item.importance} for item in retrieved]})}\n\n"
+        yield f"data: {json.dumps(self._memories_event(retrieved))}\n\n"
 
         # Neglected quests pressure the event check toward consequence events
         pressure_quests = []
-        if self.settings.quests_enabled:
+        if quests_on(session, self.settings):
             try:
                 pressure_quests = await self.quests.neglected(db, session)
-            except Exception:
+            except SQLAlchemyError:
                 logger.exception("quest pressure check skipped for session=%s", session.id)
 
         # Check for event trigger (fast, no LLM)
@@ -455,7 +492,12 @@ class OrchestratorService:
                 quest_pressure=QuestService.render_pressure(pressure_quests),
             )
             _span.set_attribute("rpg.event_should_trigger", event_check.should_trigger)
-        logger.info("gm_chat_stream session=%s event_check duration=%.2fs should_trigger=%s", session_id, time.perf_counter() - event_start, event_check.should_trigger)
+        logger.info(
+            "gm_chat_stream session=%s event_check duration=%.2fs should_trigger=%s",
+            session_id,
+            time.perf_counter() - event_start,
+            event_check.should_trigger,
+        )
 
         # Stream pre-narration
         pre_narration_parts: list[str] = []
@@ -476,7 +518,12 @@ class OrchestratorService:
             yield f"data: {json.dumps({'type': 'pre_narration_error', 'error': str(exc)})}\n\n"
 
         pre_narration = "".join(pre_narration_parts) if pre_narration_parts else None
-        logger.info("gm_chat_stream session=%s pre_narration DONE duration=%.2fs chars=%d", session_id, time.perf_counter() - pre_narration_start, len(pre_narration or ""))
+        logger.info(
+            "gm_chat_stream session=%s pre_narration DONE duration=%.2fs chars=%d",
+            session_id,
+            time.perf_counter() - pre_narration_start,
+            len(pre_narration or ""),
+        )
 
         # Build context for character response
         world_state_block = await self._world_state_block(db, session)
@@ -514,7 +561,12 @@ class OrchestratorService:
             return
 
         character_reply = "".join(character_reply_parts)
-        logger.info("gm_chat_stream session=%s character_reply DONE duration=%.2fs chars=%d", session_id, time.perf_counter() - character_start, len(character_reply))
+        logger.info(
+            "gm_chat_stream session=%s character_reply DONE duration=%.2fs chars=%d",
+            session_id,
+            time.perf_counter() - character_start,
+            len(character_reply),
+        )
 
         # Generate event if triggered (stream event description as post-narration)
         post_narration = None
@@ -522,7 +574,9 @@ class OrchestratorService:
         if event_check.should_trigger and event_check.event_seed:
             event_gen_start = time.perf_counter()
             try:
-                logger.info("gm_chat_stream session=%s event_generation STARTING type=%s", session_id, event_check.event_type)
+                logger.info(
+                    "gm_chat_stream session=%s event_generation STARTING type=%s", session_id, event_check.event_type
+                )
                 yield f"data: {json.dumps({'type': 'phase', 'phase': 'event'})}\n\n"
                 generated_event = await self.game_master.generate_event(
                     world_state=session.world_state,
@@ -540,7 +594,11 @@ class OrchestratorService:
                 }
                 post_narration = generated_event.description
                 yield f"data: {json.dumps({'type': 'event', 'event': event_response})}\n\n"
-                logger.info("gm_chat_stream session=%s event_generation DONE duration=%.2fs", session_id, time.perf_counter() - event_gen_start)
+                logger.info(
+                    "gm_chat_stream session=%s event_generation DONE duration=%.2fs",
+                    session_id,
+                    time.perf_counter() - event_gen_start,
+                )
             except ProviderError:
                 logger.exception("Event generation failed for session=%s", session.id)
 
@@ -591,10 +649,26 @@ class OrchestratorService:
             )
         )
 
+        # Rendered before commit: relationships expire on refresh (async lazy-load trap)
+        hard_rules = self._hard_rules_text(session.character_card, session.world_state)
+        world_canon = self._continuity_canon(session, world_state_block)
+
         db.add_all(turns_to_add)
         session.turn_count = current_index
         await db.commit()
         await db.refresh(session)
+
+        # Post-stream continuity check → retcon note (reply already shown)
+        await self._post_stream_continuity(
+            db,
+            session,
+            user_message=user_message,
+            reply_text=character_reply,
+            hard_rules=hard_rules,
+            world_canon=world_canon,
+            recent_transcript=self._recent_turns_text(recent_turns),
+            assistant_turn=turns_to_add[-1],
+        )
 
         # Memory refresh
         yield f"data: {json.dumps({'type': 'phase', 'phase': 'summarizing'})}\n\n"
@@ -604,7 +678,10 @@ class OrchestratorService:
         except ProviderError:
             logger.exception("memory refresh skipped for session=%s", session.id)
         await self._extract_world_state(
-            db, session, user_message=user_message, gm_response=full_assistant_content,
+            db,
+            session,
+            user_message=user_message,
+            gm_response=full_assistant_content,
             turn_id=turns_to_add[-1].id,
         )
         quest_changes = await self._post_event_quest_work(
@@ -616,7 +693,10 @@ class OrchestratorService:
             turn_id=turns_to_add[-1].id,
         )
         quest_changes += await self._extract_quests(
-            db, session, user_message=user_message, response_text=full_assistant_content,
+            db,
+            session,
+            user_message=user_message,
+            response_text=full_assistant_content,
             turn_id=turns_to_add[-1].id,
         )
         for change in quest_changes:
@@ -624,8 +704,15 @@ class OrchestratorService:
 
         chat_turns.add(1, {"gm_enabled": True})
         total_duration = time.perf_counter() - total_start
-        logger.info("gm_chat_stream session=%s COMPLETE turn_count=%s total_duration=%.2fs pre_narration_chars=%d character_chars=%d",
-                    session.id, session.turn_count, total_duration, len(pre_narration or ""), len(character_reply))
+        logger.info(
+            "gm_chat_stream session=%s COMPLETE turn_count=%s total_duration=%.2fs"
+            " pre_narration_chars=%d character_chars=%d",
+            session.id,
+            session.turn_count,
+            total_duration,
+            len(pre_narration or ""),
+            len(character_reply),
+        )
 
         yield f"data: {json.dumps({'type': 'done', 'session_id': session.id})}\n\n"
 
@@ -645,9 +732,11 @@ class OrchestratorService:
             retrieved = await self.retrieval.retrieve(db, session, user_message)
             _span.set_attribute("rpg.retrieved_count", len(retrieved))
             retrieval_selected.record(len(retrieved))
-        recent_turns = (await db.scalars(
-            select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
-        )).all()
+        recent_turns = (
+            await db.scalars(
+                select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(8)
+            )
+        ).all()
         recent_turns = list(reversed(recent_turns))
 
         world_state_block = await self._world_state_block(db, session)
@@ -661,7 +750,7 @@ class OrchestratorService:
         )
 
         # Send retrieved memories first
-        yield f"data: {json.dumps({'type': 'memories', 'memories': [{'id': item.id, 'kind': item.kind, 'content': item.content, 'weighted_score': item.weighted_score, 'semantic_score': item.semantic_score, 'recency_score': item.recency_score, 'importance': item.importance} for item in retrieved]})}\n\n"
+        yield f"data: {json.dumps(self._memories_event(retrieved))}\n\n"
 
         # Stream the reply chunks
         full_reply_parts: list[str] = []
@@ -682,6 +771,10 @@ class OrchestratorService:
             return
 
         full_reply = "".join(full_reply_parts)
+
+        # Rendered before commit: relationships expire on refresh (async lazy-load trap)
+        hard_rules = self._hard_rules_text(session.character_card, session.world_state)
+        world_canon = self._continuity_canon(session, world_state_block)
 
         # Persist turns to database
         next_user_index = session.turn_count + 1
@@ -709,6 +802,18 @@ class OrchestratorService:
         await db.commit()
         await db.refresh(session)
 
+        # Post-stream continuity check → retcon note (reply already shown)
+        await self._post_stream_continuity(
+            db,
+            session,
+            user_message=user_message,
+            reply_text=full_reply,
+            hard_rules=hard_rules,
+            world_canon=world_canon,
+            recent_transcript=self._recent_turns_text(recent_turns),
+            assistant_turn=assistant_turn,
+        )
+
         # Memory refresh
         yield f"data: {json.dumps({'type': 'phase', 'phase': 'summarizing'})}\n\n"
         try:
@@ -717,10 +822,18 @@ class OrchestratorService:
         except ProviderError:
             logger.exception("memory refresh skipped for session=%s", session.id)
         await self._extract_world_state(
-            db, session, user_message=user_message, gm_response=full_reply, turn_id=assistant_turn.id,
+            db,
+            session,
+            user_message=user_message,
+            gm_response=full_reply,
+            turn_id=assistant_turn.id,
         )
         quest_changes = await self._extract_quests(
-            db, session, user_message=user_message, response_text=full_reply, turn_id=assistant_turn.id,
+            db,
+            session,
+            user_message=user_message,
+            response_text=full_reply,
+            turn_id=assistant_turn.id,
         )
         for change in quest_changes:
             yield f"data: {json.dumps({'type': 'quest_update', 'quest': self._quest_change_payload(change)})}\n\n"
@@ -731,12 +844,55 @@ class OrchestratorService:
         # Send completion signal
         yield f"data: {json.dumps({'type': 'done', 'session_id': session.id})}\n\n"
 
+    async def _post_stream_continuity(
+        self,
+        db: AsyncSession,
+        session: ChatSession,
+        *,
+        user_message: str,
+        reply_text: str,
+        hard_rules: str,
+        world_canon: str,
+        recent_transcript: str,
+        assistant_turn: Turn,
+    ) -> None:
+        """Streaming skips the inline continuity check, so validate after the
+        reply is already persisted. The text the user read is never rewritten;
+        on contradiction we record a retcon note on the turn, which the next
+        context packet injects as a hard constraint so the actor/GM
+        self-corrects narratively. Best-effort: never breaks the turn.
+
+        Takes pre-rendered text blocks (not the ORM session relationships):
+        it runs after commit/refresh, where touching an expired relationship
+        would trigger a sync lazy-load inside the async session."""
+        try:
+            continuity = await self.continuity.validate(
+                hard_rules=hard_rules,
+                world_canon=world_canon,
+                recent_transcript=recent_transcript,
+                user_message=user_message,
+                draft_reply=reply_text,
+            )
+            if continuity.issues:
+                assistant_turn.retcon_note = "\n".join(continuity.issues)
+                await db.commit()
+                continuity_revisions.add(1)
+                logger.info(
+                    "retcon note recorded for session=%s turn_index=%s issues=%d",
+                    session.id,
+                    assistant_turn.turn_index,
+                    len(continuity.issues),
+                )
+        except Exception:
+            # Deliberately broad: post-turn side effects must never fail the turn.
+            logger.exception("post-stream continuity check skipped for session=%s", session.id)
+
     async def _world_state_block(self, db: AsyncSession, session: ChatSession) -> str:
         """Load + render the canonical world-state ledger for injection.
 
         Returns "" (no-op) when the feature flag is off or the ledger is empty.
         """
-        if not self.settings.world_state_enabled:
+        if not world_state_on(session, self.settings):
             return ""
         with tracer.start_as_current_span("orchestrator.state_inject") as span:
             span.set_attribute("rpg.session_id", str(session.id))
@@ -758,7 +914,7 @@ class OrchestratorService:
         turn_id: str | None = None,
     ) -> None:
         """Fire the after-turn world-state extraction; never break the turn."""
-        if not self.settings.world_state_enabled:
+        if not world_state_on(session, self.settings):
             return
         try:
             await self.world_state.extract_and_apply(
@@ -769,6 +925,7 @@ class OrchestratorService:
                 turn_id=turn_id,
             )
         except Exception:
+            # Deliberately broad: post-turn side effects must never fail the turn.
             logger.exception("world-state extract skipped for session=%s", session.id)
 
     async def _quest_block(self, db: AsyncSession, session: ChatSession) -> str:
@@ -776,11 +933,11 @@ class OrchestratorService:
 
         Returns "" (no-op) when the feature flag is off or no quests are open.
         """
-        if not self.settings.quests_enabled:
+        if not quests_on(session, self.settings):
             return ""
         try:
             quests = await self.quests.load_open(db, session.id)
-        except Exception:
+        except SQLAlchemyError:
             logger.exception("quest load skipped for session=%s", session.id)
             return ""
         return self.quests.render_block(quests)
@@ -795,7 +952,7 @@ class OrchestratorService:
         turn_id: str | None = None,
     ) -> list[QuestChange]:
         """Fire the after-turn quest judge; never break the turn."""
-        if not self.settings.quests_enabled:
+        if not quests_on(session, self.settings):
             return []
         try:
             return await self.quests.extract_and_apply(
@@ -806,6 +963,7 @@ class OrchestratorService:
                 turn_id=turn_id,
             )
         except Exception:
+            # Deliberately broad: post-turn side effects must never fail the turn.
             logger.exception("quest extract skipped for session=%s", session.id)
             return []
 
@@ -822,7 +980,7 @@ class OrchestratorService:
         """After-commit GM event follow-up: plot hooks become quest offers and
         pressured quests escalate once a consequence event fired. Never breaks
         the turn."""
-        if not self.settings.quests_enabled:
+        if not quests_on(session, self.settings):
             return []
         changes: list[QuestChange] = []
         try:
@@ -850,8 +1008,27 @@ class OrchestratorService:
                     # every subsequent check.
                     await self.quests.throttle_pressure(db, session, pressure_quests)
         except Exception:
+            # Deliberately broad: post-turn side effects must never fail the turn.
             logger.exception("post-event quest work skipped for session=%s", session.id)
         return changes
+
+    @staticmethod
+    def _memories_event(retrieved: list) -> dict:
+        return {
+            "type": "memories",
+            "memories": [
+                {
+                    "id": item.id,
+                    "kind": item.kind,
+                    "content": item.content,
+                    "weighted_score": item.weighted_score,
+                    "semantic_score": item.semantic_score,
+                    "recency_score": item.recency_score,
+                    "importance": item.importance,
+                }
+                for item in retrieved
+            ],
+        }
 
     @staticmethod
     def _quest_change_payload(change: QuestChange) -> dict:
@@ -885,12 +1062,23 @@ class OrchestratorService:
             )
 
         if quest_block.strip():
-            remaining_budget = self._append_section(
-                sections, "Active Quests", quest_block, remaining_budget
-            )
+            remaining_budget = self._append_section(sections, "Active Quests", quest_block, remaining_budget)
 
         hard_rules = self._hard_rules_text(session.character_card, session.world_state)
-        remaining_budget = self._append_section(sections, "Hard Rules And Canon", hard_rules, remaining_budget, required=True)
+        remaining_budget = self._append_section(
+            sections, "Hard Rules And Canon", hard_rules, remaining_budget, required=True
+        )
+
+        retcon_notes = "\n".join(f"- {turn.retcon_note}" for turn in recent_turns if turn.retcon_note)
+        if retcon_notes:
+            retcon_body = (
+                "Earlier replies contradicted established canon. The corrections below are canon; "
+                "quietly conform to them in the narrative without mentioning the mistake:\n"
+                f"{retcon_notes}"
+            )
+            remaining_budget = self._append_section(
+                sections, "Continuity Corrections", retcon_body, remaining_budget, required=True
+            )
 
         recent_text = self._recent_turns_text(recent_turns)
         remaining_budget = self._append_section(sections, "Recent Turns", recent_text, remaining_budget)
@@ -903,7 +1091,9 @@ class OrchestratorService:
 
         return "\n\n".join(section for section in sections if section.strip())
 
-    def _append_section(self, sections: list[str], title: str, body: str, remaining_budget: int, *, required: bool = False) -> int:
+    def _append_section(
+        self, sections: list[str], title: str, body: str, remaining_budget: int, *, required: bool = False
+    ) -> int:
         if not body.strip():
             return remaining_budget
         cost = self._estimate_tokens(body)

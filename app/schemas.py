@@ -30,9 +30,14 @@ class SessionInitRequest(BaseModel):
     character_card_id: str
     world_state_id: str | None = None
     title: str | None = None
-    gm_enabled: bool = False
+    # None inherits the global default (settings.gm_enabled). Unlike the two
+    # feature flags below, the session stores the resolved value (no NULL).
+    gm_enabled: bool | None = None
     current_location: str | None = None
     time_of_day: str | None = None
+    # Per-session feature overrides; None inherits the global setting.
+    world_state_enabled: bool | None = None
+    quests_enabled: bool | None = None
 
 
 class SessionInitResponse(ORMModel):
@@ -44,6 +49,9 @@ class SessionInitResponse(ORMModel):
     gm_enabled: bool
     current_location: str | None
     time_of_day: str | None
+    # Resolved (override → global), not the raw nullable override.
+    world_state_enabled: bool
+    quests_enabled: bool
 
 
 class ChatRequest(BaseModel):
@@ -134,6 +142,9 @@ class SessionListItem(BaseModel):
     character_name: str | None
     world_name: str | None
     summary: str | None
+    # Resolved (override → global), not the raw nullable override.
+    world_state_enabled: bool
+    quests_enabled: bool
 
 
 class SessionListResponse(BaseModel):
@@ -154,6 +165,9 @@ class SessionDetailResponse(BaseModel):
     world_name: str | None
     current_location: str | None
     time_of_day: str | None
+    # Resolved (override → global), not the raw nullable override.
+    world_state_enabled: bool
+    quests_enabled: bool
 
 
 class QuestStageSchema(BaseModel):
@@ -203,6 +217,7 @@ class HealthResponse(BaseModel):
     status: str
     database: str
     mode: str
+    gm_enabled: bool
     world_state_enabled: bool
     quests_enabled: bool
 

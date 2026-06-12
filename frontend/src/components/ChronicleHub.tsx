@@ -107,6 +107,8 @@ export function ChronicleHub() {
                 <div className="chronicle-card-header">
                   <div className="chronicle-card-meta">
                     {c.gm_enabled && <span className="badge badge-gm">GM</span>}
+                    {c.world_state_enabled && <span className="badge badge-gm">◈ Ledger</span>}
+                    {c.quests_enabled && <span className="badge badge-gm">❖ Quests</span>}
                     <span className="badge badge-turns">{c.turn_count} turns</span>
                   </div>
                 </div>

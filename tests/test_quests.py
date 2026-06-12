@@ -72,9 +72,7 @@ def test_apply_delta_creates_emergent_quest() -> None:
 def test_apply_delta_skips_duplicate_slug() -> None:
     svc = _service()
     existing = _quest()
-    delta = QuestDelta(
-        quests_new=[NewQuest(slug=existing.slug, title="Dup", description="dup")]
-    )
+    delta = QuestDelta(quests_new=[NewQuest(slug=existing.slug, title="Dup", description="dup")])
     changes = svc.apply_delta([existing], delta, turn_count=4)
     assert changes == []
 
@@ -243,9 +241,7 @@ def test_apply_delta_terminal_without_resolution_gets_fallback() -> None:
 def test_apply_delta_progress_unescalates() -> None:
     svc = _service()
     quest = _quest(status="escalating")
-    delta = QuestDelta(
-        quests_update=[QuestUpdateItem(slug=quest.slug, stages_complete=["ask-around"])]
-    )
+    delta = QuestDelta(quests_update=[QuestUpdateItem(slug=quest.slug, stages_complete=["ask-around"])])
     svc.apply_delta([quest], delta, turn_count=20)
     assert quest.status == "active"
     assert quest.last_progress_turn == 20
@@ -399,7 +395,10 @@ async def test_offer_from_event_creates_offered_quest(db_session: AsyncSession) 
     await db_session.flush()
 
     quest = await svc.offer_from_event(
-        db_session, session, event_seed="A mysterious courier", description="A masked figure presses a letter into your hand."
+        db_session,
+        session,
+        event_seed="A mysterious courier",
+        description="A masked figure presses a letter into your hand.",
     )
     assert quest is not None
     assert quest.status == "offered"
@@ -409,9 +408,7 @@ async def test_offer_from_event_creates_offered_quest(db_session: AsyncSession) 
 
 async def test_offer_from_event_skips_duplicate_slug(db_session: AsyncSession) -> None:
     provider = MockProvider()
-    provider.set_json_response(
-        {"slug": "the-masked-courier", "title": "Dup", "description": "x", "stages": []}
-    )
+    provider.set_json_response({"slug": "the-masked-courier", "title": "Dup", "description": "x", "stages": []})
     svc = QuestService(provider, make_test_settings(quests_enabled=True))
     session = SessionFactory()
     QuestFactory(session=session, slug="the-masked-courier")

@@ -58,6 +58,7 @@ def _make_ollama() -> OllamaProvider:
 
 def _make_streaming_response(chunks: list[dict]) -> MagicMock:
     """Build a fake httpx streaming context manager."""
+
     async def aiter_lines():
         for chunk in chunks:
             yield json.dumps(chunk)
@@ -243,3 +244,34 @@ async def test_openai_api_error_raises_provider_error() -> None:
     ):
         with pytest.raises(Exception):
             await provider.generate_text(MSG, temperature=0.7, max_tokens=200)
+
+
+# ---------------------------------------------------------------------------
+# Provider slot labels (token metrics per orchestrator slot — TODO 5b)
+# ---------------------------------------------------------------------------
+
+
+def test_build_provider_threads_slot_label() -> None:
+    from app.providers.base import build_provider
+
+    settings = make_test_settings()
+    provider = build_provider("ollama", "llama3.2:3b", settings, slot="actor")
+    assert provider.slot == "actor"
+    # Default stays harmless for callers that don't care.
+    assert build_provider("ollama", "llama3.2:3b", settings).slot == "unknown"
+
+
+def test_orchestrator_labels_all_four_slots() -> None:
+    from app.services.orchestrator import OrchestratorService
+
+    settings = make_test_settings()
+    slots: list[str] = []
+
+    def record(provider_name, model_name, settings_, slot="unknown"):
+        slots.append(slot)
+        return MockProvider()
+
+    with patch("app.services.orchestrator.build_provider", side_effect=record):
+        OrchestratorService(settings)
+
+    assert slots == ["actor", "memory", "embedding", "gm"]

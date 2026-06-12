@@ -71,13 +71,24 @@ class Session(TimestampMixin, Base):
     time_of_day: Mapped[str | None] = mapped_column(String(50), nullable=True)
     last_event_turn: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
+    # Per-session feature overrides; NULL inherits the global Settings flag
+    # (resolution in app/services/features.py).
+    world_state_enabled: Mapped[bool | None] = mapped_column(nullable=True)
+    quests_enabled: Mapped[bool | None] = mapped_column(nullable=True)
+
     character_card: Mapped[CharacterCard] = relationship(back_populates="sessions")
     world_state: Mapped[WorldState | None] = relationship(back_populates="sessions")
     turns: Mapped[list[Turn]] = relationship(back_populates="session", cascade="all, delete-orphan")
     memory_facts: Mapped[list[MemoryFact]] = relationship(back_populates="session", cascade="all, delete-orphan")
-    episode_summaries: Mapped[list[EpisodeSummary]] = relationship(back_populates="session", cascade="all, delete-orphan")
-    relationship_states: Mapped[list[RelationshipState]] = relationship(back_populates="session", cascade="all, delete-orphan")
-    world_state_ledgers: Mapped[list[WorldStateLedger]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    episode_summaries: Mapped[list[EpisodeSummary]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
+    relationship_states: Mapped[list[RelationshipState]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
+    world_state_ledgers: Mapped[list[WorldStateLedger]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
     quests: Mapped[list[Quest]] = relationship(back_populates="session", cascade="all, delete-orphan")
 
 
@@ -92,6 +103,9 @@ class Turn(TimestampMixin, Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_estimate: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     continuity_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Continuity violations found *after* a streamed reply was already shown;
+    # injected into the next context packet as a hard constraint (retcon).
+    retcon_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # GM mode field: 'chat', 'gm_narration', 'gm_event'
     turn_type: Mapped[str] = mapped_column(String(32), default="chat", nullable=False)
@@ -104,7 +118,9 @@ class MemoryFact(TimestampMixin, Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
-    character_card_id: Mapped[str | None] = mapped_column(ForeignKey("character_cards.id", ondelete="SET NULL"), nullable=True)
+    character_card_id: Mapped[str | None] = mapped_column(
+        ForeignKey("character_cards.id", ondelete="SET NULL"), nullable=True
+    )
     source_turn_id: Mapped[str | None] = mapped_column(ForeignKey("turns.id", ondelete="SET NULL"), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     importance: Mapped[float] = mapped_column(Float, default=0.5, index=True, nullable=False)
@@ -139,9 +155,7 @@ class WorldStateLedger(Base):
     """
 
     __tablename__ = "world_state_ledger"
-    __table_args__ = (
-        UniqueConstraint("session_id", "version", name="uq_world_state_ledger_session_version"),
-    )
+    __table_args__ = (UniqueConstraint("session_id", "version", name="uq_world_state_ledger_session_version"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
@@ -149,9 +163,7 @@ class WorldStateLedger(Base):
     # The turn that produced this version (nullable: backfill/manual edits).
     turn_id: Mapped[str | None] = mapped_column(ForeignKey("turns.id", ondelete="SET NULL"), nullable=True)
     state: Mapped[dict] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     session: Mapped[Session] = relationship(back_populates="world_state_ledgers")
 
@@ -204,6 +216,8 @@ class RelationshipState(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(Text, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     importance: Mapped[float] = mapped_column(Float, default=0.5, index=True, nullable=False)
-    last_observed_turn_id: Mapped[str | None] = mapped_column(ForeignKey("turns.id", ondelete="SET NULL"), nullable=True)
+    last_observed_turn_id: Mapped[str | None] = mapped_column(
+        ForeignKey("turns.id", ondelete="SET NULL"), nullable=True
+    )
 
     session: Mapped[Session] = relationship(back_populates="relationship_states")

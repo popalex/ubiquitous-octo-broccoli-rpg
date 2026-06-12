@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
 import { storageKeys } from "../api";
+import { useHealth } from "../hooks/useHealth";
 import { useLoadCharacter, useStartSession } from "../hooks/useSessionMutations";
 import { loadAllTemplates } from "../loadTemplates";
 import { templates as baseTemplates, type RoleplayTemplate } from "../templates";
@@ -12,6 +13,12 @@ type Props = {
   /** Called with the new session id and the starter prompt to seed the chat box. */
   onStarted: (sessionId: string, starterPrompt: string) => void;
 };
+
+/** null = the user never touched this toggle (no stored choice). */
+function readStoredToggle(key: string): boolean | null {
+  const raw = localStorage.getItem(key);
+  return raw === null ? null : raw === "true";
+}
 
 /**
  * Character/world setup. Owns the state that survives template switches
@@ -34,7 +41,20 @@ export function CodexSetup({ onStarted }: Props) {
   const [selectedTemplateId, setSelectedTemplateId] = useState(
     () => localStorage.getItem(storageKeys.selectedTemplate) || baseTemplates[0].id,
   );
-  const [gmEnabled, setGmEnabled] = useState(() => localStorage.getItem(storageKeys.gmEnabled) === "true");
+  // Toggle defaults: an explicit user choice (persisted in localStorage) wins;
+  // otherwise seed from the backend's global defaults via /health, which come
+  // from docker compose (the dev override turns everything on).
+  const health = useHealth();
+  const [gmChoice, setGmChoice] = useState<boolean | null>(() => readStoredToggle(storageKeys.gmEnabled));
+  const [worldStateChoice, setWorldStateChoice] = useState<boolean | null>(() =>
+    readStoredToggle(storageKeys.worldStateEnabled),
+  );
+  const [questsChoice, setQuestsChoice] = useState<boolean | null>(() =>
+    readStoredToggle(storageKeys.questsEnabled),
+  );
+  const gmEnabled = gmChoice ?? health?.gm_enabled ?? false;
+  const worldStateEnabled = worldStateChoice ?? health?.world_state_enabled ?? false;
+  const questsEnabled = questsChoice ?? health?.quests_enabled ?? false;
   const [timeOfDay, setTimeOfDay] = useState("morning");
   const [ids, setIds] = useState(() => ({
     characterCardId: localStorage.getItem(storageKeys.characterCardId) || "",
@@ -49,8 +69,18 @@ export function CodexSetup({ onStarted }: Props) {
   }
 
   function handleSetGmEnabled(value: boolean) {
-    setGmEnabled(value);
+    setGmChoice(value);
     localStorage.setItem(storageKeys.gmEnabled, String(value));
+  }
+
+  function handleSetWorldStateEnabled(value: boolean) {
+    setWorldStateChoice(value);
+    localStorage.setItem(storageKeys.worldStateEnabled, String(value));
+  }
+
+  function handleSetQuestsEnabled(value: boolean) {
+    setQuestsChoice(value);
+    localStorage.setItem(storageKeys.questsEnabled, String(value));
   }
 
   return (
@@ -62,6 +92,11 @@ export function CodexSetup({ onStarted }: Props) {
       onSelectTemplate={handleSelectTemplate}
       gmEnabled={gmEnabled}
       setGmEnabled={handleSetGmEnabled}
+      worldStateEnabled={worldStateEnabled}
+      setWorldStateEnabled={handleSetWorldStateEnabled}
+      questsEnabled={questsEnabled}
+      setQuestsEnabled={handleSetQuestsEnabled}
+      toggleChoices={{ gm: gmChoice, worldState: worldStateChoice, quests: questsChoice }}
       timeOfDay={timeOfDay}
       setTimeOfDay={setTimeOfDay}
       ids={ids}
@@ -78,6 +113,12 @@ type CodexFormProps = {
   onSelectTemplate: (id: string) => void;
   gmEnabled: boolean;
   setGmEnabled: (v: boolean) => void;
+  worldStateEnabled: boolean;
+  setWorldStateEnabled: (v: boolean) => void;
+  questsEnabled: boolean;
+  setQuestsEnabled: (v: boolean) => void;
+  /** Raw toggle choices: null = user never touched it (inherit the global). */
+  toggleChoices: { gm: boolean | null; worldState: boolean | null; quests: boolean | null };
   timeOfDay: string;
   setTimeOfDay: (v: string) => void;
   ids: { characterCardId: string; worldStateId: string };
@@ -92,6 +133,11 @@ function CodexForm({
   onSelectTemplate,
   gmEnabled,
   setGmEnabled,
+  worldStateEnabled,
+  setWorldStateEnabled,
+  questsEnabled,
+  setQuestsEnabled,
+  toggleChoices,
   timeOfDay,
   setTimeOfDay,
   ids,
@@ -135,9 +181,14 @@ function CodexForm({
         character_card_id: ids.characterCardId,
         world_state_id: ids.worldStateId || null,
         title: sessionTitle || null,
-        gm_enabled: gmEnabled,
         current_location: currentLocation || null,
         time_of_day: timeOfDay || null,
+        // Send the raw choices, not the resolved booleans: null = the user
+        // never touched the toggle, so the session inherits the global
+        // default (and follows it if the defaults flip later).
+        gm_enabled: toggleChoices.gm,
+        world_state_enabled: toggleChoices.worldState,
+        quests_enabled: toggleChoices.quests,
       });
       localStorage.setItem(storageKeys.sessionTitle, sessionTitle);
       onStarted(payload.session_id, starterPrompt);
@@ -159,6 +210,10 @@ function CodexForm({
         isBusy={isBusy}
         gmEnabled={gmEnabled}
         setGmEnabled={setGmEnabled}
+        worldStateEnabled={worldStateEnabled}
+        setWorldStateEnabled={setWorldStateEnabled}
+        questsEnabled={questsEnabled}
+        setQuestsEnabled={setQuestsEnabled}
         currentLocation={currentLocation}
         setCurrentLocation={setCurrentLocation}
         timeOfDay={timeOfDay}
