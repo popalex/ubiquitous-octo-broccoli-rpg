@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     gm_narration_max_tokens: int = 150  # Keep narration short for faster responses
     request_timeout_seconds: float = 60.0
 
+    # Default GM mode for new sessions: /session/init inherits it when the
+    # request omits gm_enabled, and the UI seeds its toggle from /health.
+    gm_enabled: bool = False
+
     # GM event generation settings
     event_check_interval: int = 3  # Check for events every N turns
     event_probability: float = 0.4  # Base probability of event occurrence

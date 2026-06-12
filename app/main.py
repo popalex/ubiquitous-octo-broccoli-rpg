@@ -111,6 +111,7 @@ async def health(db: AsyncSession = Depends(get_db)) -> HealthResponse:
             status="ok",
             database="ok",
             mode="DEV" if settings.dev_mode else "PROD",
+            gm_enabled=settings.gm_enabled,
             world_state_enabled=settings.world_state_enabled,
             quests_enabled=settings.quests_enabled,
         )
@@ -173,11 +174,12 @@ async def init_session(payload: SessionInitRequest, db: AsyncSession = Depends(g
         if world is None:
             raise HTTPException(status_code=404, detail="World state not found.")
 
+    settings = get_settings()
     session = ChatSession(
         character_card_id=character.id,
         world_state_id=world.id if world else None,
         title=payload.title,
-        gm_enabled=payload.gm_enabled,
+        gm_enabled=payload.gm_enabled if payload.gm_enabled is not None else settings.gm_enabled,
         current_location=payload.current_location,
         time_of_day=payload.time_of_day,
         world_state_enabled=payload.world_state_enabled,
@@ -187,7 +189,6 @@ async def init_session(payload: SessionInitRequest, db: AsyncSession = Depends(g
     await db.commit()
     await db.refresh(session)
 
-    settings = get_settings()
     return SessionInitResponse(
         session_id=session.id,
         character_card_id=session.character_card_id,

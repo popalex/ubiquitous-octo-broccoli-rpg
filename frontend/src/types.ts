@@ -2,6 +2,7 @@ export type Health = {
   status: string;
   database: string;
   mode: string;
+  gm_enabled: boolean;
   world_state_enabled: boolean;
   quests_enabled: boolean;
 };

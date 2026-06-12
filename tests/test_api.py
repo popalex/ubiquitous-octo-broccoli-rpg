@@ -174,14 +174,31 @@ async def test_init_session_defaults_inherit_global_flags(async_client: AsyncCli
     from app.config import get_settings
 
     settings = get_settings()
+    assert data["gm_enabled"] is settings.gm_enabled
     assert data["world_state_enabled"] is settings.world_state_enabled
     assert data["quests_enabled"] is settings.quests_enabled
 
     from app.models import Session as ChatSession
 
     row = await db_session.get(ChatSession, data["session_id"])
+    # gm_enabled resolves at init (non-nullable column); the others stay NULL.
+    assert row.gm_enabled is settings.gm_enabled
     assert row.world_state_enabled is None
     assert row.quests_enabled is None
+
+
+@pytest.mark.asyncio
+async def test_health_exposes_toggle_defaults(async_client: AsyncClient) -> None:
+    from app.config import get_settings
+
+    response = await async_client.get("/health")
+    assert response.status_code == 200
+    data = response.json()
+    settings = get_settings()
+    # The UI seeds new-chronicle toggles from these.
+    assert data["gm_enabled"] is settings.gm_enabled
+    assert data["world_state_enabled"] is settings.world_state_enabled
+    assert data["quests_enabled"] is settings.quests_enabled
 
 
 @pytest.mark.asyncio

@@ -30,7 +30,9 @@ class SessionInitRequest(BaseModel):
     character_card_id: str
     world_state_id: str | None = None
     title: str | None = None
-    gm_enabled: bool = False
+    # None inherits the global default (settings.gm_enabled). Unlike the two
+    # feature flags below, the session stores the resolved value (no NULL).
+    gm_enabled: bool | None = None
     current_location: str | None = None
     time_of_day: str | None = None
     # Per-session feature overrides; None inherits the global setting.
@@ -215,6 +217,7 @@ class HealthResponse(BaseModel):
     status: str
     database: str
     mode: str
+    gm_enabled: bool
     world_state_enabled: bool
     quests_enabled: bool
 

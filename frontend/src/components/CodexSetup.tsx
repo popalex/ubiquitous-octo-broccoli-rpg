@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
 import { storageKeys } from "../api";
+import { useHealth } from "../hooks/useHealth";
 import { useLoadCharacter, useStartSession } from "../hooks/useSessionMutations";
 import { loadAllTemplates } from "../loadTemplates";
 import { templates as baseTemplates, type RoleplayTemplate } from "../templates";
@@ -12,6 +13,12 @@ type Props = {
   /** Called with the new session id and the starter prompt to seed the chat box. */
   onStarted: (sessionId: string, starterPrompt: string) => void;
 };
+
+/** null = the user never touched this toggle (no stored choice). */
+function readStoredToggle(key: string): boolean | null {
+  const raw = localStorage.getItem(key);
+  return raw === null ? null : raw === "true";
+}
 
 /**
  * Character/world setup. Owns the state that survives template switches
@@ -34,13 +41,20 @@ export function CodexSetup({ onStarted }: Props) {
   const [selectedTemplateId, setSelectedTemplateId] = useState(
     () => localStorage.getItem(storageKeys.selectedTemplate) || baseTemplates[0].id,
   );
-  const [gmEnabled, setGmEnabled] = useState(() => localStorage.getItem(storageKeys.gmEnabled) === "true");
-  const [worldStateEnabled, setWorldStateEnabled] = useState(
-    () => localStorage.getItem(storageKeys.worldStateEnabled) === "true",
+  // Toggle defaults: an explicit user choice (persisted in localStorage) wins;
+  // otherwise seed from the backend's global defaults via /health, which come
+  // from docker compose (the dev override turns everything on).
+  const health = useHealth();
+  const [gmChoice, setGmChoice] = useState<boolean | null>(() => readStoredToggle(storageKeys.gmEnabled));
+  const [worldStateChoice, setWorldStateChoice] = useState<boolean | null>(() =>
+    readStoredToggle(storageKeys.worldStateEnabled),
   );
-  const [questsEnabled, setQuestsEnabled] = useState(
-    () => localStorage.getItem(storageKeys.questsEnabled) === "true",
+  const [questsChoice, setQuestsChoice] = useState<boolean | null>(() =>
+    readStoredToggle(storageKeys.questsEnabled),
   );
+  const gmEnabled = gmChoice ?? health?.gm_enabled ?? false;
+  const worldStateEnabled = worldStateChoice ?? health?.world_state_enabled ?? false;
+  const questsEnabled = questsChoice ?? health?.quests_enabled ?? false;
   const [timeOfDay, setTimeOfDay] = useState("morning");
   const [ids, setIds] = useState(() => ({
     characterCardId: localStorage.getItem(storageKeys.characterCardId) || "",
@@ -55,17 +69,17 @@ export function CodexSetup({ onStarted }: Props) {
   }
 
   function handleSetGmEnabled(value: boolean) {
-    setGmEnabled(value);
+    setGmChoice(value);
     localStorage.setItem(storageKeys.gmEnabled, String(value));
   }
 
   function handleSetWorldStateEnabled(value: boolean) {
-    setWorldStateEnabled(value);
+    setWorldStateChoice(value);
     localStorage.setItem(storageKeys.worldStateEnabled, String(value));
   }
 
   function handleSetQuestsEnabled(value: boolean) {
-    setQuestsEnabled(value);
+    setQuestsChoice(value);
     localStorage.setItem(storageKeys.questsEnabled, String(value));
   }
 
