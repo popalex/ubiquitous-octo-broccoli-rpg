@@ -96,6 +96,7 @@ export function CodexSetup({ onStarted }: Props) {
       setWorldStateEnabled={handleSetWorldStateEnabled}
       questsEnabled={questsEnabled}
       setQuestsEnabled={handleSetQuestsEnabled}
+      toggleChoices={{ gm: gmChoice, worldState: worldStateChoice, quests: questsChoice }}
       timeOfDay={timeOfDay}
       setTimeOfDay={setTimeOfDay}
       ids={ids}
@@ -116,6 +117,8 @@ type CodexFormProps = {
   setWorldStateEnabled: (v: boolean) => void;
   questsEnabled: boolean;
   setQuestsEnabled: (v: boolean) => void;
+  /** Raw toggle choices: null = user never touched it (inherit the global). */
+  toggleChoices: { gm: boolean | null; worldState: boolean | null; quests: boolean | null };
   timeOfDay: string;
   setTimeOfDay: (v: string) => void;
   ids: { characterCardId: string; worldStateId: string };
@@ -134,6 +137,7 @@ function CodexForm({
   setWorldStateEnabled,
   questsEnabled,
   setQuestsEnabled,
+  toggleChoices,
   timeOfDay,
   setTimeOfDay,
   ids,
@@ -177,13 +181,14 @@ function CodexForm({
         character_card_id: ids.characterCardId,
         world_state_id: ids.worldStateId || null,
         title: sessionTitle || null,
-        gm_enabled: gmEnabled,
         current_location: currentLocation || null,
         time_of_day: timeOfDay || null,
-        // Send the explicit choice; the backend stores it per-session
-        // (globals currently ship off, so the toggle is the only way in).
-        world_state_enabled: worldStateEnabled,
-        quests_enabled: questsEnabled,
+        // Send the raw choices, not the resolved booleans: null = the user
+        // never touched the toggle, so the session inherits the global
+        // default (and follows it if the defaults flip later).
+        gm_enabled: toggleChoices.gm,
+        world_state_enabled: toggleChoices.worldState,
+        quests_enabled: toggleChoices.quests,
       });
       localStorage.setItem(storageKeys.sessionTitle, sessionTitle);
       onStarted(payload.session_id, starterPrompt);

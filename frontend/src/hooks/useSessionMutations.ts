@@ -26,7 +26,8 @@ export type SessionInitInput = {
   character_card_id: string;
   world_state_id: string | null;
   title: string | null;
-  gm_enabled: boolean;
+  // null inherits the backend's global default.
+  gm_enabled: boolean | null;
   current_location: string | null;
   time_of_day: string | null;
   // null inherits the backend's global setting.
@@ -52,7 +53,7 @@ export function useStartSession() {
     mutationFn: (input: SessionInitInput) =>
       withUiSpan(
         "ui.new_chronicle",
-        { "rpg.character_card_id": input.character_card_id, "rpg.gm_enabled": input.gm_enabled },
+        { "rpg.character_card_id": input.character_card_id, "rpg.gm_enabled": input.gm_enabled ?? "inherit" },
         () => api<SessionInitResult>("/session/init", { method: "POST", body: JSON.stringify(input) }),
       ),
   });
