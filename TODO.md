@@ -9,7 +9,14 @@ Postgres+pgvector**, 4 configurable LLM provider slots (Ollama-first).
 
 ---
 
-## 1. Graduate the dark features (per-session toggles)
+## 1. Graduate the dark features (per-session toggles) — ✅ DONE (2026-06-12)
+
+Shipped on `feature/roadmap-quick-wins`: nullable `Session` overrides +
+migration, `app/services/features.py` resolution (override → global), flags
+accepted by `/session/init` and returned resolved in init/list/detail, UI
+toggles in chronicle creation, per-session state in the summary bar, hub-card
+badges. Per the bake-first decision the globals still ship `false` —
+**flipping the defaults after real-session baking remains a follow-up.**
 
 **Problem:** `world_state_enabled` and `quests_enabled` are env-level flags
 defaulting to `false` — the two flagship features are invisible unless you edit
