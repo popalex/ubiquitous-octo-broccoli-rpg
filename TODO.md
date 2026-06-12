@@ -68,7 +68,13 @@ are disconnected).
 **Effort:** medium. **Risk:** medium (extraction quality on small models with a
 bigger combined schema — needs real-model spot-checking, see §5 eval harness).
 
-## 3. Continuity check for streaming
+## 3. Continuity check for streaming — ✅ DONE (2026-06-12)
+
+Shipped on `feature/roadmap-quick-wins`: post-stream `ContinuityService` run in
+both stream paths, violations persisted as `Turn.retcon_note` (new migration),
+injected into the next context packet as a required "Continuity Corrections"
+section, `rpg.continuity.revisions` counter added. Phase-2 annotation chip not
+built (metric-driven, as decided).
 
 **Problem:** `chat_stream` / `gm_chat_stream` skip the continuity check
 entirely for speed — and streaming is the primary UX path, so the continuity
@@ -141,12 +147,17 @@ Per-turn token counts per provider slot (actor/memory/embedding/GM) as OTel
 metrics in `app/telemetry.py`; panel in the Grafana RPG dashboard
 (`observability/grafana/`). Quantifies what §2 saves.
 
-### 5c. Carried over from the old TODO
-- `ruff format` + `--check` in CI + `.pre-commit-config.yaml` (ruff + eslint);
-  consider dropping the `E501` ignore.
-- Narrow the broad `except Exception` blocks in
+### 5c. Carried over from the old TODO — ✅ DONE (2026-06-12)
+- ~~`ruff format` + `--check` in CI + `.pre-commit-config.yaml` (ruff + eslint);
+  consider dropping the `E501` ignore.~~ Done; `E501` ignore dropped too. Note:
+  ruff `target-version` pinned to `py312` so the formatter doesn't emit
+  PEP 758 syntax the local 3.12 venvs can't parse (see `pyproject.toml`).
+- ~~Narrow the broad `except Exception` blocks in
   `app/services/orchestrator.py` and the `get_session_memory` backfill in
-  `app/main.py`.
+  `app/main.py`.~~ Done where the failure mode is identifiable (DB-only
+  queries → `SQLAlchemyError`; backfill → `RuntimeError`/`ProviderError`/
+  `SQLAlchemyError`). The post-turn guards stay deliberately broad — the
+  never-fail-the-turn convention — and are commented as such.
 
 ---
 

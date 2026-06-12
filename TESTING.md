@@ -7,8 +7,8 @@ Companion to `TODO.md` (feature roadmap). Drafted 2026-06-11.
 | Layer | State |
 |---|---|
 | Backend | ~175 pytest tests across 11 files, against real Postgres+pgvector (testcontainers), deterministic `MockProvider`, streaming paths covered. **Strong — no investment needed.** |
-| Frontend unit | 11 Vitest tests: `api.test.ts`, `turns.test.ts`, `ErrorBoundary.test.tsx`. No coverage of components, hooks, or streaming. |
-| Frontend CI | The frontend CI job lints + typechecks but **never runs `pnpm test`**. |
+| Frontend unit | 23 Vitest tests: `api.test.ts`, `turns.test.ts`, `ErrorBoundary.test.tsx`, `chat.test.ts` (SSE streaming, both modes). No coverage of components or hooks yet. |
+| Frontend CI | Lints + typechecks + runs `pnpm test`. |
 | E2E | None. |
 | LLM quality | None (see `TODO.md` §5a — eval harness; out of scope here). |
 
@@ -18,13 +18,15 @@ harness addresses, not pytest.
 
 ## Priority order
 
-### 1. Wire `pnpm test` into CI (one line, do first)
+### 1. Wire `pnpm test` into CI (one line, do first) — ✅ DONE
 
-Add `pnpm test` to the frontend job in
-`.github/workflows/build-and-run-tests.yml`. The 11 existing tests currently
-run only on developer machines.
+Turned out to be already wired: commit `16c8b65` (the Vitest-harness PR) added
+a `pnpm test` step to the frontend CI job before this doc was drafted.
 
-### 2. `chat.ts` unit tests (highest-value gap)
+### 2. `chat.ts` unit tests (highest-value gap) — ✅ DONE (2026-06-12)
+
+Shipped on `feature/roadmap-quick-wins` as `frontend/src/chat.test.ts`
+(12 tests): every case below is covered, both stream modes.
 
 `frontend/src/chat.ts` is ~334 lines — the largest frontend file — holding the
 SSE parsing/state machine for both chat modes (`/chat/stream`,
