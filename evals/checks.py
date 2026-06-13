@@ -13,6 +13,25 @@ from pydantic import ValidationError
 
 from evals.harness import StructuralCheck
 
+# --- section wrapper (for the unified post-turn judge) -----------------------
+
+
+def in_section(section: str, check: StructuralCheck) -> StructuralCheck:
+    """Run a check against ``payload[section]`` — lets the world/quest checks
+    below apply to the unified judge's nested ``world_delta`` / ``quest_delta``
+    output unchanged."""
+
+    def _check(parsed: object) -> tuple[bool, str]:
+        p = parsed if isinstance(parsed, dict) else {}
+        sub = p.get(section)
+        if not isinstance(sub, dict):
+            sub = {}
+        passed, detail = check(sub)
+        return passed, f"{section}: {detail}"
+
+    return _check
+
+
 # --- continuity --------------------------------------------------------------
 
 
