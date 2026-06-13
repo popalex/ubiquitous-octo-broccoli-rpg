@@ -155,9 +155,7 @@ async def run_case(
         output_text = str(parsed)
     else:
         try:
-            parsed = await provider.generate_json(
-                messages, temperature=case.temperature, max_tokens=case.max_tokens
-            )
+            parsed = await provider.generate_json(messages, temperature=case.temperature, max_tokens=case.max_tokens)
         except ProviderError as exc:
             return EvalResult(case.id, case.category, False, f"provider returned invalid JSON: {exc}")
         output_text = json.dumps(parsed, ensure_ascii=False)

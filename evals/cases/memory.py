@@ -37,7 +37,7 @@ CASES = [
         inputs={
             "transcript": (
                 "USER: Nice weather today, huh?\n"
-                "ASSISTANT: The innkeeper shrugs. \"Same as yesterday. Bit of cloud, bit of sun.\"\n"
+                'ASSISTANT: The innkeeper shrugs. "Same as yesterday. Bit of cloud, bit of sun."\n'
                 "USER: Yeah. Anyway.\n"
                 "ASSISTANT: He wipes a mug and goes back to humming an old tune."
             ),
@@ -53,7 +53,7 @@ CASES = [
             "transcript": (
                 "USER: I haul the wounded scout, Dren, out of the river and bind his leg.\n"
                 "ASSISTANT: Dren coughs up water, gripping your arm. "
-                '"You didn\'t have to do that. I won\'t forget it. From here on, my blade is yours."'
+                "\"You didn't have to do that. I won't forget it. From here on, my blade is yours.\""
             ),
         },
         # The signal is a captured relationship linking Dren and the player; the

@@ -15,8 +15,7 @@ CASES = [
             "hard_rules": "Kael died in the collapse of the Iron Bridge and cannot speak or act.",
             "world_canon": "Kael, the party's guide, was crushed when the Iron Bridge fell two days ago.",
             "recent_transcript": (
-                "PLAYER: We lay stones over Kael's grave.\n"
-                "ACTOR: The cold wind carries your grief across the gorge."
+                "PLAYER: We lay stones over Kael's grave.\nACTOR: The cold wind carries your grief across the gorge."
             ),
             "user_message": "Is there anyone left who can guide us north?",
             "draft_reply": '"I can take you north," Kael says, clapping a warm hand on your shoulder.',
@@ -53,8 +52,7 @@ CASES = [
             "hard_rules": "The party has 0 gold and no valuables to trade.",
             "world_canon": "After the bandit ambush, the party was robbed of every coin.",
             "recent_transcript": (
-                "PLAYER: How much do we have left?\n"
-                "ACTOR: You turn out empty pockets — not a single coin."
+                "PLAYER: How much do we have left?\nACTOR: You turn out empty pockets — not a single coin."
             ),
             "user_message": "I want to buy the silver horse from the trader.",
             "draft_reply": "You count out fifty gold coins and the trader hands you the reins of the silver horse.",
