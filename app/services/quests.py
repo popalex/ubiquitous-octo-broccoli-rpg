@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from opentelemetry import trace
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from pydantic_core.core_schema import ValidationInfo
 from sqlalchemy import func, select
@@ -288,14 +289,7 @@ class QuestService:
             return []
         with tracer.start_as_current_span("orchestrator.quest_extract") as span:
             span.set_attribute("rpg.session_id", str(session.id))
-            # Load ALL quests in one query: open ones go to the judge, while
-            # terminal slugs are reserved so a judge that reuses a concluded
-            # quest's slug can't trip the unique constraint and sink the delta.
-            all_quests = (
-                await db.scalars(select(Quest).where(Quest.session_id == session.id).order_by(Quest.created_at.asc()))
-            ).all()
-            quests = [q for q in all_quests if q.status in OPEN_STATUSES]
-            reserved_slugs = {q.slug for q in all_quests if q.status not in OPEN_STATUSES}
+            quests, reserved_slugs = await self.load_open_and_reserved(db, session)
             open_json = [
                 {
                     "slug": q.slug,
@@ -333,46 +327,80 @@ class QuestService:
                 record_span_error(span, exc)
                 return []
 
-            if delta.is_empty():
-                span.set_attribute("rpg.quest.delta.empty", True)
-                return []
-
-            changes = self.apply_delta(quests, delta, turn_count=session.turn_count, reserved_slugs=reserved_slugs)
-            if not changes:
-                return []
-            for change in changes:
-                # New quests come out of apply_delta without a session.
-                if change.quest.session_id is None:
-                    change.quest.session_id = session.id
-                    change.quest.source_turn_id = turn_id
-                    db.add(change.quest)
-            try:
-                await db.commit()
-            except IntegrityError as exc:
-                await db.rollback()
-                logger.warning("quest write conflict for session=%s; skipping", session.id)
-                quest_extract_failures.add(1, {"reason": "conflict"})
-                record_span_error(span, exc)
-                return []
-            except SQLAlchemyError as exc:
-                # e.g. DataError from oversized judge output — roll back so the
-                # request's session isn't left in an aborted transaction.
-                await db.rollback()
-                logger.warning("quest write failed for session=%s: %s", session.id, exc)
-                quest_extract_failures.add(1, {"reason": "db"})
-                record_span_error(span, exc)
-                return []
-
-            for change in changes:
-                quest_updates.add(1, {"change": change.change})
-            span.set_attribute("rpg.quest.changes", len(changes))
-            set_completion(span, delta.model_dump_json())
-            logger.info(
-                "quest_extract session=%s changes=%s",
-                session.id,
-                [(c.quest.slug, c.change) for c in changes],
+            return await self.apply_quest_delta(
+                db, session, delta, quests=quests, reserved_slugs=reserved_slugs, turn_id=turn_id
             )
-            return changes
+
+    async def load_open_and_reserved(self, db: AsyncSession, session: ChatSession) -> tuple[list[Quest], set[str]]:
+        """Load open quests (for the judge) plus the reserved terminal slugs.
+
+        One query: open quests go to the judge, while terminal slugs are
+        reserved so a judge that reuses a concluded quest's slug can't trip the
+        unique constraint and sink the delta."""
+        all_quests = (
+            await db.scalars(select(Quest).where(Quest.session_id == session.id).order_by(Quest.created_at.asc()))
+        ).all()
+        quests = [q for q in all_quests if q.status in OPEN_STATUSES]
+        reserved_slugs = {q.slug for q in all_quests if q.status not in OPEN_STATUSES}
+        return quests, reserved_slugs
+
+    async def apply_quest_delta(
+        self,
+        db: AsyncSession,
+        session: ChatSession,
+        delta: QuestDelta,
+        *,
+        quests: list[Quest],
+        reserved_slugs: set[str] | None = None,
+        turn_id: str | None = None,
+    ) -> list[QuestChange]:
+        """Apply an already-extracted quest delta and persist its changes.
+
+        Shared by the legacy ``extract_and_apply`` and the unified post-turn
+        judge so the invariants, slug reservation, and persistence stay
+        single-sourced. Sets attributes on the current span; best-effort
+        (failures logged + metered, never raised)."""
+        span = trace.get_current_span()
+        if delta.is_empty():
+            span.set_attribute("rpg.quest.delta.empty", True)
+            return []
+
+        changes = self.apply_delta(quests, delta, turn_count=session.turn_count, reserved_slugs=reserved_slugs)
+        if not changes:
+            return []
+        for change in changes:
+            # New quests come out of apply_delta without a session.
+            if change.quest.session_id is None:
+                change.quest.session_id = session.id
+                change.quest.source_turn_id = turn_id
+                db.add(change.quest)
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            logger.warning("quest write conflict for session=%s; skipping", session.id)
+            quest_extract_failures.add(1, {"reason": "conflict"})
+            record_span_error(span, exc)
+            return []
+        except SQLAlchemyError as exc:
+            # e.g. DataError from oversized judge output — roll back so the
+            # request's session isn't left in an aborted transaction.
+            await db.rollback()
+            logger.warning("quest write failed for session=%s: %s", session.id, exc)
+            quest_extract_failures.add(1, {"reason": "db"})
+            record_span_error(span, exc)
+            return []
+
+        for change in changes:
+            quest_updates.add(1, {"change": change.change})
+        span.set_attribute("rpg.quest.changes", len(changes))
+        set_completion(span, delta.model_dump_json())
+        logger.info(
+            "quest_extract session=%s changes=%s",
+            session.id,
+            [(c.quest.slug, c.change) for c in changes],
+        )
+        return changes
 
     # ------------------------------------------------------------------
     # GM plot-hook offers

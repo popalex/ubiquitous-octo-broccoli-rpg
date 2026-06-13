@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 
+from opentelemetry import trace
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -406,51 +407,79 @@ class WorldStateService:
                 record_span_error(span, exc)
                 return None
 
-            for key, value in delta.summary_counts().items():
-                span.set_attribute(f"rpg.canon.delta.{key}", value)
-
-            if delta.is_empty():
-                span.set_attribute("rpg.canon.delta.empty", True)
-                return None
-
-            from sqlalchemy.exc import IntegrityError
-
-            new_ledger = self.apply_delta(ledger, delta)
-
-            # A non-empty delta can still be a no-op once applied (e.g. a small
-            # model restating the unchanged location/entities, or a phantom
-            # change the apply invariants reject). Don't churn a new version for
-            # a ledger that didn't materially move.
-            if new_ledger.model_dump() == ledger.model_dump():
-                span.set_attribute("rpg.canon.delta.noop", True)
-                canon_noop_deltas.add(1)
-                return None
-
-            try:
-                row = WorldStateLedger(
-                    session_id=session.id,
-                    version=base_version + 1,
-                    turn_id=turn_id,
-                    state=new_ledger.model_dump(),
-                )
-                db.add(row)
-                await db.commit()
-            except IntegrityError as exc:
-                await db.rollback()
-                logger.warning("world-state version conflict for session=%s; skipping", session.id)
-                canon_extract_failures.add(1, {"reason": "conflict"})
-                record_span_error(span, exc)
-                return None
-
-            span.set_attribute("rpg.canon.version", base_version + 1)
-            span.set_attribute("rpg.canon.size", new_ledger.size)
-            set_completion(span, delta.model_dump_json())
-            canon_size.record(new_ledger.size)
-            logger.info(
-                "state_extract session=%s version=%s size=%s delta=%s",
-                session.id,
-                base_version + 1,
-                new_ledger.size,
-                delta.summary_counts(),
+            return await self.apply_world_delta(
+                db, session, delta, ledger=ledger, base_version=base_version, turn_id=turn_id
             )
-            return row
+
+    async def apply_world_delta(
+        self,
+        db: AsyncSession,
+        session: ChatSession,
+        delta: LedgerDelta,
+        *,
+        ledger: Ledger | None = None,
+        base_version: int | None = None,
+        turn_id: str | None = None,
+    ) -> WorldStateLedger | None:
+        """Apply an already-extracted ledger delta and persist a new version.
+
+        Returns the new row, or ``None`` when the delta is empty or leaves the
+        ledger materially unchanged (the no-op guard). Shared by the legacy
+        ``extract_and_apply`` and the unified post-turn judge so the version
+        write, no-op guard, and apply invariants stay single-sourced. Sets
+        attributes on the current span; best-effort (failures logged + metered,
+        never raised)."""
+        span = trace.get_current_span()
+        if ledger is None:
+            ledger = await self.load_current(db, session.id)
+        if base_version is None:
+            base_version = await self.current_version(db, session.id)
+
+        for key, value in delta.summary_counts().items():
+            span.set_attribute(f"rpg.canon.delta.{key}", value)
+
+        if delta.is_empty():
+            span.set_attribute("rpg.canon.delta.empty", True)
+            return None
+
+        from sqlalchemy.exc import IntegrityError
+
+        new_ledger = self.apply_delta(ledger, delta)
+
+        # A non-empty delta can still be a no-op once applied (e.g. a small
+        # model restating the unchanged location/entities, or a phantom
+        # change the apply invariants reject). Don't churn a new version for
+        # a ledger that didn't materially move.
+        if new_ledger.model_dump() == ledger.model_dump():
+            span.set_attribute("rpg.canon.delta.noop", True)
+            canon_noop_deltas.add(1)
+            return None
+
+        try:
+            row = WorldStateLedger(
+                session_id=session.id,
+                version=base_version + 1,
+                turn_id=turn_id,
+                state=new_ledger.model_dump(),
+            )
+            db.add(row)
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            logger.warning("world-state version conflict for session=%s; skipping", session.id)
+            canon_extract_failures.add(1, {"reason": "conflict"})
+            record_span_error(span, exc)
+            return None
+
+        span.set_attribute("rpg.canon.version", base_version + 1)
+        span.set_attribute("rpg.canon.size", new_ledger.size)
+        set_completion(span, delta.model_dump_json())
+        canon_size.record(new_ledger.size)
+        logger.info(
+            "state_extract session=%s version=%s size=%s delta=%s",
+            session.id,
+            base_version + 1,
+            new_ledger.size,
+            delta.summary_counts(),
+        )
+        return row
