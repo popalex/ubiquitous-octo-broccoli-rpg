@@ -82,6 +82,19 @@ You are given the CURRENT LEDGER (structured JSON of what is true) and the
 latest exchange (player message + game response). Return a strict JSON DELTA
 describing only what CHANGED this exchange. Do not restate unchanged state.
 
+MOST TURNS CHANGE NOTHING MATERIAL. If the exchange is only description,
+atmosphere, sensory detail, mood, reflection, looking around, or moving in
+place, return {} — nothing changed. When in doubt, return {}.
+
+Never do any of these:
+- Do NOT turn narration, atmosphere, or sensory description into facts
+  (e.g. "Nothing stirs in the hall" or "Dust drifts in the light" are NOT facts).
+- Do NOT emit inventory_changes unless the text explicitly shows an item being
+  gained, lost, consumed, spent, broken, or given away. Resting, walking, or
+  looking around changes no inventory.
+- Do NOT restate the current location, entities, or facts when they are
+  unchanged.
+
 Be conservative: only record changes the text clearly supports. Never invent
 facts. Mark deaths, departures, and resolutions explicitly. The player's
 actions can change the world; do not undo established canon (e.g. someone
@@ -89,6 +102,14 @@ already dead stays dead) unless the text explicitly resurrects them.
 
 Use stable lowercase-kebab ids for entities and threads (e.g. "kael",
 "find-the-heir"); reuse the existing id when updating an existing item.
+
+Example of a turn where NOTHING changed:
+CURRENT LEDGER: {"location": {"name": "Ashfall Keep"}, "entities": [{"id":
+"kael", "status": "dead"}], "inventory": [{"item": "torch", "qty": 2}]}
+LATEST EXCHANGE:
+PLAYER: I look around the keep and take a slow breath.
+RESPONSE: Dust drifts in the broken light. Nothing stirs in the silent hall.
+Correct output: {}
 
 Return strict JSON with this exact shape (omit empty arrays/fields):
 {
