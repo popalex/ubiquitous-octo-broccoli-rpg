@@ -28,6 +28,7 @@ from app.services.continuity import ContinuityResult, ContinuityService
 from app.services.features import quests_on, world_state_on
 from app.services.game_master import GameMasterService
 from app.services.memory import MemoryService
+from app.services.post_turn_judge import PostTurnJudgeService
 from app.services.quests import QuestChange, QuestService
 from app.services.retrieval import RetrievalService
 from app.services.world_state import WorldStateService
@@ -57,6 +58,7 @@ class OrchestratorService:
         self.game_master = GameMasterService(self.gm_provider, self.settings)
         self.world_state = WorldStateService(self.memory_provider, self.settings)
         self.quests = QuestService(self.memory_provider, self.settings)
+        self.post_turn_judge = PostTurnJudgeService(self.memory_provider, self.world_state, self.quests, self.settings)
 
     async def aclose(self) -> None:
         """Close every provider's HTTP client. Dedupes by identity because
@@ -145,14 +147,7 @@ class OrchestratorService:
             await self.memory.maybe_refresh(db, session)
         except ProviderError:
             logger.exception("memory refresh skipped for session=%s", session.id)
-        await self._extract_world_state(
-            db,
-            session,
-            user_message=user_message,
-            gm_response=continuity.final_reply,
-            turn_id=assistant_turn.id,
-        )
-        quest_changes = await self._extract_quests(
+        quest_changes = await self._run_post_turn_extraction(
             db,
             session,
             user_message=user_message,
@@ -368,13 +363,9 @@ class OrchestratorService:
             await self.memory.maybe_refresh(db, session)
         except ProviderError:
             logger.exception("memory refresh skipped for session=%s", session.id)
-        await self._extract_world_state(
-            db,
-            session,
-            user_message=user_message,
-            gm_response=full_assistant_content,
-            turn_id=turns_to_add[-1].id,
-        )
+        # Plot-hook offers + escalation run first so the post-turn judge sees
+        # any freshly-offered quests in its open-quest context (matches the
+        # legacy order where the quest judge ran after this).
         quest_changes = await self._post_event_quest_work(
             db,
             session,
@@ -383,7 +374,7 @@ class OrchestratorService:
             pressure_quests=pressure_quests,
             turn_id=turns_to_add[-1].id,
         )
-        quest_changes += await self._extract_quests(
+        quest_changes += await self._run_post_turn_extraction(
             db,
             session,
             user_message=user_message,
@@ -677,13 +668,9 @@ class OrchestratorService:
                 await self.memory.maybe_refresh(db, session)
         except ProviderError:
             logger.exception("memory refresh skipped for session=%s", session.id)
-        await self._extract_world_state(
-            db,
-            session,
-            user_message=user_message,
-            gm_response=full_assistant_content,
-            turn_id=turns_to_add[-1].id,
-        )
+        # Plot-hook offers + escalation run first so the post-turn judge sees
+        # any freshly-offered quests in its open-quest context (matches the
+        # legacy order where the quest judge ran after this).
         quest_changes = await self._post_event_quest_work(
             db,
             session,
@@ -692,7 +679,7 @@ class OrchestratorService:
             pressure_quests=pressure_quests,
             turn_id=turns_to_add[-1].id,
         )
-        quest_changes += await self._extract_quests(
+        quest_changes += await self._run_post_turn_extraction(
             db,
             session,
             user_message=user_message,
@@ -821,14 +808,7 @@ class OrchestratorService:
                 await self.memory.maybe_refresh(db, session)
         except ProviderError:
             logger.exception("memory refresh skipped for session=%s", session.id)
-        await self._extract_world_state(
-            db,
-            session,
-            user_message=user_message,
-            gm_response=full_reply,
-            turn_id=assistant_turn.id,
-        )
-        quest_changes = await self._extract_quests(
+        quest_changes = await self._run_post_turn_extraction(
             db,
             session,
             user_message=user_message,
@@ -903,6 +883,42 @@ class OrchestratorService:
                 0 if not block.strip() else self._estimate_tokens(block),
             )
             return block
+
+    async def _run_post_turn_extraction(
+        self,
+        db: AsyncSession,
+        session: ChatSession,
+        *,
+        user_message: str,
+        response_text: str,
+        turn_id: str | None,
+    ) -> list[QuestChange]:
+        """Post-turn structured extraction (world-state ledger + quest judge).
+
+        Unified into ONE judge call when ``post_turn_judge_enabled`` is set,
+        else the legacy two separate calls. Memory refresh stays its own call
+        (different cadence) and is not routed through here. Best-effort: never
+        breaks the turn."""
+        if self.settings.post_turn_judge_enabled:
+            try:
+                _, quest_changes = await self.post_turn_judge.judge_turn(
+                    db,
+                    session,
+                    user_message=user_message,
+                    response_text=response_text,
+                    turn_id=turn_id,
+                )
+                return quest_changes
+            except Exception:
+                # Deliberately broad: post-turn side effects must never fail the turn.
+                logger.exception("post-turn judge skipped for session=%s", session.id)
+                return []
+        await self._extract_world_state(
+            db, session, user_message=user_message, gm_response=response_text, turn_id=turn_id
+        )
+        return await self._extract_quests(
+            db, session, user_message=user_message, response_text=response_text, turn_id=turn_id
+        )
 
     async def _extract_world_state(
         self,

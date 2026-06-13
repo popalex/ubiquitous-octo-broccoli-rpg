@@ -91,6 +91,13 @@ class Settings(BaseSettings):
     quest_extract_max_tokens: int = 700
     quest_temperature: float = 0.2
 
+    # Unified post-turn judge (§2): when on, the per-turn world-state and quest
+    # extractions are folded into ONE LLM call (PostTurnJudgeService) instead of
+    # two. Memory (facts + episode summary) stays on its own cadence. Ships dark;
+    # the legacy two-call path is the fallback when this is off.
+    post_turn_judge_enabled: bool = False
+    post_turn_judge_max_tokens: int = 1100
+
     @property
     def actor_context_budget(self) -> int:
         return max(512, self.actor_max_input_tokens - self.actor_reserved_output_tokens)
