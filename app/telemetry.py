@@ -57,6 +57,10 @@ canon_size = _meter.create_histogram(
 canon_extract_failures = _meter.create_counter(
     "rpg.canon.extract_failures", description="World-state extraction failures (parse/provider)"
 )
+canon_noop_deltas = _meter.create_counter(
+    "rpg.canon.noop_deltas",
+    description="Extracted deltas that left the ledger materially unchanged (no version written)",
+)
 quest_updates = _meter.create_counter(
     "rpg.quest.updates", description="Quest changes applied (offered/started/advanced/resolved)"
 )

@@ -274,6 +274,31 @@ async def test_extract_increments_version(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
+async def test_extract_noop_delta_writes_no_new_version(db_session: AsyncSession) -> None:
+    # A non-empty delta that only restates existing state (small models do this
+    # on description-only turns) must not churn a new ledger version.
+    provider = MockProvider()
+    seed = {
+        "location": {"name": "Ashfall Keep", "description": "A ruined fortress."},
+        "entities_upsert": [{"id": "kael", "name": "Kael", "status": "dead"}],
+        "facts_add": ["The gate is barred."],
+    }
+    provider.set_json_response(seed)
+    svc = WorldStateService(provider, make_test_settings(world_state_enabled=True))
+    session = SessionFactory(turn_count=2)
+    await db_session.flush()
+
+    first = await svc.extract_and_apply(db_session, session, user_message="a", gm_response="b")
+    assert first.version == 1
+
+    # Same delta again -> applies to an identical ledger -> materially unchanged.
+    provider.set_json_response(seed)
+    row = await svc.extract_and_apply(db_session, session, user_message="I look around", gm_response="Dust drifts.")
+    assert row is None
+    assert await svc.current_version(db_session, session.id) == 1
+
+
+@pytest.mark.asyncio
 async def test_extract_empty_delta_writes_nothing(db_session: AsyncSession) -> None:
     provider = MockProvider()
     provider.set_json_response({})

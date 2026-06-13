@@ -24,7 +24,14 @@ from app.models import Session as ChatSession
 from app.models import WorldStateLedger
 from app.prompts import WORLD_STATE_EXTRACT_PROMPT
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
-from app.telemetry import canon_extract_failures, canon_size, record_span_error, set_completion, tracer
+from app.telemetry import (
+    canon_extract_failures,
+    canon_noop_deltas,
+    canon_size,
+    record_span_error,
+    set_completion,
+    tracer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -287,10 +294,6 @@ class WorldStateService:
                     new.inventory.remove(current)
                     del inv_by_item[change.item]
                 continue
-                if current is not None:
-                    new.inventory.remove(current)
-                    del inv_by_item[change.item]
-                continue
             if current is None:
                 current = LedgerInventoryItem(item=change.item, qty=qty)
                 new.inventory.append(current)
@@ -413,6 +416,16 @@ class WorldStateService:
             from sqlalchemy.exc import IntegrityError
 
             new_ledger = self.apply_delta(ledger, delta)
+
+            # A non-empty delta can still be a no-op once applied (e.g. a small
+            # model restating the unchanged location/entities, or a phantom
+            # change the apply invariants reject). Don't churn a new version for
+            # a ledger that didn't materially move.
+            if new_ledger.model_dump() == ledger.model_dump():
+                span.set_attribute("rpg.canon.delta.noop", True)
+                canon_noop_deltas.add(1)
+                return None
+
             try:
                 row = WorldStateLedger(
                     session_id=session.id,
