@@ -34,12 +34,9 @@ CASES = [
         inputs={
             "open_quests_json": _NO_OPEN_QUESTS,
             "user_message": (
-                "I kneel and tell the widow: I'll find who burned your farm, "
-                "and I'll make them answer for it."
+                "I kneel and tell the widow: I'll find who burned your farm, and I'll make them answer for it."
             ),
-            "gm_response": (
-                "The widow's hands tremble. \"Their banner was a red hawk. That's all I saw.\""
-            ),
+            "gm_response": ("The widow's hands tremble. \"Their banner was a red hawk. That's all I saw.\""),
         },
         # The signal is that a quest is created from a real commitment; the
         # type taxonomy is fuzzy (a revenge vow reads as promise OR mystery), so
@@ -83,7 +80,7 @@ CASES = [
         inputs={
             "open_quests_json": _OFFERED_QUEST,
             "user_message": "I tell Maren I'll do it — I'll find your sister. Point me to Saltcliff.",
-            "gm_response": "Maren exhales, relief flooding her face. \"The coast road, three days east. Thank you.\"",
+            "gm_response": 'Maren exhales, relief flooding her face. "The coast road, three days east. Thank you."',
         },
         structural=[quest_status("find-marens-sister", "active")],
         max_tokens=700,
