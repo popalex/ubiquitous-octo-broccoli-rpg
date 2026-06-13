@@ -16,12 +16,12 @@ clear message instead of erroring — so `pytest -m eval` is safe to run anywher
 
 from __future__ import annotations
 
-import asyncio
 import os
 import urllib.error
 import urllib.request
 
 import pytest
+import pytest_asyncio
 
 from app.config import get_settings
 from app.providers.base import build_provider
@@ -62,23 +62,25 @@ def _reachable(eval_config: dict) -> None:
         )
 
 
-def _close(provider) -> None:
-    try:
-        asyncio.run(provider.aclose())
-    except RuntimeError:
-        # No event loop available at teardown; the client will be GC'd.
-        pass
-
-
-@pytest.fixture(scope="session")
-def eval_provider(_reachable, eval_config: dict, eval_settings):
+# Provider fixtures are async + function-scoped on purpose: pytest-asyncio gives
+# each test its own event loop, and an httpx.AsyncClient binds to the loop it's
+# first used on. A session-scoped client would break ("Event loop is closed")
+# once the first test's loop closes. A fresh client per test — built and closed
+# inside that test's loop — keeps every request on a live loop. The cost (one
+# client per test) is negligible next to the model call itself.
+@pytest_asyncio.fixture
+async def eval_provider(_reachable, eval_config: dict, eval_settings):
     provider = build_provider(eval_config["provider"], eval_config["model"], eval_settings, slot="eval")
-    yield provider
-    _close(provider)
+    try:
+        yield provider
+    finally:
+        await provider.aclose()
 
 
-@pytest.fixture(scope="session")
-def judge_provider(_reachable, eval_config: dict, eval_settings):
+@pytest_asyncio.fixture
+async def judge_provider(_reachable, eval_config: dict, eval_settings):
     provider = build_provider(eval_config["provider"], eval_config["judge_model"], eval_settings, slot="eval-judge")
-    yield provider
-    _close(provider)
+    try:
+        yield provider
+    finally:
+        await provider.aclose()
