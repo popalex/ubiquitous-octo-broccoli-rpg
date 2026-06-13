@@ -59,7 +59,10 @@ class Settings(BaseSettings):
     continuity_temperature: float = 0.2
     gm_temperature: float = 0.8
     gm_max_output_tokens: int = 800
-    gm_narration_max_tokens: int = 0  # 0 = no limit; let the GM narration run to a natural stop
+    gm_narration_max_tokens: int = 0  # hard provider cap; 0 = no limit (avoids mid-word truncation)
+    # Graceful length control: once narration passes this many tokens, stop at the
+    # NEXT sentence boundary instead of cutting mid-word. 0 disables (truly unbounded).
+    gm_narration_soft_limit_tokens: int = 1000
     request_timeout_seconds: float = 60.0
 
     # Default GM mode for new sessions: /session/init inherits it when the

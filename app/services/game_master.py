@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 import random
+import re
+from contextlib import aclosing
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -34,6 +36,37 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+# Rough average used only to translate the token-based narration soft cap into a
+# character budget — good enough for a graceful "stop soon" signal.
+_CHARS_PER_TOKEN = 4
+# Matches a sentence terminator (optionally followed by a closing quote/bracket)
+# at the very end of the accumulated text.
+_SENTENCE_END = re.compile(r"[.!?][\"')\]]*\s*$")
+
+
+def _narration_budgets(soft_tokens: int) -> tuple[int, int]:
+    """Translate a soft token cap into ``(soft_chars, hard_chars)`` budgets.
+
+    Returns ``(0, 0)`` when disabled (``soft_tokens <= 0``). ``hard_chars`` is an
+    absolute backstop (2x soft) for the rare run-on with no sentence breaks.
+    """
+    if soft_tokens <= 0:
+        return 0, 0
+    soft_chars = soft_tokens * _CHARS_PER_TOKEN
+    return soft_chars, soft_chars * 2
+
+
+def _trim_to_sentence(text: str, soft_tokens: int) -> str:
+    """Trim a complete narration so it ends on a sentence boundary once it
+    exceeds the soft budget — never mid-word. No-op when disabled or short."""
+    soft_chars, hard_chars = _narration_budgets(soft_tokens)
+    if not soft_chars or len(text) <= soft_chars:
+        return text
+    match = re.search(r"[.!?][\"')\]]*", text[soft_chars:hard_chars])
+    if match:
+        return text[: soft_chars + match.end()].rstrip()
+    return text[:hard_chars].rstrip()
 
 
 @dataclass(slots=True)
@@ -166,7 +199,7 @@ class GameMasterService:
             temperature=self.settings.gm_temperature,
             max_tokens=self.settings.gm_narration_max_tokens,
         )
-        return narration.strip()
+        return _trim_to_sentence(narration.strip(), self.settings.gm_narration_soft_limit_tokens)
 
     async def generate_narration_stream(
         self,
@@ -182,15 +215,31 @@ class GameMasterService:
             player_action=player_action,
         )
 
-        async for chunk in self.gm_provider.generate_text_stream(
-            [
-                ProviderMessage(role="system", content=system_prompt),
-                ProviderMessage(role="user", content=user_prompt),
-            ],
-            temperature=self.settings.gm_temperature,
-            max_tokens=self.settings.gm_narration_max_tokens,
-        ):
-            yield chunk
+        # Graceful soft cap: stream uncapped (no mid-word provider truncation),
+        # but once we pass the soft budget, stop at the next sentence boundary so
+        # the narration ends cleanly. aclosing() guarantees the underlying HTTP
+        # stream is closed when we break early.
+        soft_chars, hard_chars = _narration_budgets(self.settings.gm_narration_soft_limit_tokens)
+        accumulated = ""
+        async with aclosing(
+            self.gm_provider.generate_text_stream(
+                [
+                    ProviderMessage(role="system", content=system_prompt),
+                    ProviderMessage(role="user", content=user_prompt),
+                ],
+                temperature=self.settings.gm_temperature,
+                max_tokens=self.settings.gm_narration_max_tokens,
+            )
+        ) as stream:
+            async for chunk in stream:
+                yield chunk
+                if not soft_chars:
+                    continue
+                accumulated += chunk
+                if len(accumulated) >= soft_chars and _SENTENCE_END.search(accumulated):
+                    break
+                if len(accumulated) >= hard_chars:
+                    break
 
     async def check_for_event(
         self,
