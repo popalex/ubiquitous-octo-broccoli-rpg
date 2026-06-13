@@ -138,6 +138,54 @@ async def test_ollama_connection_error_raises_provider_error() -> None:
             await provider.generate_text(MSG, temperature=0.5, max_tokens=100)
 
 
+@pytest.mark.asyncio
+async def test_ollama_generate_text_raises_on_mid_stream_error() -> None:
+    """An Ollama error line mid-stream must not be silently swallowed."""
+    provider = _make_ollama()
+    chunks = [
+        {"message": {"content": "The scent of incense wa"}, "done": False},
+        {"error": "model runner has unexpectedly stopped"},
+    ]
+    ctx = _make_streaming_response(chunks)
+
+    with patch.object(provider.client, "stream", return_value=ctx):
+        with pytest.raises(ProviderError, match="mid-stream"):
+            await provider.generate_text(MSG, temperature=0.5, max_tokens=100)
+
+
+@pytest.mark.asyncio
+async def test_ollama_generate_text_stream_raises_on_mid_stream_error() -> None:
+    """A streamed Ollama error line surfaces as ProviderError after partial chunks."""
+    provider = _make_ollama()
+    chunks = [
+        {"message": {"content": "The scent of incense wa"}, "done": False},
+        {"error": "model runner has unexpectedly stopped"},
+    ]
+    ctx = _make_streaming_response(chunks)
+
+    collected: list[str] = []
+    with patch.object(provider.client, "stream", return_value=ctx):
+        with pytest.raises(ProviderError, match="mid-stream"):
+            async for chunk in provider.generate_text_stream(MSG, temperature=0.5, max_tokens=100):
+                collected.append(chunk)
+
+    assert collected == ["The scent of incense wa"]
+
+
+@pytest.mark.asyncio
+async def test_ollama_omits_num_predict_when_max_tokens_non_positive() -> None:
+    """max_tokens <= 0 means no output limit: num_predict must be omitted."""
+    provider = _make_ollama()
+    chunks = [{"message": {"content": "ok"}, "done": True}]
+    ctx = _make_streaming_response(chunks)
+
+    with patch.object(provider.client, "stream", return_value=ctx) as mock_stream:
+        await provider.generate_text(MSG, temperature=0.5, max_tokens=0)
+
+    options = mock_stream.call_args.kwargs["json"]["options"]
+    assert "num_predict" not in options
+
+
 # ===========================================================================
 # OpenAIProvider (unit, SDK mocked)
 # ===========================================================================
@@ -173,6 +221,19 @@ async def test_openai_generate_text_calls_completions_and_returns_content() -> N
         result = await provider.generate_text(MSG, temperature=0.7, max_tokens=200)
 
     assert result == "Hello from GPT"
+
+
+@pytest.mark.asyncio
+async def test_openai_omits_max_tokens_when_non_positive() -> None:
+    """max_tokens <= 0 means no output limit: max_completion_tokens must be omitted."""
+    provider = _make_openai()
+    fake_resp = _fake_completion("ok")
+
+    mock_create = AsyncMock(return_value=fake_resp)
+    with patch.object(provider.client.chat.completions, "create", new=mock_create):
+        await provider.generate_text(MSG, temperature=0.7, max_tokens=0)
+
+    assert "max_completion_tokens" not in mock_create.call_args.kwargs
 
 
 @pytest.mark.asyncio

@@ -52,8 +52,9 @@ class OpenAIProvider(BaseModelProvider):
             "model": self.model_name,
             "messages": self._to_openai_messages(messages),
             "temperature": temperature,
-            "max_completion_tokens": max_tokens,
         }
+        if max_tokens and max_tokens > 0:  # <= 0 means no output limit
+            kwargs["max_completion_tokens"] = max_tokens
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
 
@@ -100,14 +101,16 @@ class OpenAIProvider(BaseModelProvider):
         usage = None
         start = perf_counter()
         try:
-            stream = await self.client.chat.completions.create(
-                model=self.model_name,
-                messages=self._to_openai_messages(messages),
-                temperature=temperature,
-                max_completion_tokens=max_tokens,
-                stream=True,
-                stream_options={"include_usage": True},
-            )
+            stream_kwargs: dict[str, Any] = {
+                "model": self.model_name,
+                "messages": self._to_openai_messages(messages),
+                "temperature": temperature,
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            }
+            if max_tokens and max_tokens > 0:  # <= 0 means no output limit
+                stream_kwargs["max_completion_tokens"] = max_tokens
+            stream = await self.client.chat.completions.create(**stream_kwargs)
             async for chunk in stream:
                 if chunk.usage:
                     usage = chunk.usage

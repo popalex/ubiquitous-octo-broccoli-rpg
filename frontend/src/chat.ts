@@ -182,6 +182,12 @@ async function sendGMStream({
                 : msg
             )
           );
+        } else if (event.type === "pre_narration_error") {
+          // The GM narration broke mid-stream. Discard the half-written bubble
+          // (the backend discards it too) rather than leaving a dangling fragment.
+          hasPreNarration = false;
+          setChatMessages((current) => current.filter((msg) => msg.id !== preNarrationId));
+          setStatusText("The Game Master faltered; continuing without narration…");
         } else if (event.type === "chunk") {
           setChatMessages((current) =>
             current.map((msg) =>

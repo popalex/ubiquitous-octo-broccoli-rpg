@@ -21,6 +21,15 @@ from app.telemetry import (
 logger = logging.getLogger(__name__)
 
 
+def _ollama_options(temperature: float, max_tokens: int) -> dict:
+    """Build Ollama request options. ``max_tokens <= 0`` means no output limit
+    (num_predict omitted, so Ollama generates until a natural stop)."""
+    options: dict = {"temperature": temperature}
+    if max_tokens and max_tokens > 0:
+        options["num_predict"] = max_tokens
+    return options
+
+
 class OllamaProvider(BaseModelProvider):
     def __init__(self, model_name: str, settings, slot: str = "unknown") -> None:
         super().__init__(model_name=model_name, settings=settings, slot=slot)
@@ -48,10 +57,7 @@ class OllamaProvider(BaseModelProvider):
             "model": self.model_name,
             "messages": [{"role": message.role, "content": message.content} for message in messages],
             "stream": True,  # Use streaming to avoid Ollama's internal timeout
-            "options": {
-                "temperature": temperature,
-                "num_predict": max_tokens,
-            },
+            "options": _ollama_options(temperature, max_tokens),
         }
         if json_mode:
             payload["format"] = "json"
@@ -77,6 +83,8 @@ class OllamaProvider(BaseModelProvider):
                             continue
                         try:
                             chunk = json.loads(line)
+                            if chunk.get("error"):
+                                raise ProviderError(f"Ollama returned an error mid-stream: {chunk['error']}")
                             part = chunk.get("message", {}).get("content", "")
                             logger.debug("Received chunk from Ollama: %s", part[:100])
                             if part:
@@ -120,10 +128,7 @@ class OllamaProvider(BaseModelProvider):
             "model": self.model_name,
             "messages": [{"role": message.role, "content": message.content} for message in messages],
             "stream": True,
-            "options": {
-                "temperature": temperature,
-                "num_predict": max_tokens,
-            },
+            "options": _ollama_options(temperature, max_tokens),
         }
 
         # Manual span (not current) because this generator yields between awaits.
@@ -145,15 +150,17 @@ class OllamaProvider(BaseModelProvider):
                         continue
                     try:
                         chunk = json.loads(line)
-                        content = chunk.get("message", {}).get("content", "")
-                        if content:
-                            parts.append(content)
-                            yield content
-                        if chunk.get("done"):
-                            input_tokens = chunk.get("prompt_eval_count")
-                            output_tokens = chunk.get("eval_count")
                     except json.JSONDecodeError:
                         continue
+                    if chunk.get("error"):
+                        raise ProviderError(f"Ollama returned an error mid-stream: {chunk['error']}")
+                    content = chunk.get("message", {}).get("content", "")
+                    if content:
+                        parts.append(content)
+                        yield content
+                    if chunk.get("done"):
+                        input_tokens = chunk.get("prompt_eval_count")
+                        output_tokens = chunk.get("eval_count")
             set_completion(span, "".join(parts))
             if input_tokens or output_tokens:
                 span.set_attribute("gen_ai.usage.input_tokens", input_tokens or 0)

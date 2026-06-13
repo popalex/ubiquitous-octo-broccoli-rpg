@@ -492,6 +492,7 @@ class OrchestratorService:
 
         # Stream pre-narration
         pre_narration_parts: list[str] = []
+        pre_narration_failed = False
         pre_narration_start = time.perf_counter()
         try:
             logger.info("gm_chat_stream session=%s pre_narration STARTING", session_id)
@@ -506,9 +507,12 @@ class OrchestratorService:
                 yield f"data: {json.dumps({'type': 'pre_narration_chunk', 'content': chunk})}\n\n"
         except ProviderError as exc:
             logger.exception("Pre-narration stream failed for session=%s", session.id)
+            pre_narration_failed = True
             yield f"data: {json.dumps({'type': 'pre_narration_error', 'error': str(exc)})}\n\n"
 
-        pre_narration = "".join(pre_narration_parts) if pre_narration_parts else None
+        # On failure, discard the partial fragment entirely: a half-written
+        # narration must not leak into the actor's context or be persisted.
+        pre_narration = "".join(pre_narration_parts) if (pre_narration_parts and not pre_narration_failed) else None
         logger.info(
             "gm_chat_stream session=%s pre_narration DONE duration=%.2fs chars=%d",
             session_id,
