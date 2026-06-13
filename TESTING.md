@@ -10,7 +10,7 @@ Companion to `TODO.md` (feature roadmap). Drafted 2026-06-11.
 | Frontend unit | 23 Vitest tests: `api.test.ts`, `turns.test.ts`, `ErrorBoundary.test.tsx`, `chat.test.ts` (SSE streaming, both modes). No coverage of components or hooks yet. |
 | Frontend CI | Lints + typechecks + runs `pnpm test`. |
 | E2E | None. |
-| LLM quality | None (see `TODO.md` §5a — eval harness; out of scope here). |
+| LLM quality | ✅ On-demand eval harness landed (`evals/`, `TODO.md` §5a, PR #34): 16 golden cases scoring continuity/memory/ledger/quests/GM against a real local model, `pytest -m eval` / `make eval`, excluded from CI. A CI-safe `MockProvider` plumbing self-test runs in the normal suite. Still out of scope for *this* doc (frontend-focused). |
 
 The gap is almost entirely frontend. More backend unit tests have low marginal
 value; backend confidence problems are prompt/model drift, which the eval

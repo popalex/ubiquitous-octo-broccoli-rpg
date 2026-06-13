@@ -148,12 +148,26 @@ EPUB later if Markdown proves useful.
 
 ## 5. Quality & ops
 
-### 5a. LLM eval harness
-Structural tests can't catch prompt/model quality drift. Small
-golden-transcript suite + LLM-judge scoring for continuity, extraction
-accuracy (memory/ledger/quests), and GM narration constraints. Runs locally
-against real models on demand (`make eval` or a `pytest -m eval` marker
-excluded from CI). Prerequisite for safely landing §2 and any prompt changes.
+### 5a. LLM eval harness — ✅ DONE (2026-06-13)
+Shipped on `feature/eval-harness` (PR #34): a top-level `evals/` package — 16
+golden cases across continuity, memory, world-state, quests, and GM narration —
+that runs the **real prompts from `app/prompts.py`** against a live local model
+and scores each case structurally (binary signals) or with a pass/fail LLM judge
+(reserved for prose constraints; small models flap on it for anything
+structurally checkable). Marked `eval` and excluded from the default/CI run via
+`addopts = -m "not eval"`; opt in with `pytest -m eval` or `make eval`. Skips
+cleanly when no model is reachable; a CI-safe plumbing self-test
+(`MockProvider`) runs in the normal suite. Validated 15/16 → 16/16 on
+`llama3.2:3b`.
+
+Its first finding was acted on immediately (PR #35,
+`feature/world-state-noop-guard`): on description-only turns the world-state
+extractor over-extracted (phantom inventory decrements, narration→facts) and
+churned a new ledger version every turn. Fixed with a hardened
+`WORLD_STATE_EXTRACT_PROMPT` + an apply-side material-change guard in
+`extract_and_apply` (skips the version write when the applied ledger is
+unchanged; meters `rpg.canon.noop_deltas`). This is the prerequisite for safely
+landing §2 and any prompt changes — **now unblocked.**
 
 ### 5b. Token/cost visibility — ✅ DONE (2026-06-12)
 Shipped on `feature/roadmap-quick-wins`: providers carry a `slot` label
@@ -179,12 +193,13 @@ the yardstick for what §2 saves.
 
 ## Suggested sequencing
 
-1. **Quick wins (one sitting each):** 5c, §3 (retcon note).
-2. **Phase 1:** §1 (toggles) → 4b (world sidebar) — the cheapest visible win
+1. **Quick wins (one sitting each):** 5c ✅, §3 (retcon note) ✅.
+2. **Phase 1:** §1 (toggles) ✅ → 4b (world sidebar) ✅ — the cheapest visible win
    once the ledger can be enabled, and it makes ledger output inspectable
    before §2 changes how it's extracted.
-3. **Phase 2:** 5a (eval harness) → §2 (unified judge, validated by the evals)
-   + 5b (measure the savings).
+3. **Phase 2:** 5a (eval harness) ✅ → **§2 (unified judge, validated by the
+   evals) ← next, in progress on `feature/post-turn-judge`** + 5b ✅ (measure the
+   savings).
 4. **Phase 3:** remaining §4 features as appetite dictates — 4a (fork) is the
    most distinctive; 4c/4d are nice-to-haves, cut first if time is short.
 
