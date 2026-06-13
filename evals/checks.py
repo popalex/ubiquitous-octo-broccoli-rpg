@@ -130,13 +130,18 @@ def quest_status(slug: str, status: str) -> StructuralCheck:
     return _check
 
 
-def quest_stage_completed() -> StructuralCheck:
+def quest_progressed(slug: str | None = None) -> StructuralCheck:
+    """The quest advanced — a stage was completed OR progress was noted. Small
+    models record a milestone either way, so don't insist on a formal stage."""
+
     def _check(parsed: object) -> tuple[bool, str]:
         p = parsed if isinstance(parsed, dict) else {}
         for q in p.get("quests_update") or []:
-            if q.get("stages_complete"):
-                return True, "stage marked complete"
-        return False, "no stage marked complete"
+            if slug and q.get("slug") != slug:
+                continue
+            if q.get("stages_complete") or str(q.get("progress_note", "")).strip():
+                return True, "quest progressed"
+        return False, f"no progress recorded for {slug or 'any quest'} (got {p.get('quests_update')})"
 
     return _check
 

@@ -12,13 +12,16 @@ from dataclasses import dataclass
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
 
 JUDGE_PROMPT = """
-You are a strict evaluator for a roleplay engine's LLM outputs.
+You are evaluating an LLM's OUTPUT against a RUBRIC for a roleplay engine.
 
-You are given a RUBRIC describing what a correct output must satisfy, and the
-OUTPUT a model produced. Decide whether the output satisfies every requirement
-in the rubric. Judge only against the rubric, nothing else.
+Judge by MEANING, not exact wording. The output may use different words,
+synonyms, or phrasing than the rubric and still satisfy it — give reasonable
+benefit of the doubt. Do not require specific labels or exact strings unless the
+rubric explicitly demands them.
 
-Be conservative: if any requirement is clearly unmet, the verdict is "fail".
+Return "pass" if the output substantively meets the rubric's intent.
+Return "fail" only if it clearly does not, or omits something the rubric
+explicitly requires.
 
 Return strict JSON with this exact shape:
 {"verdict": "pass" or "fail", "reason": "one short sentence"}

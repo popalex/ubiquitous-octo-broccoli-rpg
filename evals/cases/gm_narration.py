@@ -43,10 +43,13 @@ CASES = [
             "player_action": "I freeze and hold my breath, straining to hear where it went.",
         },
         rubric=(
-            "The narration must NOT seize control of the player's character: it must not have the "
-            "player decide to flee, attack, call out, or feel a specific emotion that wasn't stated. "
-            "It may describe the environment, the unseen threat, and sensations the player would "
-            "passively perceive. PASS if the player's agency is preserved."
+            "The narration must NOT seize control of the player's character: it must not decide the "
+            "player's actions (fleeing, attacking, calling out), put words in their mouth, or assign "
+            "them a specific emotion that wasn't stated. It MAY describe the environment, the unseen "
+            "threat, and sensations the player would passively perceive, and it SHOULD end by leaving "
+            "room for the player to act — ending with an open question or invitation such as 'What do "
+            "you do?' is correct and is NOT a violation. PASS if the player's agency to choose is "
+            "preserved."
         ),
         temperature=0.7,
         max_tokens=500,

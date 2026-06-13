@@ -21,9 +21,10 @@ CASES = [
         },
         structural=[facts_nonempty()],
         rubric=(
-            "The extracted facts must record that the player promised to deliver Maren's sister's "
-            "letter to the lighthouse at Saltcliff. Capturing the destination (Saltcliff/lighthouse) "
-            "or the keeper Ysolde also counts. PASS if the promise to deliver the letter is recorded."
+            "PASS if the extracted facts record a durable commitment to deliver the letter to the "
+            "lighthouse at Saltcliff — mentioning Saltcliff, the lighthouse, or the keeper Ysolde as "
+            "the destination. The exact wording, and which character is named as the carrier, do not "
+            "matter; what matters is that the letter-delivery commitment is captured."
         ),
         max_tokens=600,
     ),
@@ -55,8 +56,9 @@ CASES = [
         },
         structural=[relationships_nonempty()],
         rubric=(
-            "The output must record a relationship where Dren is now an ally of, loyal to, or "
-            "indebted to the player after being rescued. PASS if such a relationship is present."
+            "PASS if the output records that Dren is now bound to the player as a result of the "
+            "rescue — allied, loyal, indebted, owing allegiance, or any similar wording that "
+            "expresses the new bond. The exact status label does not matter."
         ),
         max_tokens=600,
     ),

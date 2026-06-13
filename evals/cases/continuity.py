@@ -29,16 +29,17 @@ CASES = [
         category="continuity",
         target=Target.CONTINUITY,
         inputs={
-            "hard_rules": "Mara is a blacksmith. She never leaves the village of Hollowmere.",
-            "world_canon": "Mara forges tools at her smithy in Hollowmere and distrusts outsiders.",
+            "hard_rules": "Mara is the blacksmith of Hollowmere. She is alive and works at her forge.",
+            "world_canon": "Mara forges tools and weapons at her smithy in the village of Hollowmere.",
             "recent_transcript": (
                 "PLAYER: I show Mara the broken blade.\n"
-                "ACTOR: She turns it over, frowning at the shattered tang."
+                "ACTOR: She turns it over in the forge-light, studying the shattered tang."
             ),
             "user_message": "Can you reforge it?",
             "draft_reply": (
-                "Mara grunts and sets the blade on her anvil. "
-                '"Costs you. Outsiders always think iron is free."'
+                "Mara sets the blade on her anvil. "
+                '"Aye. Give me until morning and it\'ll hold an edge again." '
+                "She works the bellows until the coals glow white."
             ),
         },
         structural=[continuity_clean()],

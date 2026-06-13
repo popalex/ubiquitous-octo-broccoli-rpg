@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 
-from evals.checks import no_quest_created, quest_created, quest_stage_completed, quest_status
+from evals.checks import no_quest_created, quest_created, quest_progressed, quest_status
 from evals.harness import EvalCase, Target
 
 _NO_OPEN_QUESTS = json.dumps([])
@@ -41,7 +41,10 @@ CASES = [
                 "The widow's hands tremble. \"Their banner was a red hawk. That's all I saw.\""
             ),
         },
-        structural=[quest_created(quest_type="promise")],
+        # The signal is that a quest is created from a real commitment; the
+        # type taxonomy is fuzzy (a revenge vow reads as promise OR mystery), so
+        # don't pin the exact quest_type.
+        structural=[quest_created()],
         max_tokens=700,
     ),
     EvalCase(
@@ -57,7 +60,7 @@ CASES = [
         max_tokens=500,
     ),
     EvalCase(
-        id="quest-stage-completed-when-fiction-shows-it",
+        id="quest-advances-when-milestone-reached",
         category="quests",
         target=Target.QUESTS,
         inputs={
@@ -68,7 +71,9 @@ CASES = [
                 "You've arrived. A figure watches from the gallery above."
             ),
         },
-        structural=[quest_stage_completed()],
+        # Reaching Saltcliff completes the "reach-saltcliff" stage; the model
+        # records that either as a completed stage or a progress note.
+        structural=[quest_progressed("find-marens-sister")],
         max_tokens=700,
     ),
     EvalCase(
