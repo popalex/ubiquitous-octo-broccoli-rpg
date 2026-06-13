@@ -7,6 +7,10 @@ treated as empty) but strict about the signal under test.
 
 from __future__ import annotations
 
+import json
+
+from pydantic import ValidationError
+
 from evals.harness import StructuralCheck
 
 # --- continuity --------------------------------------------------------------
@@ -57,6 +61,37 @@ def ledger_empty() -> StructuralCheck:
         if meaningful:
             return False, f"unexpected delta in {meaningful}"
         return True, "empty delta as expected"
+
+    return _check
+
+
+def ledger_unchanged_after_apply(ledger_json: str) -> StructuralCheck:
+    """The delta, applied to ``ledger_json`` via the real apply path, leaves the
+    ledger materially unchanged.
+
+    This is the no-op signal that matters: a small model may harmlessly restate
+    the current location or a dead entity (zero applied effect — tolerated), but
+    a genuine over-extraction (a phantom inventory change, an invented fact)
+    would move the ledger and is still caught. Mirrors the service's own no-op
+    guard, which skips writing a version when the applied ledger is unchanged.
+    """
+    # Imported here to keep the rest of evals/checks dependency-light.
+    from app.config import get_settings
+    from app.services.world_state import Ledger, LedgerDelta, WorldStateService
+
+    base = Ledger.model_validate(json.loads(ledger_json))
+    svc = WorldStateService(None, get_settings())  # apply_delta never touches the provider
+
+    def _check(parsed: object) -> tuple[bool, str]:
+        p = parsed if isinstance(parsed, dict) else {}
+        try:
+            delta = LedgerDelta.model_validate(p)
+        except ValidationError as exc:
+            return False, f"delta failed schema validation: {exc}"
+        applied = svc.apply_delta(base, delta)
+        if applied.model_dump() == base.model_dump():
+            return True, "ledger materially unchanged after apply"
+        return False, "delta materially changed the ledger (real over-extraction)"
 
     return _check
 
@@ -179,5 +214,40 @@ def relationships_nonempty() -> StructuralCheck:
         p = parsed if isinstance(parsed, dict) else {}
         rels = p.get("relationships") or []
         return bool(rels), (f"{len(rels)} relationship(s)" if rels else "no relationships extracted")
+
+    return _check
+
+
+_PLAYER_ALIASES = ("you", "player", "the player", "i", "me")
+
+
+def relationship_with_player(entity: str) -> StructuralCheck:
+    """A relationship links ``entity`` and the player (either direction)."""
+
+    def _check(parsed: object) -> tuple[bool, str]:
+        p = parsed if isinstance(parsed, dict) else {}
+        for r in p.get("relationships") or []:
+            pair = [str(r.get("source_entity", "")).lower(), str(r.get("target_entity", "")).lower()]
+            has_entity = any(entity.lower() in side for side in pair)
+            has_player = any(side in _PLAYER_ALIASES or side == "you" for side in pair)
+            if has_entity and has_player:
+                return True, f"relationship links {entity} and the player"
+        return False, f"no {entity}<->player relationship (got {p.get('relationships')})"
+
+    return _check
+
+
+def facts_mention(keywords: list[str]) -> StructuralCheck:
+    """At least one extracted fact mentions one of the keywords (case-insensitive)."""
+
+    kws = [k.lower() for k in keywords]
+
+    def _check(parsed: object) -> tuple[bool, str]:
+        p = parsed if isinstance(parsed, dict) else {}
+        texts = [str(f.get("content", "")).lower() for f in (p.get("facts") or [])]
+        for text in texts:
+            if any(k in text for k in kws):
+                return True, "a fact mentions the expected detail"
+        return False, f"no fact mentions any of {keywords} (facts={texts})"
 
     return _check

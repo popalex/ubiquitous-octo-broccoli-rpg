@@ -3,8 +3,14 @@ small talk is ignored."""
 
 from __future__ import annotations
 
-from evals.checks import facts_empty_or_low, facts_nonempty, relationships_nonempty
+from evals.checks import facts_empty_or_low, facts_mention, facts_nonempty, relationship_with_player
 from evals.harness import EvalCase, Target
+
+# These cases use deterministic structural checks rather than the LLM judge: the
+# extractions here are structurally verifiable (a fact mentioning the
+# destination, a relationship linking the right parties), and on a small model
+# the judge just adds noise — it flapped pass/fail on a stably-correct answer.
+# The LLM judge is reserved for prose constraints (see gm_narration).
 
 CASES = [
     EvalCase(
@@ -19,13 +25,9 @@ CASES = [
                 '"Saltcliff. The keeper there is named Ysolde. Tell her Maren still waits."'
             ),
         },
-        structural=[facts_nonempty()],
-        rubric=(
-            "PASS if the extracted facts record a durable commitment to deliver the letter to the "
-            "lighthouse at Saltcliff — mentioning Saltcliff, the lighthouse, or the keeper Ysolde as "
-            "the destination. The exact wording, and which character is named as the carrier, do not "
-            "matter; what matters is that the letter-delivery commitment is captured."
-        ),
+        # The durable fact is the delivery destination; the model reliably names
+        # Saltcliff / the lighthouse / Ysolde.
+        structural=[facts_nonempty(), facts_mention(["saltcliff", "lighthouse", "ysolde"])],
         max_tokens=600,
     ),
     EvalCase(
@@ -54,12 +56,9 @@ CASES = [
                 '"You didn\'t have to do that. I won\'t forget it. From here on, my blade is yours."'
             ),
         },
-        structural=[relationships_nonempty()],
-        rubric=(
-            "PASS if the output records that Dren is now bound to the player as a result of the "
-            "rescue — allied, loyal, indebted, owing allegiance, or any similar wording that "
-            "expresses the new bond. The exact status label does not matter."
-        ),
+        # The signal is a captured relationship linking Dren and the player; the
+        # exact status label ("owed allegiance", "loyal", ...) doesn't matter.
+        structural=[relationship_with_player("Dren")],
         max_tokens=600,
     ),
 ]

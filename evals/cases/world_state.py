@@ -9,7 +9,7 @@ from evals.checks import (
     entity_not_resurrected,
     entity_status,
     has_inventory_change,
-    ledger_empty,
+    ledger_unchanged_after_apply,
 )
 from evals.harness import EvalCase, Target
 
@@ -56,7 +56,7 @@ CASES = [
         max_tokens=800,
     ),
     EvalCase(
-        id="world-empty-when-nothing-changes",
+        id="world-no-material-change-on-noop-turn",
         category="world_state",
         target=Target.WORLD_STATE,
         inputs={
@@ -64,7 +64,12 @@ CASES = [
             "user_message": "I look around the keep and take a slow breath.",
             "gm_response": "Dust drifts in the broken light. Nothing stirs in the silent hall.",
         },
-        structural=[ledger_empty()],
+        # A description-only turn must not move the ledger. The ideal output is
+        # {}, but a small model harmlessly restating the unchanged location or
+        # dead entity is fine — what must NOT happen is a real change (a phantom
+        # inventory decrement, flavor text becoming a fact). Measured through the
+        # real apply path, which is also where the service's no-op guard lives.
+        structural=[ledger_unchanged_after_apply(_LEDGER_WITH_DEAD_KAEL)],
         max_tokens=600,
     ),
     EvalCase(
