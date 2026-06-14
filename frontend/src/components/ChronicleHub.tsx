@@ -112,6 +112,7 @@ export function ChronicleHub() {
                     {c.parent_session_id && (
                       <button
                         className="badge badge-fork"
+                        aria-label={`Open parent chronicle (forked at turn ${c.forked_at_turn ?? "unknown"})`}
                         title={`Forked at turn ${c.forked_at_turn ?? "?"} — open the parent chronicle`}
                         onClick={(e) => {
                           e.stopPropagation();
