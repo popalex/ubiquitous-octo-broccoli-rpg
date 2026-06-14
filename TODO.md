@@ -43,7 +43,17 @@ defaulting to `false` — the two flagship features are invisible unless you edi
 
 **Effort:** small-medium. **Risk:** low (additive, defaults preserve behavior).
 
-## 2. Unify the post-turn judge (one LLM call instead of three)
+## 2. Unify the post-turn judge (one LLM call instead of three) — ✅ SHIPPED behind flag (2026-06-13, PR #41)
+
+Shipped on `feature/post-turn-judge` (PR #41): `PostTurnJudgeService`
+(`app/services/post_turn_judge.py`) makes one `generate_json` call validated
+into a typed `TurnJudgment`, gated behind `post_turn_judge_enabled` with the
+legacy two-call path (`maybe_refresh` + `extract_and_apply`) intact as fallback
+in `OrchestratorService._run_post_turn`. Backend tests + eval parity target
+landed (commit `28ab9e7`); dashboard panels added (`6b2d26a`).
+**Two follow-ups remain:** (a) the global flag still defaults `false` — flip it
+on after baking a few real sessions + an `pytest -m eval` run; (b) **delete the
+legacy path** once that bakes (per the "flag, then delete" decision below).
 
 **Problem:** every turn fires up to three post-turn LLM calls — memory refresh
 (`MemoryService.maybe_refresh`), world-state extraction
@@ -197,9 +207,9 @@ the yardstick for what §2 saves.
 2. **Phase 1:** §1 (toggles) ✅ → 4b (world sidebar) ✅ — the cheapest visible win
    once the ledger can be enabled, and it makes ledger output inspectable
    before §2 changes how it's extracted.
-3. **Phase 2:** 5a (eval harness) ✅ → **§2 (unified judge, validated by the
-   evals) ← next, in progress on `feature/post-turn-judge`** + 5b ✅ (measure the
-   savings).
+3. **Phase 2:** 5a (eval harness) ✅ → §2 (unified judge) ✅ shipped behind flag
+   + 5b ✅ (measure the savings). **← next: bake §2 on, flip its default, then
+   delete the legacy path.**
 4. **Phase 3:** remaining §4 features as appetite dictates — 4a (fork) is the
    most distinctive; 4c/4d are nice-to-haves, cut first if time is short.
 
