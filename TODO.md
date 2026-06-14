@@ -122,10 +122,7 @@ mutating already-committed `Turn` rows (persist happens before post-turn).
 
 In rough value order; each is independently shippable.
 
-### 4a. Rewind & fork — 🚧 built & verified, awaiting review/merge (2026-06-14, `feature/rewind-fork`, unpushed)
-Code-complete and smoke-tested live (migration `b1c2d3e4f5a6` applied to the dev
-DB, fork endpoint exercised end-to-end); **not yet PR'd or merged** — flip to
-✅ DONE once it lands on `main`.
+### 4a. Rewind & fork — ✅ DONE (2026-06-14, merged to `main` via `feature/rewind-fork`)
 Backend: `sessions.parent_session_id` + `forked_at_turn` columns (migration
 `b1c2d3e4f5a6`), `ForkService` (`app/services/fork.py`) doing a *full-fidelity*
 copy (turns ≤ N, derived facts/summaries, relationships, the ledger version
@@ -133,9 +130,11 @@ current at N → new version 1, quests created ≤ N, with turn-id remapping;
 embeddings copied verbatim), `POST /session/{id}/fork?at_turn=N` (omit `at_turn`
 to fork the whole chronicle), lineage fields on session list/detail responses,
 `rpg.session.forks` metric + Grafana panel, and `tests/test_fork.py` (7 tests).
-Frontend: hover "⑂ Fork from here" on each persisted turn (`ChatPanel` →
-`useForkSession`, navigates to the new chronicle) and a "⑂ Fork @ N" badge on
-forked chronicles in `ChronicleHub` linking to the parent.
+Frontend: hover "Fork from here" on each persisted turn (`ChatPanel` →
+`useForkSession`, navigates to the new chronicle) and a "Fork @ N" badge on
+forked chronicles in `ChronicleHub` linking to the parent. (Fork affordances
+use lucide-react `GitFork` icons after the icon-library migration — the old
+`⑂` glyph rendered blank in Firefox on Linux.)
 
 Every `Turn` is persisted and the ledger is versioned — the data model already
 supports time travel.
@@ -224,8 +223,8 @@ the yardstick for what §2 saves.
 3. **Phase 2:** 5a (eval harness) ✅ → §2 (unified judge) ✅ shipped behind flag
    + 5b ✅ (measure the savings). **← next: bake §2 on, flip its default, then
    delete the legacy path.**
-4. **Phase 3:** remaining §4 features as appetite dictates — 4a (fork) is the
-   most distinctive; 4c/4d are nice-to-haves, cut first if time is short.
+4. **Phase 3:** remaining §4 features as appetite dictates — 4a (fork) ✅ shipped;
+   4c/4d are nice-to-haves, cut first if time is short.
 
 ## Decisions (reviewed 2026-06-11)
 

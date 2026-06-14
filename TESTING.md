@@ -47,7 +47,8 @@ Cases to cover:
 
 ### 3. Component + hook tests (RTL + MSW) — 🚧 bootstrapped (2026-06-14)
 
-Harness landed on `feature/rewind-fork`: `@testing-library/react` was already
+Harness landed via `feature/rewind-fork` (now merged to `main`):
+`@testing-library/react` was already
 present; **`msw` added** (dev dep; `msw: false` in `pnpm-workspace.yaml`
 `allowBuilds` — its postinstall only generates the browser worker, unused by the
 node `setupServer`). Shared server in `frontend/src/test/server.ts`, wired into
