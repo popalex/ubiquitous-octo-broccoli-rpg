@@ -76,6 +76,15 @@ class Session(TimestampMixin, Base):
     world_state_enabled: Mapped[bool | None] = mapped_column(nullable=True)
     quests_enabled: Mapped[bool | None] = mapped_column(nullable=True)
 
+    # Rewind & fork (§4a): set on a session created by forking another at a
+    # given turn. NULL parent = an original chronicle. The parent is never
+    # mutated (fork-only, no destructive rewind). FK is SET NULL so deleting a
+    # parent orphans its forks rather than cascade-deleting them.
+    parent_session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    forked_at_turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     character_card: Mapped[CharacterCard] = relationship(back_populates="sessions")
     world_state: Mapped[WorldState | None] = relationship(back_populates="sessions")
     turns: Mapped[list[Turn]] = relationship(back_populates="session", cascade="all, delete-orphan")
