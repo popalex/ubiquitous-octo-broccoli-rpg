@@ -332,14 +332,16 @@ async def fork_session(
             detail=f"at_turn {at_turn} exceeds the chronicle's {parent.turn_count} turns.",
         )
 
-    fork = await ForkService.fork_session(db, parent, at_turn, title=payload.title)
+    new_fork = await ForkService.fork_session(db, parent, at_turn, title=payload.title)
 
     # Re-load with relationships for the response (character/world names).
     fork = await db.scalar(
         select(ChatSession)
-        .where(ChatSession.id == fork.id)
+        .where(ChatSession.id == new_fork.id)
         .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
     )
+    if fork is None:  # just-committed row; defensive for the type checker
+        raise HTTPException(status_code=500, detail="Fork created but could not be reloaded.")
     settings = get_settings()
     return SessionDetailResponse(
         id=fork.id,
