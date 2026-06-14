@@ -2,7 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 
 import { api } from "../api";
 import { withUiSpan } from "../telemetry";
-import type { CharacterLoadPayload } from "../types";
+import type { CharacterLoadPayload, SessionDetail } from "../types";
 
 type CharacterLoadResult = {
   character_card_id: string;
@@ -55,6 +55,32 @@ export function useStartSession() {
         "ui.new_chronicle",
         { "rpg.character_card_id": input.character_card_id, "rpg.gm_enabled": input.gm_enabled ?? "inherit" },
         () => api<SessionInitResult>("/session/init", { method: "POST", body: JSON.stringify(input) }),
+      ),
+  });
+}
+
+export type SessionForkInput = {
+  sessionId: string;
+  // Inclusive turn index to fork at; omit to fork the whole chronicle.
+  atTurn?: number;
+  title?: string;
+};
+
+/**
+ * POST /session/{id}/fork — branches a new, independent chronicle from a turn.
+ * The parent is never modified (fork-only). Returns the new session's detail.
+ */
+export function useForkSession() {
+  return useMutation({
+    mutationFn: ({ sessionId, atTurn, title }: SessionForkInput) =>
+      withUiSpan(
+        "ui.fork_chronicle",
+        { "rpg.session_id": sessionId, "rpg.fork.at_turn": atTurn ?? "all" },
+        () =>
+          api<SessionDetail>(`/session/${sessionId}/fork`, {
+            method: "POST",
+            body: JSON.stringify({ at_turn: atTurn ?? null, title: title ?? null }),
+          }),
       ),
   });
 }

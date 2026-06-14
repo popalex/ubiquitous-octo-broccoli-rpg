@@ -109,6 +109,18 @@ export function ChronicleHub() {
                     {c.gm_enabled && <span className="badge badge-gm">GM</span>}
                     {c.world_state_enabled && <span className="badge badge-gm">◈ Ledger</span>}
                     {c.quests_enabled && <span className="badge badge-gm">❖ Quests</span>}
+                    {c.parent_session_id && (
+                      <button
+                        className="badge badge-fork"
+                        title={`Forked at turn ${c.forked_at_turn ?? "?"} — open the parent chronicle`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/chronicle/${c.parent_session_id}`);
+                        }}
+                      >
+                        ⑂ Fork @ {c.forked_at_turn ?? "?"}
+                      </button>
+                    )}
                     <span className="badge badge-turns">{c.turn_count} turns</span>
                   </div>
                 </div>

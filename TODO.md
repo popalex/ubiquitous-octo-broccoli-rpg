@@ -122,16 +122,17 @@ mutating already-committed `Turn` rows (persist happens before post-turn).
 
 In rough value order; each is independently shippable.
 
-### 4a. Rewind & fork — 🚧 backend shipped (2026-06-14, `feature/rewind-fork`)
-Backend landed: `sessions.parent_session_id` + `forked_at_turn` columns
-(migration `b1c2d3e4f5a6`), `ForkService` (`app/services/fork.py`) doing a
-*full-fidelity* copy (turns ≤ N, derived facts/summaries, relationships, the
-ledger version current at N → new version 1, quests created ≤ N, with turn-id
-remapping; embeddings copied verbatim), `POST /session/{id}/fork?at_turn=N`
-(omit `at_turn` to fork the whole chronicle), lineage fields on session
-list/detail responses, `rpg.session.forks` metric + Grafana panel, and
-`tests/test_fork.py` (7 tests). **Frontend pending:** "fork from here" on a turn
-in the chronicle view + forks listed in `ChronicleHub` with a parent link.
+### 4a. Rewind & fork — ✅ DONE (2026-06-14, `feature/rewind-fork`)
+Backend: `sessions.parent_session_id` + `forked_at_turn` columns (migration
+`b1c2d3e4f5a6`), `ForkService` (`app/services/fork.py`) doing a *full-fidelity*
+copy (turns ≤ N, derived facts/summaries, relationships, the ledger version
+current at N → new version 1, quests created ≤ N, with turn-id remapping;
+embeddings copied verbatim), `POST /session/{id}/fork?at_turn=N` (omit `at_turn`
+to fork the whole chronicle), lineage fields on session list/detail responses,
+`rpg.session.forks` metric + Grafana panel, and `tests/test_fork.py` (7 tests).
+Frontend: hover "⑂ Fork from here" on each persisted turn (`ChatPanel` →
+`useForkSession`, navigates to the new chronicle) and a "⑂ Fork @ N" badge on
+forked chronicles in `ChronicleHub` linking to the parent.
 
 Every `Turn` is persisted and the ledger is versioned — the data model already
 supports time travel.
