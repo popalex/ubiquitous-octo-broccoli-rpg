@@ -23,6 +23,9 @@ export type ChronicleListItem = {
   // Resolved per-session feature flags (session override → global).
   world_state_enabled: boolean;
   quests_enabled: boolean;
+  // Fork lineage: null parent = an original chronicle.
+  parent_session_id: string | null;
+  forked_at_turn: number | null;
 };
 
 export type SessionDetail = {
@@ -42,6 +45,9 @@ export type SessionDetail = {
   // Resolved per-session feature flags (session override → global).
   world_state_enabled: boolean;
   quests_enabled: boolean;
+  // Fork lineage: null parent = an original chronicle.
+  parent_session_id: string | null;
+  forked_at_turn: number | null;
 };
 
 export type TurnRecord = {

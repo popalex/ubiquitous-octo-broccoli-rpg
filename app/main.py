@@ -49,6 +49,7 @@ from app.schemas import (
     QuestResponse,
     RelationshipStateResponse,
     SessionDetailResponse,
+    SessionForkRequest,
     SessionInitRequest,
     SessionInitResponse,
     SessionListItem,
@@ -59,6 +60,7 @@ from app.schemas import (
     WorldStateResponse,
 )
 from app.services.features import quests_on, world_state_on
+from app.services.fork import ForkService
 from app.services.orchestrator import get_orchestrator
 from app.services.quests import TERMINAL_STATUSES, QuestService
 from app.telemetry import setup_telemetry
@@ -252,6 +254,8 @@ async def list_sessions(db: AsyncSession = Depends(get_db)) -> SessionListRespon
                 summary=summary,
                 world_state_enabled=world_state_on(s, settings),
                 quests_enabled=quests_on(s, settings),
+                parent_session_id=s.parent_session_id,
+                forked_at_turn=s.forked_at_turn,
             )
         )
     return SessionListResponse(sessions=items)
@@ -282,6 +286,8 @@ async def get_session(session_id: str, db: AsyncSession = Depends(get_db)) -> Se
         time_of_day=session.time_of_day,
         world_state_enabled=world_state_on(session, get_settings()),
         quests_enabled=quests_on(session, get_settings()),
+        parent_session_id=session.parent_session_id,
+        forked_at_turn=session.forked_at_turn,
     )
 
 
@@ -301,6 +307,61 @@ async def delete_session(session_id: str, db: AsyncSession = Depends(get_db)) ->
         raise HTTPException(status_code=404, detail="Session not found.")
     await db.delete(session)
     await db.commit()
+
+
+@app.post("/session/{session_id}/fork", response_model=SessionDetailResponse, status_code=201)
+async def fork_session(
+    session_id: str,
+    payload: SessionForkRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> SessionDetailResponse:
+    """Fork a chronicle into a new, independent one containing state up to and
+    including ``at_turn`` (default: the whole chronicle). The parent is never
+    modified — fork-only, no destructive rewind (TODO §4a)."""
+    parent = await db.scalar(select(ChatSession).where(ChatSession.id == session_id))
+    if parent is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    payload = payload or SessionForkRequest()
+    at_turn = payload.at_turn if payload.at_turn is not None else parent.turn_count
+    if at_turn < 0:
+        raise HTTPException(status_code=422, detail="at_turn must be non-negative.")
+    if at_turn > parent.turn_count:
+        raise HTTPException(
+            status_code=422,
+            detail=f"at_turn {at_turn} exceeds the chronicle's {parent.turn_count} turns.",
+        )
+
+    new_fork = await ForkService.fork_session(db, parent, at_turn, title=payload.title)
+
+    # Re-load with relationships for the response (character/world names).
+    fork = await db.scalar(
+        select(ChatSession)
+        .where(ChatSession.id == new_fork.id)
+        .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
+    )
+    if fork is None:  # just-committed row; defensive for the type checker
+        raise HTTPException(status_code=500, detail="Fork created but could not be reloaded.")
+    settings = get_settings()
+    return SessionDetailResponse(
+        id=fork.id,
+        title=fork.title,
+        status=fork.status,
+        gm_enabled=fork.gm_enabled,
+        turn_count=fork.turn_count,
+        created_at=fork.created_at,
+        updated_at=fork.updated_at,
+        character_card_id=fork.character_card_id,
+        world_state_id=fork.world_state_id,
+        character_name=fork.character_card.name if fork.character_card else None,
+        world_name=fork.world_state.name if fork.world_state else None,
+        current_location=fork.current_location,
+        time_of_day=fork.time_of_day,
+        world_state_enabled=world_state_on(fork, settings),
+        quests_enabled=quests_on(fork, settings),
+        parent_session_id=fork.parent_session_id,
+        forked_at_turn=fork.forked_at_turn,
+    )
 
 
 @app.post("/chat", response_model=ChatResponse)

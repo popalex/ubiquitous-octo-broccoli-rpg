@@ -145,10 +145,19 @@ class SessionListItem(BaseModel):
     # Resolved (override → global), not the raw nullable override.
     world_state_enabled: bool
     quests_enabled: bool
+    # Fork lineage (§4a): NULL parent = an original chronicle.
+    parent_session_id: str | None = None
+    forked_at_turn: int | None = None
 
 
 class SessionListResponse(BaseModel):
     sessions: list[SessionListItem]
+
+
+class SessionForkRequest(BaseModel):
+    # Inclusive turn index to fork at; omit to fork the whole chronicle.
+    at_turn: int | None = None
+    title: str | None = None
 
 
 class SessionDetailResponse(BaseModel):
@@ -168,6 +177,9 @@ class SessionDetailResponse(BaseModel):
     # Resolved (override → global), not the raw nullable override.
     world_state_enabled: bool
     quests_enabled: bool
+    # Fork lineage (§4a): NULL parent = an original chronicle.
+    parent_session_id: str | None = None
+    forked_at_turn: int | None = None
 
 
 class QuestStageSchema(BaseModel):

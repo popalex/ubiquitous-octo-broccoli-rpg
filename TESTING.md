@@ -45,15 +45,29 @@ Cases to cover:
   finished reply**
 - abort/disconnect mid-stream
 
-### 3. Component + hook tests (RTL + MSW)
+### 3. Component + hook tests (RTL + MSW) — 🚧 bootstrapped (2026-06-14)
 
-Add `@testing-library/react` and `msw` (Vitest is already wired, setup in
-`frontend/src/test/setup.ts`). Targets in value order:
+Harness landed on `feature/rewind-fork`: `@testing-library/react` was already
+present; **`msw` added** (dev dep; `msw: false` in `pnpm-workspace.yaml`
+`allowBuilds` — its postinstall only generates the browser worker, unused by the
+node `setupServer`). Shared server in `frontend/src/test/server.ts`, wired into
+`frontend/src/test/setup.ts` (listen with per-test `resetHandlers`; only
+*unhandled* `/api` calls error). First coverage shipped for the fork UI:
+`ChatPanel.test.tsx` (fork-from-here button: visibility on persisted vs. live
+turns, click payload, busy/disabled state) and `ChronicleHub.test.tsx` (fork
+badge render + parent-link navigation via MSW-mocked `/api/sessions`).
+
+Note: cards in `ChronicleHub` are themselves `role="button"`, so their
+accessible name *contains* inner controls — query inner buttons by an exact
+`aria-label`, not a substring/regex, to disambiguate.
+
+Remaining targets in value order:
 
 1. `QuestJournal.tsx` — newest, most conditional rendering (stages, statuses,
    patch interactions against `/session/{id}/quests`).
-2. `ChronicleHub.tsx` — session list, create/delete flows.
-3. `ChatPanel.tsx` — message rendering, busy states, streamed-reply display.
+2. `ChronicleHub.tsx` — session list, create/delete flows (fork badge done).
+3. `ChatPanel.tsx` — message rendering, busy states, streamed-reply display
+   (fork button done).
 4. `useSession.ts` / `useSessionMutations.ts` — TanStack Query cache behavior;
    invalidation after mutations is classic regression territory.
 

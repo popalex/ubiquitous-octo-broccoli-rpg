@@ -73,6 +73,7 @@ continuity_revisions = _meter.create_counter(
 post_turn_judge_calls = _meter.create_counter(
     "rpg.post_turn.judge_calls", description="Unified post-turn judge calls (one per turn when enabled)"
 )
+session_forks = _meter.create_counter("rpg.session.forks", description="Chronicle forks created (rewind & fork)")
 
 
 def messages_to_json(messages: Sequence) -> str:
