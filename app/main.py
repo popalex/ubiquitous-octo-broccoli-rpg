@@ -386,6 +386,9 @@ async def get_session_memory(session_id: str, db: AsyncSession = Depends(get_db)
         # RuntimeError: get_orchestrator() when provider construction fails.
         except (RuntimeError, ProviderError, SQLAlchemyError):
             logger.exception("backfill summary failed for session=%s", session_id)
+            # A failed commit leaves the session in a pending-rollback state; roll
+            # back so the reads below still succeed and return existing memory.
+            await db.rollback()
 
     facts = (
         await db.scalars(
