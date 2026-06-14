@@ -1,4 +1,17 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  Check,
+  Circle,
+  CircleHelp,
+  Diamond,
+  Flame,
+  type LucideIcon,
+  Scale,
+  Sparkle,
+  Sparkles,
+  TriangleAlert,
+  Users,
+} from "lucide-react";
 
 import { api } from "../api";
 import { sessionKeys } from "../hooks/useSession";
@@ -12,13 +25,24 @@ type Props = {
 
 const OPEN_STATUSES = ["rumored", "offered", "active", "escalating"];
 
-const TYPE_GLYPHS: Record<string, string> = {
-  mystery: "🜁 mystery",
-  promise: "✦ promise",
-  social: "✧ social arc",
-  dilemma: "⚖ dilemma",
-  threat: "☄ threat",
+const TYPE_META: Record<string, { icon: LucideIcon; label: string }> = {
+  mystery: { icon: CircleHelp, label: "mystery" },
+  promise: { icon: Sparkles, label: "promise" },
+  social: { icon: Users, label: "social arc" },
+  dilemma: { icon: Scale, label: "dilemma" },
+  threat: { icon: Flame, label: "threat" },
 };
+
+function QuestType({ type }: { type: string }) {
+  const meta = TYPE_META[type];
+  if (!meta) return <span>{type}</span>;
+  const Icon = meta.icon;
+  return (
+    <span>
+      <Icon className="inline-icon" /> {meta.label}
+    </span>
+  );
+}
 
 export function QuestJournal({ sessionId, quests }: Props) {
   const queryClient = useQueryClient();
@@ -49,7 +73,9 @@ export function QuestJournal({ sessionId, quests }: Props) {
         <div className="stack">
           {active.length > 0 && (
             <div className="subpanel">
-              <h3>✦ Active Arcs</h3>
+              <h3>
+                <Sparkles className="inline-icon" /> Active Arcs
+              </h3>
               {active.map((q) => (
                 <QuestCard key={q.id} quest={q} onAbandon={() => abandon.mutate(q.id)} />
               ))}
@@ -58,7 +84,9 @@ export function QuestJournal({ sessionId, quests }: Props) {
 
           {offered.length > 0 && (
             <div className="subpanel">
-              <h3>✧ Whispers &amp; Offers</h3>
+              <h3>
+                <Sparkle className="inline-icon" /> Whispers &amp; Offers
+              </h3>
               {offered.map((q) => (
                 <QuestCard key={q.id} quest={q} />
               ))}
@@ -68,12 +96,14 @@ export function QuestJournal({ sessionId, quests }: Props) {
           {concluded.length > 0 && (
             <details className="subpanel concluded-arcs">
               <summary className="subpanel-summary">
-                <h3>♦ Concluded ({concluded.length})</h3>
+                <h3>
+                  <Diamond className="inline-icon" /> Concluded ({concluded.length})
+                </h3>
               </summary>
               {concluded.map((q) => (
                 <div key={q.id} className="memory-card">
                   <div className="memory-topline">
-                    <span>{TYPE_GLYPHS[q.quest_type] ?? q.quest_type}</span>
+                    <QuestType type={q.quest_type} />
                     <span>{q.status}</span>
                   </div>
                   <p>
@@ -95,8 +125,16 @@ function QuestCard({ quest, onAbandon }: { quest: Quest; onAbandon?: () => void 
   return (
     <div className={escalating ? "issue-card" : "memory-card"}>
       <div className="memory-topline">
-        <span>{TYPE_GLYPHS[quest.quest_type] ?? quest.quest_type}</span>
-        <span>{escalating ? "⚠ escalating" : quest.status}</span>
+        <QuestType type={quest.quest_type} />
+        <span>
+          {escalating ? (
+            <>
+              <TriangleAlert className="inline-icon" /> escalating
+            </>
+          ) : (
+            quest.status
+          )}
+        </span>
       </div>
       <p>
         <strong>{quest.title}</strong> — {quest.description}
@@ -110,7 +148,12 @@ function QuestCard({ quest, onAbandon }: { quest: Quest; onAbandon?: () => void 
         <ul className="quest-stages">
           {quest.stages.map((s) => (
             <li key={s.id} className={s.done ? "muted" : undefined}>
-              {s.done ? "✓" : "•"} {s.description}
+              {s.done ? (
+                <Check className="inline-icon" />
+              ) : (
+                <Circle className="inline-icon" />
+              )}{" "}
+              {s.description}
             </li>
           ))}
         </ul>

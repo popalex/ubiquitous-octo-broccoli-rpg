@@ -34,9 +34,9 @@ describe("CodexPanel", () => {
     // Location
     expect(screen.getByText("The Sunken Library")).toBeInTheDocument();
     // Living vs dead split
-    expect(screen.getByText("✧ Dramatis Personae")).toBeInTheDocument();
+    expect(screen.getByText("Dramatis Personae")).toBeInTheDocument();
     expect(screen.getByText(/Maren/)).toBeInTheDocument();
-    expect(screen.getByText("☠ The Fallen")).toBeInTheDocument();
+    expect(screen.getByText("The Fallen")).toBeInTheDocument();
     expect(screen.getByText(/Kael — dead/)).toBeInTheDocument();
     // Inventory with and without quantities
     expect(screen.getByText(/storm lantern ×1, rope/)).toBeInTheDocument();

@@ -1,3 +1,5 @@
+import { MapPin, Package, ScrollText, Skull, Users, Waypoints } from "lucide-react";
+
 import type { WorldStateLedger } from "../types";
 
 type Props = {
@@ -37,7 +39,9 @@ export function CodexPanel({ worldState }: Props) {
         <div className="stack">
           {hasLocation && (
             <div className="subpanel">
-              <h3>✦ Location</h3>
+              <h3>
+                <MapPin className="inline-icon" /> Location
+              </h3>
               <div className="memory-card">
                 <p>
                   {location?.name ? <strong>{location.name}</strong> : null}
@@ -50,7 +54,9 @@ export function CodexPanel({ worldState }: Props) {
           )}
           {dead.length > 0 && (
             <div className="subpanel">
-              <h3>☠ The Fallen</h3>
+              <h3>
+                <Skull className="inline-icon" /> The Fallen
+              </h3>
               {dead.map((e) => (
                 <div key={e.id} className="issue-card">
                   {e.name} — dead
@@ -61,7 +67,9 @@ export function CodexPanel({ worldState }: Props) {
 
           {living.length > 0 && (
             <div className="subpanel">
-              <h3>✧ Dramatis Personae</h3>
+              <h3>
+                <Users className="inline-icon" /> Dramatis Personae
+              </h3>
               {living.map((e) => (
                 <div key={e.id} className="memory-card">
                   <div className="memory-topline">
@@ -80,7 +88,9 @@ export function CodexPanel({ worldState }: Props) {
 
           {inventory.length > 0 && (
             <div className="subpanel">
-              <h3>✦ Inventory</h3>
+              <h3>
+                <Package className="inline-icon" /> Inventory
+              </h3>
               <div className="memory-card">
                 <p>
                   {inventory
@@ -93,7 +103,9 @@ export function CodexPanel({ worldState }: Props) {
 
           {openThreads.length > 0 && (
             <div className="subpanel">
-              <h3>✧ Open Threads</h3>
+              <h3>
+                <Waypoints className="inline-icon" /> Open Threads
+              </h3>
               {openThreads.map((t) => (
                 <div key={t.id} className="memory-card">
                   <p>{t.summary}</p>
@@ -104,7 +116,9 @@ export function CodexPanel({ worldState }: Props) {
 
           {facts.length > 0 && (
             <div className="subpanel">
-              <h3>✦ Canon Facts</h3>
+              <h3>
+                <ScrollText className="inline-icon" /> Canon Facts
+              </h3>
               {facts.map((fact) => (
                 <div key={fact} className="memory-card">
                   <p>{fact}</p>
