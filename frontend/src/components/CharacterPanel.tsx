@@ -1,3 +1,4 @@
+import { BookOpen, Sparkle, Sparkles, Swords, Target, Zap } from "lucide-react";
 import type { FormEvent } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
@@ -221,7 +222,9 @@ export function CharacterPanel({
               checked={gmEnabled}
               onChange={(e) => setGmEnabled(e.target.checked)}
             />
-            <span className="toggle-label">✧ Game Master Mode</span>
+            <span className="toggle-label">
+              <Sparkle className="inline-icon" /> Game Master Mode
+            </span>
             <span className="toggle-hint">
               {gmEnabled ? "World narration & events active" : "Character-only mode"}
             </span>
@@ -233,7 +236,9 @@ export function CharacterPanel({
               checked={worldStateEnabled}
               onChange={(e) => setWorldStateEnabled(e.target.checked)}
             />
-            <span className="toggle-label">◈ World Ledger</span>
+            <span className="toggle-label">
+              <BookOpen className="inline-icon" /> World Ledger
+            </span>
             <span className="toggle-hint">
               {worldStateEnabled ? "Canon tracked turn by turn" : "No structured canon"}
             </span>
@@ -245,7 +250,9 @@ export function CharacterPanel({
               checked={questsEnabled}
               onChange={(e) => setQuestsEnabled(e.target.checked)}
             />
-            <span className="toggle-label">❖ Quests</span>
+            <span className="toggle-label">
+              <Target className="inline-icon" /> Quests
+            </span>
             <span className="toggle-hint">
               {questsEnabled ? "Promises & threats become quests" : "No quest journal"}
             </span>
@@ -284,13 +291,13 @@ export function CharacterPanel({
 
         <div className="button-row">
           <Button type="submit" disabled={isBusy}>
-            ⚔ Summon Character
+            <Swords className="inline-icon" /> Summon Character
           </Button>
           <Button variant="secondary" type="button" disabled={isBusy} onClick={onStartSession}>
-            ✦ Begin Chronicle
+            <Sparkles className="inline-icon" /> Begin Chronicle
           </Button>
           <Button variant="secondary" type="button" onClick={onLoadOpening}>
-            ↯ Load Opening
+            <Zap className="inline-icon" /> Load Opening
           </Button>
         </div>
       </form>

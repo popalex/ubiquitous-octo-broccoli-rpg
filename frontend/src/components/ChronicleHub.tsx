@@ -1,3 +1,13 @@
+import {
+  ArrowRight,
+  BookOpen,
+  GitFork,
+  Globe,
+  Scroll,
+  Sparkles,
+  Swords,
+  Target,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -65,14 +75,16 @@ export function ChronicleHub() {
       <header className="masthead hub-masthead">
         <div>
           <p className="eyebrow">Arcane Chronicle</p>
-          <h1>✦ The Chronicle Vault</h1>
+          <h1>
+            <Sparkles className="inline-icon" /> The Chronicle Vault
+          </h1>
           <p className="lede">
             Each chronicle is a living record — choose one to continue your story, or open a new tome.
           </p>
         </div>
         {chronicles.length > 0 && (
           <Button className="hub-new-btn" onClick={() => navigate("/chronicle/new")}>
-            <span aria-hidden="true">✦</span> Open New Chronicle
+            <Sparkles className="inline-icon" /> Open New Chronicle
           </Button>
         )}
       </header>
@@ -84,11 +96,11 @@ export function ChronicleHub() {
 
         {!loading && !error && chronicles.length === 0 && (
           <div className="hub-empty">
-            <div className="hub-empty-icon">📜</div>
+            <Scroll className="hub-empty-icon" size={56} strokeWidth={1.5} aria-hidden="true" />
             <h2>The vault is empty</h2>
             <p>No chronicles have been written yet. Begin a new adventure.</p>
             <Button className="hub-empty-btn" onClick={() => navigate("/chronicle/new")}>
-              <span aria-hidden="true">✦</span> Open New Chronicle
+              <Sparkles className="inline-icon" /> Open New Chronicle
             </Button>
           </div>
         )}
@@ -107,8 +119,16 @@ export function ChronicleHub() {
                 <div className="chronicle-card-header">
                   <div className="chronicle-card-meta">
                     {c.gm_enabled && <span className="badge badge-gm">GM</span>}
-                    {c.world_state_enabled && <span className="badge badge-gm">◈ Ledger</span>}
-                    {c.quests_enabled && <span className="badge badge-gm">❖ Quests</span>}
+                    {c.world_state_enabled && (
+                      <span className="badge badge-gm">
+                        <BookOpen className="inline-icon" /> Ledger
+                      </span>
+                    )}
+                    {c.quests_enabled && (
+                      <span className="badge badge-gm">
+                        <Target className="inline-icon" /> Quests
+                      </span>
+                    )}
                     {c.parent_session_id && (
                       <button
                         className="badge badge-fork"
@@ -119,7 +139,7 @@ export function ChronicleHub() {
                           navigate(`/chronicle/${c.parent_session_id}`);
                         }}
                       >
-                        ⑂ Fork @ {c.forked_at_turn ?? "?"}
+                        <GitFork className="inline-icon" /> Fork @ {c.forked_at_turn ?? "?"}
                       </button>
                     )}
                     <span className="badge badge-turns">{c.turn_count} turns</span>
@@ -131,12 +151,12 @@ export function ChronicleHub() {
                 <div className="chronicle-card-subjects">
                   {c.character_name && (
                     <span className="subject-tag character-tag">
-                      <span className="subject-icon">⚔</span> {c.character_name}
+                      <Swords className="inline-icon subject-icon" /> {c.character_name}
                     </span>
                   )}
                   {c.world_name && (
                     <span className="subject-tag world-tag">
-                      <span className="subject-icon">🌍</span> {c.world_name}
+                      <Globe className="inline-icon subject-icon" /> {c.world_name}
                     </span>
                   )}
                 </div>
@@ -157,7 +177,9 @@ export function ChronicleHub() {
                     >
                       {deleting === c.id ? "…" : "Delete"}
                     </button>
-                    <span className="chronicle-resume">Continue →</span>
+                    <span className="chronicle-resume">
+                      Continue <ArrowRight className="inline-icon" />
+                    </span>
                   </div>
                 </footer>
               </article>

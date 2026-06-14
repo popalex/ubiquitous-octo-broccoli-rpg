@@ -1,3 +1,4 @@
+import { Sparkle } from "lucide-react";
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -145,7 +146,13 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
         <div className="summary-item">
           <span className="meta-label">Mode</span>
           <strong className={gmEnabled ? "gm-badge" : undefined}>
-            {gmEnabled ? "✧ Game Master" : "Standard"}
+            {gmEnabled ? (
+              <>
+                <Sparkle className="inline-icon" /> Game Master
+              </>
+            ) : (
+              "Standard"
+            )}
           </strong>
         </div>
         <div className="summary-item">

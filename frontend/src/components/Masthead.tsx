@@ -1,3 +1,5 @@
+import { Sparkles } from "lucide-react";
+
 import type { Health } from "../types";
 
 type Props = {
@@ -19,7 +21,8 @@ export function Masthead({ phase, health, onHome }: Props) {
         </p>
         <h1>
           <button type="button" className="title-home" onClick={onHome} title={`Return to the Vault — ${phase === "codex" ? "Character Codex" : "Live Chronicle"}`}>
-            {phase === "codex" ? "✦ Character Codex" : "✦ Live Chronicle"}
+            <Sparkles className="inline-icon" />{" "}
+            {phase === "codex" ? "Character Codex" : "Live Chronicle"}
           </button>
         </h1>
         <p className="lede">

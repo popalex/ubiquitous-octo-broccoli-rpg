@@ -1,3 +1,5 @@
+import { Scroll, Sparkle, Sparkles, TriangleAlert } from "lucide-react";
+
 import type { RetrievedMemory, SessionMemory } from "../types";
 
 type Props = {
@@ -16,7 +18,9 @@ export function MemoryPanel({ retrievedMemories, continuityIssues, memory }: Pro
 
       <div className="stack" aria-live="polite">
         <div className="subpanel">
-          <h3>✧ Retrieved Echoes</h3>
+          <h3>
+            <Sparkle className="inline-icon" /> Retrieved Echoes
+          </h3>
           {retrievedMemories.length === 0 ? (
             <p className="muted">No memories stirred this turn...</p>
           ) : (
@@ -33,7 +37,9 @@ export function MemoryPanel({ retrievedMemories, continuityIssues, memory }: Pro
         </div>
 
         <div className="subpanel">
-          <h3>⚠ Continuity Rifts</h3>
+          <h3>
+            <TriangleAlert className="inline-icon" /> Continuity Rifts
+          </h3>
           {continuityIssues.length === 0 ? (
             <p className="muted">The timeline flows true...</p>
           ) : (
@@ -46,7 +52,9 @@ export function MemoryPanel({ retrievedMemories, continuityIssues, memory }: Pro
         </div>
 
         <div className="subpanel">
-          <h3>✦ Eternal Truths</h3>
+          <h3>
+            <Sparkles className="inline-icon" /> Eternal Truths
+          </h3>
           {memory?.facts.length ? (
             memory.facts.slice(0, 8).map((fact) => (
               <div key={fact.id} className="memory-card">
@@ -63,7 +71,9 @@ export function MemoryPanel({ retrievedMemories, continuityIssues, memory }: Pro
         </div>
 
         <div className="subpanel">
-          <h3>✧ Episode Scrolls</h3>
+          <h3>
+            <Scroll className="inline-icon" /> Episode Scrolls
+          </h3>
           {memory?.episode_summaries.length ? (
             memory.episode_summaries.slice(0, 4).map((summary) => (
               <div key={summary.id} className="memory-card">

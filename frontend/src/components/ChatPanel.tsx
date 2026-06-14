@@ -1,3 +1,4 @@
+import { GitFork, LoaderCircle, Send, Sparkle } from "lucide-react";
 import { useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { ChatMessage } from "../types";
@@ -76,11 +77,15 @@ export function ChatPanel({
                 }`}
               >
                 <div className="message-role">
-                  {message.role === "user"
-                    ? "You"
-                    : message.role === "narrator"
-                      ? "✧ Game Master"
-                      : characterName}
+                  {message.role === "user" ? (
+                    "You"
+                  ) : message.role === "narrator" ? (
+                    <>
+                      <Sparkle className="inline-icon" /> Game Master
+                    </>
+                  ) : (
+                    characterName
+                  )}
                   {onForkFromTurn && turnIndex !== null && (
                     <button
                       type="button"
@@ -89,7 +94,8 @@ export function ChatPanel({
                       disabled={forkingTurn != null}
                       onClick={() => onForkFromTurn(turnIndex)}
                     >
-                      {forkingTurn === turnIndex ? "⑂ Forking…" : "⑂ Fork from here"}
+                      <GitFork className="inline-icon" />{" "}
+                      {forkingTurn === turnIndex ? "Forking…" : "Fork from here"}
                     </button>
                   )}
                 </div>
@@ -118,7 +124,15 @@ export function ChatPanel({
         <div className="composer-actions">
           <div className="status-note">{statusText}</div>
           <Button type="button" disabled={isBusy || !sessionId} onClick={handleSend}>
-            {isBusy ? "✦ Weaving..." : "▶ Send Turn"}
+            {isBusy ? (
+              <>
+                <LoaderCircle className="inline-icon icon-spin" /> Weaving...
+              </>
+            ) : (
+              <>
+                <Send className="inline-icon" /> Send Turn
+              </>
+            )}
           </Button>
         </div>
       </div>

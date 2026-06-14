@@ -24,6 +24,12 @@ services:
       VITE_API_PROXY_TARGET: http://api:8000
       # Vite proxies the browser's /otel telemetry to the collector (container DNS name).
       VITE_OTEL_PROXY_TARGET: http://otel-lgtm:4318
+      # node_modules is an anonymous volume that persists across runs; when deps
+      # change (lockfile updated via the host mount) pnpm's pre-run deps check
+      # must purge & reinstall it. With no TTY it aborts (ERR_PNPM_ABORTED_REMOVE_
+      # MODULES_DIR_NO_TTY) — .npmrc's confirm-modules-purge isn't honored on that
+      # path in pnpm 11, so CI=true (read early & unconditionally) lets it proceed.
+      CI: "true"
     volumes:
       - ./frontend:/app
       - /app/node_modules
