@@ -73,20 +73,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     if settings.dev_mode:
         logger.info(
-            "+ DEV MODE ENABLED - model: %s, timeout: %.0fs, world_state: %s, quests: %s",
+            "+ DEV MODE ENABLED - model: %s, timeout: %.0fs, world_state: %s, quests: %s, post_turn_judge: %s",
             settings.dev_model_name,
             settings.request_timeout_seconds,
             "on" if settings.world_state_enabled else "off",
             "on" if settings.quests_enabled else "off",
+            "on" if settings.post_turn_judge_enabled else "off",
         )
     else:
         logger.info(
-            "+ Production mode - Actor: %s, Memory: %s, GM: %s, world_state: %s, quests: %s",
+            "+ Production mode - Actor: %s, Memory: %s, GM: %s, world_state: %s, quests: %s, post_turn_judge: %s",
             settings.actor_model_name,
             settings.memory_model_name,
             settings.gm_model_name,
             "on" if settings.world_state_enabled else "off",
             "on" if settings.quests_enabled else "off",
+            "on" if settings.post_turn_judge_enabled else "off",
         )
 
     yield

@@ -9,9 +9,12 @@ services:
     # ── dev: default every toggle on (all ship dark in prod). These are the
     # values the UI seeds new-chronicle toggles from, via /health. ──────────
     environment:
+      # Dev: single small model to save RAM (base compose defaults DEV_MODE off).
+      DEV_MODE: ${DEV_MODE:-true}
       GM_ENABLED: ${GM_ENABLED:-true}
       WORLD_STATE_ENABLED: ${WORLD_STATE_ENABLED:-true}
       QUESTS_ENABLED: ${QUESTS_ENABLED:-true}
+      POST_TURN_JUDGE_ENABLED: ${POST_TURN_JUDGE_ENABLED:-true}
 
   frontend:
     # ── dev (Vite HMR) ──────────────────────────────────────
