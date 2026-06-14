@@ -13,6 +13,9 @@ type Props = {
   characterName: string;
   statusText: string;
   onSendChat: () => void;
+  // Fork a new chronicle from a persisted turn. Omitted while a fork is busy.
+  onForkFromTurn?: (turnIndex: number) => void;
+  forkingTurn?: number | null;
 };
 
 export function ChatPanel({
@@ -24,6 +27,8 @@ export function ChatPanel({
   characterName,
   statusText,
   onSendChat,
+  onForkFromTurn,
+  forkingTurn,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -54,25 +59,46 @@ export function ChatPanel({
             <span>Choose a character template, begin a chronicle, then speak your opening words</span>
           </EmptyState>
         ) : (
-          chatMessages.map((message) => (
-            <article
-              key={message.id}
-              className={`message message-${message.role}${
-                message.messageType ? ` message-type-${message.messageType}` : ""
-              }`}
-            >
-              <div className="message-role">
-                {message.role === "user"
-                  ? "You"
-                  : message.role === "narrator"
-                    ? "✧ Game Master"
-                    : characterName}
-              </div>
-              <div className="message-body">
-                <ReactMarkdown>{message.content}</ReactMarkdown>
-              </div>
-            </article>
-          ))
+          chatMessages.map((message) => {
+            // turnsToMessages sets a persisted turn's id to its turn_index;
+            // live (unsaved) messages get non-numeric ids, so only persisted
+            // turns are forkable until the chronicle is reloaded. Offer forking
+            // only on a response turn (assistant/narrator) — the end of an
+            // exchange — so a fork never stops on a user line still awaiting a
+            // reply. Forks are inclusive of the clicked turn.
+            const persistedIndex = /^\d+$/.test(message.id) ? Number(message.id) : null;
+            const turnIndex = message.role === "user" ? null : persistedIndex;
+            return (
+              <article
+                key={message.id}
+                className={`message message-${message.role}${
+                  message.messageType ? ` message-type-${message.messageType}` : ""
+                }`}
+              >
+                <div className="message-role">
+                  {message.role === "user"
+                    ? "You"
+                    : message.role === "narrator"
+                      ? "✧ Game Master"
+                      : characterName}
+                  {onForkFromTurn && turnIndex !== null && (
+                    <button
+                      type="button"
+                      className="message-fork-btn"
+                      title="Start a new chronicle branching from here — everything up to and including this point is carried over; the original is untouched"
+                      disabled={forkingTurn != null}
+                      onClick={() => onForkFromTurn(turnIndex)}
+                    >
+                      {forkingTurn === turnIndex ? "⑂ Forking…" : "⑂ Fork from here"}
+                    </button>
+                  )}
+                </div>
+                <div className="message-body">
+                  <ReactMarkdown>{message.content}</ReactMarkdown>
+                </div>
+              </article>
+            );
+          })
         )}
       </div>
 

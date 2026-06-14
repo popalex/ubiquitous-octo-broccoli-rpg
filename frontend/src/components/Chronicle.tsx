@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { sendChat } from "../chat";
 import {
@@ -10,6 +10,7 @@ import {
   useSessionTurns,
   useWorldState,
 } from "../hooks/useSession";
+import { useForkSession } from "../hooks/useSessionMutations";
 import { turnsToMessages } from "../turns";
 import type { ChatMessage, GMEvent, RetrievedMemory, SessionDetail, TurnRecord } from "../types";
 import { ChatPanel } from "./ChatPanel";
@@ -62,6 +63,7 @@ type ViewProps = {
 
 function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const starterPrompt = (location.state as { starter?: string } | null)?.starter ?? "";
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => turnsToMessages(initialTurns));
@@ -78,10 +80,28 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
   const worldState = useWorldState(sessionId);
   const quests = useSessionQuests(sessionId);
   const refreshMemory = useRefreshMemory();
+  const forkSession = useForkSession();
+  const [forkingTurn, setForkingTurn] = useState<number | null>(null);
 
   const gmEnabled = detail.gm_enabled;
   const currentLocation = detail.current_location || "";
   const timeOfDay = detail.time_of_day || "morning";
+
+  function handleForkFromTurn(turnIndex: number) {
+    if (forkingTurn != null) return;
+    if (!confirm(`Fork a new chronicle from turn ${turnIndex}? The original is left untouched.`)) return;
+    setForkingTurn(turnIndex);
+    forkSession.mutate(
+      { sessionId, atTurn: turnIndex },
+      {
+        onSuccess: (fork) => navigate(`/chronicle/${fork.id}`),
+        onError: (err) => {
+          alert(err instanceof Error ? err.message : "Failed to fork chronicle.");
+          setForkingTurn(null);
+        },
+      },
+    );
+  }
 
   function handleSendChat() {
     void sendChat({
@@ -147,6 +167,8 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
           characterName={detail.character_name || ""}
           statusText={statusText}
           onSendChat={handleSendChat}
+          onForkFromTurn={handleForkFromTurn}
+          forkingTurn={forkingTurn}
         />
         <div className="panel-stack">
           <CodexPanel worldState={worldState.data ?? null} />

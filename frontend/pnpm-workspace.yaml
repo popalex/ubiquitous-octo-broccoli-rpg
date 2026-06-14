@@ -1,3 +1,6 @@
 allowBuilds:
   '@swc/core': true
   esbuild: true
+  # msw's postinstall only generates the browser service worker; node tests
+  # (setupServer) don't need it, so skip the build script.
+  msw: false
