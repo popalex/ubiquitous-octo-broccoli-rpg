@@ -21,6 +21,7 @@ from app.prompts import (
     MEMORY_EXTRACT_PROMPT,
     QUEST_JUDGE_PROMPT,
     WORLD_STATE_EXTRACT_PROMPT,
+    build_post_turn_judge_prompt,
 )
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
 from evals.judge import judge
@@ -34,6 +35,7 @@ class Target(StrEnum):
     WORLD_STATE = "world_state"
     QUESTS = "quests"
     GM_NARRATION = "gm_narration"
+    POST_TURN_JUDGE = "post_turn_judge"
 
 
 # A structural check inspects the parsed output and returns (passed, detail).
@@ -112,6 +114,22 @@ def build_messages(target: Target, inputs: dict) -> list[ProviderMessage]:
         return [
             ProviderMessage(role="system", content=system_prompt),
             ProviderMessage(role="user", content=user_prompt),
+        ]
+    if target is Target.POST_TURN_JUDGE:
+        # Mirrors PostTurnJudgeService.judge_turn (app/services/post_turn_judge.py):
+        # one combined call over the enabled sections. The response nests under
+        # "world_delta" / "quest_delta".
+        world = inputs.get("world", True)
+        quests = inputs.get("quests", True)
+        parts: list[str] = []
+        if world:
+            parts.append(f"CURRENT LEDGER:\n{inputs.get('ledger_json', '{}')}")
+        if quests:
+            parts.append(f"OPEN QUESTS:\n{inputs.get('open_quests_json', '[]')}")
+        parts.append(f"LATEST EXCHANGE:\nPLAYER: {inputs['user_message']}\nRESPONSE: {inputs['gm_response']}")
+        return [
+            ProviderMessage(role="system", content=build_post_turn_judge_prompt(world=world, quests=quests)),
+            ProviderMessage(role="user", content="\n\n".join(parts)),
         ]
     raise ValueError(f"unknown eval target: {target}")
 

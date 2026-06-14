@@ -63,6 +63,70 @@ async def test_generate_narration_stream_yields_chunks(service: GameMasterServic
 
 
 # ---------------------------------------------------------------------------
+# narration soft cap (graceful length control)
+# ---------------------------------------------------------------------------
+
+
+def test_trim_to_sentence_noop_when_disabled_or_short() -> None:
+    from app.services.game_master import _trim_to_sentence
+
+    text = "One. Two. Three. " * 10
+    assert _trim_to_sentence(text, 0) == text  # disabled
+    assert _trim_to_sentence("Short and sweet.", 300) == "Short and sweet."  # under budget
+
+
+def test_trim_to_sentence_cuts_at_next_sentence_boundary() -> None:
+    from app.services.game_master import _trim_to_sentence
+
+    # soft cap of 5 tokens -> 20 chars; trims at the first sentence end past that.
+    text = "Alpha bravo charlie delta. Echo foxtrot golf hotel. India juliet."
+    result = _trim_to_sentence(text, soft_tokens=5)
+    assert result == "Alpha bravo charlie delta."
+    assert not result.endswith("delt")  # never mid-word
+
+
+def test_trim_to_sentence_backstops_run_on_without_punctuation() -> None:
+    from app.services.game_master import _trim_to_sentence
+
+    text = "word " * 100  # no sentence terminators at all
+    result = _trim_to_sentence(text, soft_tokens=5)
+    # falls back to the hard backstop (2x soft = 40 chars), still bounded.
+    assert len(result) <= 40
+
+
+class _WordStreamProvider(MockProvider):
+    """Yields a fixed text one word at a time to exercise the streaming soft cap."""
+
+    def __init__(self, text: str) -> None:
+        super().__init__()
+        self._words = text.split(" ")
+
+    async def generate_text_stream(self, messages, *, temperature, max_tokens):  # type: ignore[override]
+        for i, word in enumerate(self._words):
+            yield word if i == 0 else " " + word
+
+
+@pytest.mark.asyncio
+async def test_generate_narration_stream_stops_at_sentence_after_soft_cap() -> None:
+    text = "Alpha bravo charlie delta. Echo foxtrot golf hotel. India juliet kilo lima."
+    provider = _WordStreamProvider(text)
+    settings = make_test_settings(gm_narration_soft_limit_tokens=5)  # 20-char soft budget
+    service = GameMasterService(provider, settings)
+
+    collected = []
+    async for chunk in service.generate_narration_stream(
+        world_state=WorldStateFactory.build(),
+        recent_events="",
+        player_action="look",
+    ):
+        collected.append(chunk)
+
+    streamed = "".join(collected)
+    assert streamed.endswith(".")  # ends cleanly on a sentence
+    assert "India" not in streamed  # stopped after the first full sentence past the cap
+
+
+# ---------------------------------------------------------------------------
 # check_for_event — interval not met → should_trigger=False
 # ---------------------------------------------------------------------------
 

@@ -75,7 +75,10 @@ Return strict JSON with this shape:
 """.strip()
 
 
-WORLD_STATE_EXTRACT_PROMPT = """
+# World-state guidance + schema are kept as separate fragments so the unified
+# post-turn judge (build_post_turn_judge_prompt) reuses the exact same text the
+# standalone extractor uses — single-sourced, no drift.
+_WORLD_STATE_GUIDANCE = """
 You maintain the canonical world-state ledger for a roleplay engine.
 
 You are given the CURRENT LEDGER (structured JSON of what is true) and the
@@ -110,7 +113,9 @@ LATEST EXCHANGE:
 PLAYER: I look around the keep and take a slow breath.
 RESPONSE: Dust drifts in the broken light. Nothing stirs in the silent hall.
 Correct output: {}
+""".strip()
 
+_WORLD_STATE_SCHEMA = """
 Return strict JSON with this exact shape (omit empty arrays/fields):
 {
   "location": {"name": "string", "description": "string"},
@@ -135,8 +140,10 @@ Return strict JSON with this exact shape (omit empty arrays/fields):
 If nothing changed, return {}.
 """.strip()
 
+WORLD_STATE_EXTRACT_PROMPT = f"{_WORLD_STATE_GUIDANCE}\n\n{_WORLD_STATE_SCHEMA}"
 
-QUEST_JUDGE_PROMPT = """
+
+_QUEST_GUIDANCE = """
 You are the quest tracker for a text roleplay engine. Quests here are
 narrative arcs — mysteries to unravel, promises the player made, social arcs,
 moral dilemmas, escalating threats — never fetch/kill checklists.
@@ -155,7 +162,9 @@ Be conservative: only act on what the text clearly supports.
   and always include a one-line resolution.
 - Use stable lowercase-kebab slugs (e.g. "find-marens-sister"); reuse the
   existing slug when updating an existing quest.
+""".strip()
 
+_QUEST_SCHEMA = """
 Return strict JSON with this exact shape (omit empty arrays/fields):
 {
   "quests_new": [
@@ -175,6 +184,44 @@ Return strict JSON with this exact shape (omit empty arrays/fields):
 
 If nothing quest-relevant happened, return {}.
 """.strip()
+
+QUEST_JUDGE_PROMPT = f"{_QUEST_GUIDANCE}\n\n{_QUEST_SCHEMA}"
+
+
+POST_TURN_JUDGE_HEADER = """
+You are the post-turn judge for a roleplay engine. After each exchange you
+update the structured game state in a SINGLE pass, given the current state
+(ledger and/or open quests, as provided) plus the latest exchange (player
+message + game response).
+
+Handle each TASK below, then return ONE JSON object with a key per task. Omit a
+key, or set it to {}, when nothing in that area changed — most turns change
+little. Only record what the text clearly supports; never invent.
+""".strip()
+
+
+def build_post_turn_judge_prompt(*, world: bool, quests: bool) -> str:
+    """Assemble the unified post-turn judge system prompt from the enabled
+    sections, reusing the exact world-state and quest guidance + schema
+    fragments so the combined call stays in lock-step with the standalone
+    prompts (no drift). At least one of ``world``/``quests`` must be true."""
+    sections = [POST_TURN_JUDGE_HEADER]
+    output_keys: list[str] = []
+    if world:
+        sections.append(
+            f"TASK — world_delta (canonical world-state ledger):\n\n{_WORLD_STATE_GUIDANCE}\n\n{_WORLD_STATE_SCHEMA}"
+        )
+        output_keys.append('  "world_delta": { ...the world-state delta described above, or {} if unchanged... }')
+    if quests:
+        sections.append(f"TASK — quest_delta (narrative quest arcs):\n\n{_QUEST_GUIDANCE}\n\n{_QUEST_SCHEMA}")
+        output_keys.append('  "quest_delta": { ...the quest delta described above, or {} if unchanged... }')
+    sections.append(
+        "FINAL OUTPUT — combine the tasks above into ONE JSON object. Put each "
+        "result under its key; do NOT emit the inner field names at the top "
+        "level. Omit a key when its section has no changes:\n"
+        "{\n" + "\n".join(output_keys) + "\n}"
+    )
+    return "\n\n".join(sections)
 
 
 QUEST_FROM_EVENT_PROMPT = """
