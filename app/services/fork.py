@@ -106,9 +106,7 @@ class ForkService:
             await db.flush()
 
             # --- memory facts derived from kept turns (or sourceless) ---
-            facts = (
-                await db.scalars(select(MemoryFact).where(MemoryFact.session_id == parent.id))
-            ).all()
+            facts = (await db.scalars(select(MemoryFact).where(MemoryFact.session_id == parent.id))).all()
             for f in facts:
                 if f.source_turn_id is not None and f.source_turn_id not in kept_turn_ids:
                     continue  # produced by a turn after the fork point
@@ -157,9 +155,7 @@ class ForkService:
             ).all()
             for r in relationships:
                 last_observed = (
-                    id_map.get(r.last_observed_turn_id)
-                    if r.last_observed_turn_id in kept_turn_ids
-                    else None
+                    id_map.get(r.last_observed_turn_id) if r.last_observed_turn_id in kept_turn_ids else None
                 )
                 db.add(
                     RelationshipState(
@@ -187,9 +183,7 @@ class ForkService:
 
             # --- quests created ≤ N (remap source_turn_id) ---
             quests = (
-                await db.scalars(
-                    select(Quest).where(Quest.session_id == parent.id, Quest.created_turn <= at_turn)
-                )
+                await db.scalars(select(Quest).where(Quest.session_id == parent.id, Quest.created_turn <= at_turn))
             ).all()
             for q in quests:
                 db.add(
@@ -222,9 +216,7 @@ class ForkService:
             return fork
 
 
-async def _ledger_at(
-    db: AsyncSession, session_id: str, kept_turn_ids: set[str]
-) -> WorldStateLedger | None:
+async def _ledger_at(db: AsyncSession, session_id: str, kept_turn_ids: set[str]) -> WorldStateLedger | None:
     """The ledger state as of the fork point: the highest-version row whose
     producing turn is kept (index ≤ N).
 

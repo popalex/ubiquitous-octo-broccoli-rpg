@@ -115,14 +115,10 @@ async def test_fork_remaps_turn_references(db_session: AsyncSession) -> None:
     parent, _ = await _build_parent(db_session)
     fork = await ForkService.fork_session(db_session, parent, at_turn=2)
 
-    fork_turn_ids = {
-        t.id for t in (await db_session.scalars(select(Turn).where(Turn.session_id == fork.id))).all()
-    }
+    fork_turn_ids = {t.id for t in (await db_session.scalars(select(Turn).where(Turn.session_id == fork.id))).all()}
 
     # ledger version current at N copied as version 1, pointing at a fork turn
-    ledgers = (
-        await db_session.scalars(select(WorldStateLedger).where(WorldStateLedger.session_id == fork.id))
-    ).all()
+    ledgers = (await db_session.scalars(select(WorldStateLedger).where(WorldStateLedger.session_id == fork.id))).all()
     assert len(ledgers) == 1
     assert ledgers[0].version == 1
     assert ledgers[0].state == {"location": "Tavern"}
