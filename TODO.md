@@ -122,7 +122,10 @@ mutating already-committed `Turn` rows (persist happens before post-turn).
 
 In rough value order; each is independently shippable.
 
-### 4a. Rewind & fork — ✅ DONE (2026-06-14, `feature/rewind-fork`)
+### 4a. Rewind & fork — 🚧 built & verified, awaiting review/merge (2026-06-14, `feature/rewind-fork`, unpushed)
+Code-complete and smoke-tested live (migration `b1c2d3e4f5a6` applied to the dev
+DB, fork endpoint exercised end-to-end); **not yet PR'd or merged** — flip to
+✅ DONE once it lands on `main`.
 Backend: `sessions.parent_session_id` + `forked_at_turn` columns (migration
 `b1c2d3e4f5a6`), `ForkService` (`app/services/fork.py`) doing a *full-fidelity*
 copy (turns ≤ N, derived facts/summaries, relationships, the ledger version
