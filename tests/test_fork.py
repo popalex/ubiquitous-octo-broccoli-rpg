@@ -155,6 +155,67 @@ async def test_fork_leaves_parent_untouched(db_session: AsyncSession) -> None:
     assert parent.turn_count == 4
 
 
+@pytest.mark.asyncio
+async def test_fork_inside_summarized_block_resets_watermark(db_session: AsyncSession) -> None:
+    """Forking mid-summary must not claim uncovered turns are summarized, or the
+    fork would never summarize them (regression for the watermark bug)."""
+    parent = SessionFactory(turn_count=6, last_summarized_turn=6)
+    for i in range(1, 7):
+        TurnFactory(session=parent, turn_index=i)
+    await db_session.flush()
+    # One summary covers turns 1-6; the parent watermark is 6.
+    EpisodeSummaryFactory(session=parent, start_turn_index=1, end_turn_index=6, content="all six")
+    await db_session.flush()
+
+    fork = await ForkService.fork_session(db_session, parent, at_turn=4)
+
+    # The 1-6 summary straddles the fork point (6 > 4) → dropped. The watermark
+    # must fall back to 0 (nothing copied), not the parent's 6 or at_turn 4.
+    copied = (await db_session.scalars(select(EpisodeSummary).where(EpisodeSummary.session_id == fork.id))).all()
+    assert copied == []
+    assert fork.last_summarized_turn == 0
+
+
+@pytest.mark.asyncio
+async def test_fork_deepcopies_json_columns(db_session: AsyncSession) -> None:
+    """The fork must not share mutable JSON objects with the parent."""
+    parent, _ = await _build_parent(db_session)
+    fork = await ForkService.fork_session(db_session, parent, at_turn=2)
+
+    parent_ledger = await db_session.scalar(
+        select(WorldStateLedger).where(WorldStateLedger.session_id == parent.id, WorldStateLedger.version == 1)
+    )
+    fork_ledger = await db_session.scalar(select(WorldStateLedger).where(WorldStateLedger.session_id == fork.id))
+    assert fork_ledger.state == parent_ledger.state
+    assert fork_ledger.state is not parent_ledger.state  # deep-copied, not aliased
+
+    parent_quest = await db_session.scalar(
+        select(Quest).where(Quest.session_id == parent.id, Quest.slug == "early-quest")
+    )
+    fork_quest = await db_session.scalar(select(Quest).where(Quest.session_id == fork.id, Quest.slug == "early-quest"))
+    assert fork_quest.stages == parent_quest.stages
+    assert fork_quest.stages is not parent_quest.stages
+
+
+@pytest.mark.asyncio
+async def test_ledger_at_skips_unplaceable_null_turn_row(db_session: AsyncSession) -> None:
+    """A higher-version NULL-turn_id ledger row must not seed the fork (it can't
+    be proven to predate the fork point); the latest kept turn-tied row wins."""
+    parent = SessionFactory(turn_count=3)
+    turns = {i: TurnFactory(session=parent, turn_index=i) for i in range(1, 4)}
+    await db_session.flush()
+    db_session.add(WorldStateLedger(session_id=parent.id, version=1, turn_id=turns[2].id, state={"loc": "at turn 2"}))
+    # A later, turn-less edit (e.g. manual) — unplaceable relative to the fork point.
+    db_session.add(WorldStateLedger(session_id=parent.id, version=2, turn_id=None, state={"loc": "manual edit"}))
+    await db_session.flush()
+
+    fork = await ForkService.fork_session(db_session, parent, at_turn=2)
+
+    led = (await db_session.scalars(select(WorldStateLedger).where(WorldStateLedger.session_id == fork.id))).all()
+    assert len(led) == 1
+    assert led[0].state == {"loc": "at turn 2"}  # NOT the v2 NULL-turn "manual edit"
+
+
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------

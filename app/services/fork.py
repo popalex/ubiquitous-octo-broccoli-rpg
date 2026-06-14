@@ -9,10 +9,13 @@ A fork is *full fidelity*: turns ≤ N, the memory facts / episode summaries
 derived from them, relationship states, the world-state ledger version current
 at N, and quests created ≤ N are all copied. Rows that reference a turn carry a
 remapped ``turn_id`` (old → new); references to dropped turns (index > N) become
-NULL. Embeddings are copied verbatim — no re-embedding.
+NULL. Embeddings are copied verbatim — no re-embedding. JSON columns are
+deep-copied so the fork and parent never share a mutable object.
 """
 
 from __future__ import annotations
+
+from copy import deepcopy
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,10 +58,11 @@ class ForkService:
                 title=title if title is not None else _default_fork_title(parent, at_turn),
                 status="active",
                 turn_count=at_turn,
-                # Summaries ≤ N are copied, so the fork inherits the parent's
-                # summarization watermark (capped at the fork point).
-                last_summarized_turn=min(parent.last_summarized_turn, at_turn),
-                metadata_json=parent.metadata_json,
+                # Set below from the summaries actually copied — NOT from the
+                # parent watermark, which would claim turns inside a dropped
+                # straddling summary are summarized and starve them forever.
+                last_summarized_turn=0,
+                metadata_json=deepcopy(parent.metadata_json),
                 gm_enabled=parent.gm_enabled,
                 current_location=parent.current_location,
                 time_of_day=parent.time_of_day,
@@ -116,7 +120,7 @@ class ForkService:
                         content=f.content,
                         importance=f.importance,
                         embedding=f.embedding,
-                        metadata_json=f.metadata_json,
+                        metadata_json=deepcopy(f.metadata_json),
                     )
                 )
 
@@ -138,9 +142,14 @@ class ForkService:
                         content=s.content,
                         importance=s.importance,
                         embedding=s.embedding,
-                        metadata_json=s.metadata_json,
+                        metadata_json=deepcopy(s.metadata_json),
                     )
                 )
+            # Watermark = the furthest turn an actually-copied summary covers, so
+            # the fork re-summarizes any turns left uncovered by a dropped
+            # straddling summary (a summary covering 1-6 is dropped when forking
+            # at turn 4; the fork must still summarize 1-4).
+            fork.last_summarized_turn = max((s.end_turn_index for s in summaries), default=0)
 
             # --- relationship states (cumulative; remap last_observed_turn_id) ---
             relationships = (
@@ -172,7 +181,7 @@ class ForkService:
                         session_id=fork.id,
                         version=1,
                         turn_id=id_map.get(ledger.turn_id) if ledger.turn_id else None,
-                        state=ledger.state,
+                        state=deepcopy(ledger.state),
                     )
                 )
 
@@ -193,7 +202,7 @@ class ForkService:
                         stakes=q.stakes,
                         status=q.status,
                         origin=q.origin,
-                        stages=q.stages,
+                        stages=deepcopy(q.stages),
                         resolution=q.resolution,
                         created_turn=q.created_turn,
                         accepted_turn=q.accepted_turn,
@@ -216,20 +225,25 @@ class ForkService:
 async def _ledger_at(
     db: AsyncSession, session_id: str, kept_turn_ids: set[str]
 ) -> WorldStateLedger | None:
-    """The latest ledger version produced at or before the fork point — i.e. the
-    highest-version row whose producing turn is kept (or that has no turn_id,
-    e.g. a backfill/manual edit)."""
-    rows = (
-        await db.scalars(
-            select(WorldStateLedger)
-            .where(WorldStateLedger.session_id == session_id)
-            .order_by(WorldStateLedger.version.desc())
+    """The ledger state as of the fork point: the highest-version row whose
+    producing turn is kept (index ≤ N).
+
+    Rows with ``turn_id is None`` (backfill/manual edits) carry no turn position,
+    so they can't be proven to predate the fork point — using one risks seeding
+    the fork with canon from *after* N. We therefore skip them and seed from the
+    latest turn-tied version instead (or None → the fork starts with empty canon
+    and rebuilds through play)."""
+    if not kept_turn_ids:  # at_turn == 0: nothing kept, so no canon to seed
+        return None
+    return await db.scalar(
+        select(WorldStateLedger)
+        .where(
+            WorldStateLedger.session_id == session_id,
+            WorldStateLedger.turn_id.in_(kept_turn_ids),
         )
-    ).all()
-    for row in rows:
-        if row.turn_id is None or row.turn_id in kept_turn_ids:
-            return row
-    return None
+        .order_by(WorldStateLedger.version.desc())
+        .limit(1)
+    )
 
 
 def _default_fork_title(parent: Session, at_turn: int) -> str:

@@ -62,8 +62,12 @@ export function ChatPanel({
           chatMessages.map((message) => {
             // turnsToMessages sets a persisted turn's id to its turn_index;
             // live (unsaved) messages get non-numeric ids, so only persisted
-            // turns are forkable until the chronicle is reloaded.
-            const turnIndex = /^\d+$/.test(message.id) ? Number(message.id) : null;
+            // turns are forkable until the chronicle is reloaded. Offer forking
+            // only on a response turn (assistant/narrator) — the end of an
+            // exchange — so a fork never stops on a user line still awaiting a
+            // reply. Forks are inclusive of the clicked turn.
+            const persistedIndex = /^\d+$/.test(message.id) ? Number(message.id) : null;
+            const turnIndex = message.role === "user" ? null : persistedIndex;
             return (
               <article
                 key={message.id}
@@ -81,7 +85,7 @@ export function ChatPanel({
                     <button
                       type="button"
                       className="message-fork-btn"
-                      title="Fork a new chronicle from this point"
+                      title="Start a new chronicle branching from here — everything up to and including this point is carried over; the original is untouched"
                       disabled={forkingTurn != null}
                       onClick={() => onForkFromTurn(turnIndex)}
                     >
