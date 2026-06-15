@@ -96,9 +96,10 @@ class Settings(BaseSettings):
 
     # Unified post-turn judge (§2): when on, the per-turn world-state and quest
     # extractions are folded into ONE LLM call (PostTurnJudgeService) instead of
-    # two. Memory (facts + episode summary) stays on its own cadence. Ships dark;
-    # the legacy two-call path is the fallback when this is off.
-    post_turn_judge_enabled: bool = False
+    # two. Memory (facts + episode summary) stays on its own cadence. Default-on
+    # after baking in dev; the legacy two-call path remains the fallback when off
+    # (pending removal in a follow-up).
+    post_turn_judge_enabled: bool = True
     post_turn_judge_max_tokens: int = 1100
 
     @property

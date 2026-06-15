@@ -51,9 +51,10 @@ into a typed `TurnJudgment`, gated behind `post_turn_judge_enabled` with the
 legacy two-call path (`maybe_refresh` + `extract_and_apply`) intact as fallback
 in `OrchestratorService._run_post_turn`. Backend tests + eval parity target
 landed (commit `28ab9e7`); dashboard panels added (`6b2d26a`).
-**Two follow-ups remain:** (a) the global flag still defaults `false` — flip it
-on after baking a few real sessions + an `pytest -m eval` run; (b) **delete the
-legacy path** once that bakes (per the "flag, then delete" decision below).
+**Follow-up remaining:** (a) ✅ default flipped on (2026-06-14, `feature/post-turn-judge-default-on`)
+— `app/config.py` default `True`, prod compose + `.env.sample` to `true` (dev
+override was already on); full suite green (225) with the new default; (b) **delete the
+legacy path** once this bakes on `main` (per the "flag, then delete" decision below).
 
 **Problem:** every turn fires up to three post-turn LLM calls — memory refresh
 (`MemoryService.maybe_refresh`), world-state extraction
@@ -221,8 +222,8 @@ the yardstick for what §2 saves.
    once the ledger can be enabled, and it makes ledger output inspectable
    before §2 changes how it's extracted.
 3. **Phase 2:** 5a (eval harness) ✅ → §2 (unified judge) ✅ shipped behind flag
-   + 5b ✅ (measure the savings). **← next: bake §2 on, flip its default, then
-   delete the legacy path.**
+   + 5b ✅ (measure the savings) + default flipped on ✅. **← next: let it bake on
+   `main`, then delete the legacy two-call path.**
 4. **Phase 3:** remaining §4 features as appetite dictates — 4a (fork) ✅ shipped;
    4c/4d are nice-to-haves, cut first if time is short.
 
