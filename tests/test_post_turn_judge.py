@@ -75,7 +75,7 @@ async def test_judge_applies_both_sections_in_one_call(db_session: AsyncSession)
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="I cut down Voss and vow to avenge the widow", response_text="Voss falls."
     )
 
@@ -98,7 +98,7 @@ async def test_bad_world_section_still_applies_quests(db_session: AsyncSession) 
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -115,7 +115,7 @@ async def test_bad_quest_section_still_applies_world(db_session: AsyncSession) -
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -138,7 +138,7 @@ async def test_world_only_session_skips_quests(db_session: AsyncSession) -> None
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -156,7 +156,7 @@ async def test_quests_only_session_skips_world(db_session: AsyncSession) -> None
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -172,12 +172,84 @@ async def test_no_call_when_both_features_off(db_session: AsyncSession) -> None:
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
     assert provider.json_calls == 0  # no enabled section -> no LLM call at all
     assert ledger_row is None and changes == []
+
+
+# ---------------------------------------------------------------------------
+# Service: suggestions section
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_suggestions_returned_and_one_call(db_session: AsyncSession) -> None:
+    # World/quests off, suggestions on: the judge still fires exactly one call.
+    settings = make_test_settings(world_state_enabled=False, quests_enabled=False)
+    provider = CountingMockProvider(settings)
+    provider.set_json_response({"suggestions": ["Search the desk", "Slip out the window"]})
+    session = SessionFactory(turn_count=2, suggestions_enabled=True)
+    await db_session.flush()
+
+    ledger_row, changes, suggestions = await _judge(provider, settings).judge_turn(
+        db_session, session, user_message="x", response_text="y"
+    )
+
+    assert provider.json_calls == 1
+    assert ledger_row is None and changes == []
+    assert suggestions == ["Search the desk", "Slip out the window"]
+
+
+@pytest.mark.asyncio
+async def test_suggestions_clamped_and_cleaned(db_session: AsyncSession) -> None:
+    settings = make_test_settings(world_state_enabled=False, quests_enabled=False, suggestions_max=2)
+    provider = MockProvider(settings)
+    # Blanks and non-strings dropped; clamped to suggestions_max (2).
+    provider.set_json_response({"suggestions": ["  Fight  ", "", 7, "Flee", "Hide", None]})
+    session = SessionFactory(turn_count=2, suggestions_enabled=True)
+    await db_session.flush()
+
+    _, _, suggestions = await _judge(provider, settings).judge_turn(
+        db_session, session, user_message="x", response_text="y"
+    )
+
+    assert suggestions == ["Fight", "Flee"]
+
+
+@pytest.mark.asyncio
+async def test_malformed_suggestions_returns_empty(db_session: AsyncSession) -> None:
+    settings = make_test_settings(world_state_enabled=False, quests_enabled=False)
+    provider = MockProvider(settings)
+    provider.set_json_response({"suggestions": "not a list"})
+    session = SessionFactory(turn_count=2, suggestions_enabled=True)
+    await db_session.flush()
+
+    _, _, suggestions = await _judge(provider, settings).judge_turn(
+        db_session, session, user_message="x", response_text="y"
+    )
+
+    assert suggestions == []
+
+
+@pytest.mark.asyncio
+async def test_suggestions_off_session_yields_none(db_session: AsyncSession) -> None:
+    # Suggestions disabled on the session: even if the model returns them, the
+    # judge does not extract them (and with world/quests off, makes no call).
+    settings = make_test_settings(world_state_enabled=False, quests_enabled=False)
+    provider = CountingMockProvider(settings)
+    provider.set_json_response({"suggestions": ["ignored"]})
+    session = SessionFactory(turn_count=2, suggestions_enabled=False)
+    await db_session.flush()
+
+    _, _, suggestions = await _judge(provider, settings).judge_turn(
+        db_session, session, user_message="x", response_text="y"
+    )
+
+    assert provider.json_calls == 0
+    assert suggestions == []
 
 
 # ---------------------------------------------------------------------------

@@ -480,6 +480,37 @@ async def test_chat_stream_emits_quest_update_before_done(
     assert quest_event["quest"]["change"] == "started"
 
 
+@pytest.mark.asyncio
+async def test_chat_stream_emits_suggestions_before_done(
+    mock_provider: MockProvider, db_session: AsyncSession
+) -> None:
+    settings = make_test_settings(memory_summary_interval=100)  # world/quests off
+    with patch("app.services.orchestrator.build_provider", return_value=mock_provider):
+        orchestrator = OrchestratorService(settings)
+    # Post-stream continuity sees no "issues" key and passes; the judge returns
+    # the suggestions array (world/quests off, so suggestions is its only task).
+    mock_provider.set_json_response({"suggestions": ["Search the desk", "Flee"]})
+    session = SessionFactory(turn_count=0, suggestions_enabled=True)
+    await db_session.flush()
+
+    events = await _drain(orchestrator.chat_stream(db_session, session.id, "What now?"))
+    types = [e.get("type") for e in events]
+    assert "suggestions" in types
+    assert types.index("suggestions") < types.index("done")
+    assert events[types.index("suggestions")]["suggestions"] == ["Search the desk", "Flee"]
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_no_suggestions_when_session_off(
+    orchestrator: OrchestratorService, db_session: AsyncSession
+) -> None:
+    session = SessionFactory(turn_count=0, suggestions_enabled=False)
+    await db_session.flush()
+
+    events = await _drain(orchestrator.chat_stream(db_session, session.id, "What now?"))
+    assert "suggestions" not in [e.get("type") for e in events]
+
+
 # ---------------------------------------------------------------------------
 # Post-stream continuity → retcon note (streaming skips the inline check)
 # ---------------------------------------------------------------------------

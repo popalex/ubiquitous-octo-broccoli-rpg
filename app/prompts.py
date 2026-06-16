@@ -200,11 +200,34 @@ little. Only record what the text clearly supports; never invent.
 """.strip()
 
 
-def build_post_turn_judge_prompt(*, world: bool, quests: bool) -> str:
+_SUGGESTIONS_GUIDANCE = """
+You propose what the PLAYER might do next. Read the latest exchange and offer
+2-4 short, concrete next actions the player could take from where the scene now
+stands. Each should:
+- be phrased as a first-person/imperative action chip ("Search the desk",
+  "Ask her about the letter", "Draw your blade"), not narration or dialogue;
+- be short (a handful of words), distinct from the others, and varied in
+  approach (e.g. cautious vs. bold, social vs. physical);
+- follow plausibly from what just happened — never invent facts, locations, or
+  characters the text does not support.
+These are optional shortcuts for the player, who can always type freely.
+""".strip()
+
+_SUGGESTIONS_SCHEMA = """
+Return a JSON array of 2-4 short strings:
+
+  ["Search the desk", "Ask her about the letter", "Slip out the window"]
+
+Return an empty array [] only if no sensible action follows.
+""".strip()
+
+
+def build_post_turn_judge_prompt(*, world: bool, quests: bool, suggestions: bool = False) -> str:
     """Assemble the unified post-turn judge system prompt from the enabled
     sections, reusing the exact world-state and quest guidance + schema
     fragments so the combined call stays in lock-step with the standalone
-    prompts (no drift). At least one of ``world``/``quests`` must be true."""
+    prompts (no drift). At least one of ``world``/``quests``/``suggestions``
+    must be true."""
     sections = [POST_TURN_JUDGE_HEADER]
     output_keys: list[str] = []
     if world:
@@ -215,6 +238,12 @@ def build_post_turn_judge_prompt(*, world: bool, quests: bool) -> str:
     if quests:
         sections.append(f"TASK — quest_delta (narrative quest arcs):\n\n{_QUEST_GUIDANCE}\n\n{_QUEST_SCHEMA}")
         output_keys.append('  "quest_delta": { ...the quest delta described above, or {} if unchanged... }')
+    if suggestions:
+        sections.append(
+            "TASK — suggestions (next-action chips for the player):\n\n"
+            f"{_SUGGESTIONS_GUIDANCE}\n\n{_SUGGESTIONS_SCHEMA}"
+        )
+        output_keys.append('  "suggestions": [ ...2-4 short action strings described above, or [] ... ]')
     sections.append(
         "FINAL OUTPUT — combine the tasks above into ONE JSON object. Put each "
         "result under its key; do NOT emit the inner field names at the top "

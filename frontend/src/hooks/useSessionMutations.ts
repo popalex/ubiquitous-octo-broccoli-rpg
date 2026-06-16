@@ -15,6 +15,7 @@ type SessionInitResult = {
   session_id: string;
   turn_count: number;
   gm_enabled: boolean;
+  suggestions_enabled: boolean;
   current_location: string | null;
   time_of_day: string | null;
   // Resolved per-session feature flags (session override → global).
@@ -28,6 +29,7 @@ export type SessionInitInput = {
   title: string | null;
   // null inherits the backend's global default.
   gm_enabled: boolean | null;
+  suggestions_enabled: boolean | null;
   current_location: string | null;
   time_of_day: string | null;
   // null inherits the backend's global setting.

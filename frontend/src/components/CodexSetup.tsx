@@ -46,6 +46,9 @@ export function CodexSetup({ onStarted }: Props) {
   // from docker compose (the dev override turns everything on).
   const health = useHealth();
   const [gmChoice, setGmChoice] = useState<boolean | null>(() => readStoredToggle(storageKeys.gmEnabled));
+  const [suggestionsChoice, setSuggestionsChoice] = useState<boolean | null>(() =>
+    readStoredToggle(storageKeys.suggestionsEnabled),
+  );
   const [worldStateChoice, setWorldStateChoice] = useState<boolean | null>(() =>
     readStoredToggle(storageKeys.worldStateEnabled),
   );
@@ -53,6 +56,7 @@ export function CodexSetup({ onStarted }: Props) {
     readStoredToggle(storageKeys.questsEnabled),
   );
   const gmEnabled = gmChoice ?? health?.gm_enabled ?? false;
+  const suggestionsEnabled = suggestionsChoice ?? health?.suggestions_enabled ?? false;
   const worldStateEnabled = worldStateChoice ?? health?.world_state_enabled ?? false;
   const questsEnabled = questsChoice ?? health?.quests_enabled ?? false;
   const [timeOfDay, setTimeOfDay] = useState("morning");
@@ -71,6 +75,11 @@ export function CodexSetup({ onStarted }: Props) {
   function handleSetGmEnabled(value: boolean) {
     setGmChoice(value);
     localStorage.setItem(storageKeys.gmEnabled, String(value));
+  }
+
+  function handleSetSuggestionsEnabled(value: boolean) {
+    setSuggestionsChoice(value);
+    localStorage.setItem(storageKeys.suggestionsEnabled, String(value));
   }
 
   function handleSetWorldStateEnabled(value: boolean) {
@@ -92,11 +101,18 @@ export function CodexSetup({ onStarted }: Props) {
       onSelectTemplate={handleSelectTemplate}
       gmEnabled={gmEnabled}
       setGmEnabled={handleSetGmEnabled}
+      suggestionsEnabled={suggestionsEnabled}
+      setSuggestionsEnabled={handleSetSuggestionsEnabled}
       worldStateEnabled={worldStateEnabled}
       setWorldStateEnabled={handleSetWorldStateEnabled}
       questsEnabled={questsEnabled}
       setQuestsEnabled={handleSetQuestsEnabled}
-      toggleChoices={{ gm: gmChoice, worldState: worldStateChoice, quests: questsChoice }}
+      toggleChoices={{
+        gm: gmChoice,
+        suggestions: suggestionsChoice,
+        worldState: worldStateChoice,
+        quests: questsChoice,
+      }}
       timeOfDay={timeOfDay}
       setTimeOfDay={setTimeOfDay}
       ids={ids}
@@ -113,12 +129,19 @@ type CodexFormProps = {
   onSelectTemplate: (id: string) => void;
   gmEnabled: boolean;
   setGmEnabled: (v: boolean) => void;
+  suggestionsEnabled: boolean;
+  setSuggestionsEnabled: (v: boolean) => void;
   worldStateEnabled: boolean;
   setWorldStateEnabled: (v: boolean) => void;
   questsEnabled: boolean;
   setQuestsEnabled: (v: boolean) => void;
   /** Raw toggle choices: null = user never touched it (inherit the global). */
-  toggleChoices: { gm: boolean | null; worldState: boolean | null; quests: boolean | null };
+  toggleChoices: {
+    gm: boolean | null;
+    suggestions: boolean | null;
+    worldState: boolean | null;
+    quests: boolean | null;
+  };
   timeOfDay: string;
   setTimeOfDay: (v: string) => void;
   ids: { characterCardId: string; worldStateId: string };
@@ -133,6 +156,8 @@ function CodexForm({
   onSelectTemplate,
   gmEnabled,
   setGmEnabled,
+  suggestionsEnabled,
+  setSuggestionsEnabled,
   worldStateEnabled,
   setWorldStateEnabled,
   questsEnabled,
@@ -187,6 +212,7 @@ function CodexForm({
         // never touched the toggle, so the session inherits the global
         // default (and follows it if the defaults flip later).
         gm_enabled: toggleChoices.gm,
+        suggestions_enabled: toggleChoices.suggestions,
         world_state_enabled: toggleChoices.worldState,
         quests_enabled: toggleChoices.quests,
       });
@@ -210,6 +236,8 @@ function CodexForm({
         isBusy={isBusy}
         gmEnabled={gmEnabled}
         setGmEnabled={setGmEnabled}
+        suggestionsEnabled={suggestionsEnabled}
+        setSuggestionsEnabled={setSuggestionsEnabled}
         worldStateEnabled={worldStateEnabled}
         setWorldStateEnabled={setWorldStateEnabled}
         questsEnabled={questsEnabled}

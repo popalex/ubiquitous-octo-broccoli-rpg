@@ -41,6 +41,29 @@ function handleQuestUpdate(
   ]);
 }
 
+// Attach suggested next-action chips to the most recent assistant/narrator
+// message (in GM mode a narrator event may follow the reply). Ignores empty or
+// malformed payloads so a bad frame never disrupts the finished reply.
+function attachSuggestions(
+  suggestions: unknown,
+  setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>,
+): void {
+  if (!Array.isArray(suggestions)) return;
+  const cleaned = suggestions.filter((s): s is string => typeof s === "string" && s.trim() !== "");
+  if (cleaned.length === 0) return;
+  setChatMessages((current) => {
+    let target = -1;
+    for (let i = current.length - 1; i >= 0; i--) {
+      if (current[i].role === "assistant" || current[i].role === "narrator") {
+        target = i;
+        break;
+      }
+    }
+    if (target === -1) return current;
+    return current.map((msg, i) => (i === target ? { ...msg, suggestions: cleaned } : msg));
+  });
+}
+
 export type SendChatParams = {
   sessionId: string;
   chatInput: string;
@@ -213,6 +236,8 @@ async function sendGMStream({
           setStatusText(`Event triggered: ${gmEvent.event_type}`);
         } else if (event.type === "quest_update") {
           handleQuestUpdate(event.quest as QuestUpdateNotification, setChatMessages, setStatusText);
+        } else if (event.type === "suggestions") {
+          attachSuggestions(event.suggestions as string[], setChatMessages);
         } else if (event.type === "error") {
           throw new Error((event.error as string) || "Stream failed.");
         } else if (event.type === "done") {
@@ -315,6 +340,8 @@ async function sendStandardStream({
           setRetrievedMemories(event.memories as RetrievedMemory[]);
         } else if (event.type === "quest_update") {
           handleQuestUpdate(event.quest as QuestUpdateNotification, setChatMessages, setStatusText);
+        } else if (event.type === "suggestions") {
+          attachSuggestions(event.suggestions as string[], setChatMessages);
         } else if (event.type === "error") {
           throw new Error((event.error as string) || "Stream failed.");
         } else if (event.type === "done") {

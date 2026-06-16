@@ -138,6 +138,7 @@ services:
       GM_ENABLED: ${GM_ENABLED:-false}
       WORLD_STATE_ENABLED: ${WORLD_STATE_ENABLED:-false}
       QUESTS_ENABLED: ${QUESTS_ENABLED:-false}
+      SUGGESTIONS_ENABLED: ${SUGGESTIONS_ENABLED:-false}
       POST_TURN_JUDGE_ENABLED: ${POST_TURN_JUDGE_ENABLED:-true}
     depends_on:
       postgres:

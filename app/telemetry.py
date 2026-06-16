@@ -73,6 +73,9 @@ continuity_revisions = _meter.create_counter(
 post_turn_judge_calls = _meter.create_counter(
     "rpg.post_turn.judge_calls", description="Unified post-turn judge calls (one per turn when enabled)"
 )
+post_turn_suggestions = _meter.create_counter(
+    "rpg.post_turn.suggestions", description="Suggested player-response chips offered (summed across turns)"
+)
 session_forks = _meter.create_counter("rpg.session.forks", description="Chronicle forks created (rewind & fork)")
 
 

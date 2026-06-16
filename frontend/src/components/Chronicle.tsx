@@ -104,10 +104,10 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
     );
   }
 
-  function handleSendChat() {
+  function handleSendChat(messageOverride?: string) {
     void sendChat({
       sessionId,
-      chatInput,
+      chatInput: messageOverride ?? chatInput,
       setChatInput,
       gmEnabled,
       currentLocation,
@@ -162,6 +162,10 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
         <div className="summary-item">
           <span className="meta-label">Quests</span>
           <strong>{detail.quests_enabled ? "On" : "Off"}</strong>
+        </div>
+        <div className="summary-item">
+          <span className="meta-label">Suggestions</span>
+          <strong>{detail.suggestions_enabled ? "On" : "Off"}</strong>
         </div>
       </div>
       <main className="dashboard dashboard-chronicle">

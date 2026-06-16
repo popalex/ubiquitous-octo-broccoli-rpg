@@ -33,6 +33,7 @@ from app.services.world_state import LedgerDelta, WorldStateService
 from app.telemetry import (
     canon_extract_failures,
     post_turn_judge_calls,
+    post_turn_suggestions,
     quest_extract_failures,
     record_span_error,
     set_completion,
@@ -63,9 +64,10 @@ class PostTurnJudgeService:
         user_message: str,
         response_text: str,
         turn_id: str | None = None,
-    ) -> tuple[WorldStateLedger | None, list[QuestChange]]:
-        """Run the combined world+quest extraction in one call and apply each
-        section. Returns ``(new_ledger_row_or_None, quest_changes)``.
+    ) -> tuple[WorldStateLedger | None, list[QuestChange], list[str]]:
+        """Run the combined world+quest+suggestions extraction in one call and
+        apply each section. Returns ``(new_ledger_row_or_None, quest_changes,
+        suggestions)``.
 
         Best-effort: provider/schema/apply failures are logged + metered and
         skipped, never raised."""
@@ -73,14 +75,19 @@ class PostTurnJudgeService:
         do_quests = quests_on(session, self.settings) and (
             session.turn_count % self.settings.quest_extraction_interval == 0
         )
-        if not do_world and not do_quests:
-            return None, []
+        do_suggestions = bool(session.suggestions_enabled)
+        if not do_world and not do_quests and not do_suggestions:
+            return None, [], []
 
         with tracer.start_as_current_span("orchestrator.post_turn_judge") as span:
             span.set_attribute("rpg.session_id", str(session.id))
             span.set_attribute(
                 "rpg.post_turn.sections",
-                ",".join(name for name, on in (("world", do_world), ("quests", do_quests)) if on),
+                ",".join(
+                    name
+                    for name, on in (("world", do_world), ("quests", do_quests), ("suggestions", do_suggestions))
+                    if on
+                ),
             )
 
             # --- context for the prompt + the apply paths ------------------
@@ -110,7 +117,9 @@ class PostTurnJudgeService:
             parts.append(f"LATEST EXCHANGE:\nPLAYER: {user_message}\nRESPONSE: {response_text}")
             user_content = "\n\n".join(parts)
 
-            system_prompt = build_post_turn_judge_prompt(world=do_world, quests=do_quests)
+            system_prompt = build_post_turn_judge_prompt(
+                world=do_world, quests=do_quests, suggestions=do_suggestions
+            )
             post_turn_judge_calls.add(1)
             try:
                 payload = await self.provider.generate_json(
@@ -124,11 +133,11 @@ class PostTurnJudgeService:
             except ProviderError as exc:
                 logger.exception("post-turn judge failed for session=%s", session.id)
                 record_span_error(span, exc)
-                return None, []
+                return None, [], []
 
             if not isinstance(payload, dict):
                 logger.warning("post-turn judge returned non-object for session=%s", session.id)
-                return None, []
+                return None, [], []
             set_completion(span, json.dumps(payload))
 
             world_raw, quest_raw = self._split_sections(payload, world=do_world, quests=do_quests)
@@ -141,7 +150,27 @@ class PostTurnJudgeService:
                 if do_quests
                 else []
             )
-            return new_ledger, quest_changes
+            suggestions = self._extract_suggestions(payload) if do_suggestions else []
+            return new_ledger, quest_changes, suggestions
+
+    def _extract_suggestions(self, payload: dict) -> list[str]:
+        """Pull, clean and clamp the suggestions array. Best-effort: any
+        malformed/missing payload yields ``[]``, never raises."""
+        raw = payload.get("suggestions")
+        if not isinstance(raw, list):
+            return []
+        cleaned: list[str] = []
+        for item in raw:
+            if not isinstance(item, str):
+                continue
+            text = item.strip()
+            if text:
+                cleaned.append(text)
+            if len(cleaned) >= self.settings.suggestions_max:
+                break
+        if cleaned:
+            post_turn_suggestions.add(len(cleaned))
+        return cleaned
 
     @staticmethod
     def _split_sections(payload: dict, *, world: bool, quests: bool) -> tuple[object, object]:

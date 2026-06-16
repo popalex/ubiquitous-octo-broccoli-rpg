@@ -3,6 +3,7 @@ export type Health = {
   database: string;
   mode: string;
   gm_enabled: boolean;
+  suggestions_enabled: boolean;
   world_state_enabled: boolean;
   quests_enabled: boolean;
 };
@@ -20,6 +21,7 @@ export type ChronicleListItem = {
   character_name: string | null;
   world_name: string | null;
   summary: string | null;
+  suggestions_enabled: boolean;
   // Resolved per-session feature flags (session override → global).
   world_state_enabled: boolean;
   quests_enabled: boolean;
@@ -42,6 +44,7 @@ export type SessionDetail = {
   world_name: string | null;
   current_location: string | null;
   time_of_day: string | null;
+  suggestions_enabled: boolean;
   // Resolved per-session feature flags (session override → global).
   world_state_enabled: boolean;
   quests_enabled: boolean;
@@ -164,6 +167,9 @@ export type ChatMessage = {
   role: "user" | "assistant" | "narrator";
   content: string;
   messageType?: "chat" | "pre_narration" | "post_narration" | "event" | "quest";
+  // Suggested next-action chips offered after this reply (ephemeral; only the
+  // latest assistant/narrator message renders them).
+  suggestions?: string[];
 };
 
 export type GMEvent = {

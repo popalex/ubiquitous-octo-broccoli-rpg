@@ -69,6 +69,14 @@ class Settings(BaseSettings):
     # request omits gm_enabled, and the UI seeds its toggle from /health.
     gm_enabled: bool = False
 
+    # Suggested player responses: after each turn the post-turn judge proposes
+    # 2-4 short next actions, shown as clickable chips (the free-text composer
+    # stays). Chosen per-session at chronicle creation; /session/init inherits
+    # this when the request omits suggestions_enabled, and the UI seeds its
+    # toggle from /health. Ships dark in prod (dev override on), like gm_enabled.
+    suggestions_enabled: bool = False
+    suggestions_max: int = 4  # cap on chips offered per turn
+
     # GM event generation settings
     event_check_interval: int = 3  # Check for events every N turns
     event_probability: float = 0.4  # Base probability of event occurrence

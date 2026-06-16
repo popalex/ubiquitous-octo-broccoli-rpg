@@ -1,4 +1,4 @@
-import { BookOpen, Sparkle, Sparkles, Swords, Target, Zap } from "lucide-react";
+import { BookOpen, Lightbulb, Sparkle, Sparkles, Swords, Target, Zap } from "lucide-react";
 import type { FormEvent } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
@@ -18,6 +18,8 @@ type Props = {
   isBusy: boolean;
   gmEnabled: boolean;
   setGmEnabled: (v: boolean) => void;
+  suggestionsEnabled: boolean;
+  setSuggestionsEnabled: (v: boolean) => void;
   worldStateEnabled: boolean;
   setWorldStateEnabled: (v: boolean) => void;
   questsEnabled: boolean;
@@ -55,6 +57,8 @@ export function CharacterPanel({
   isBusy,
   gmEnabled,
   setGmEnabled,
+  suggestionsEnabled,
+  setSuggestionsEnabled,
   worldStateEnabled,
   setWorldStateEnabled,
   questsEnabled,
@@ -255,6 +259,20 @@ export function CharacterPanel({
             </span>
             <span className="toggle-hint">
               {questsEnabled ? "Promises & threats become quests" : "No quest journal"}
+            </span>
+          </label>
+
+          <label className="gm-toggle">
+            <input
+              type="checkbox"
+              checked={suggestionsEnabled}
+              onChange={(e) => setSuggestionsEnabled(e.target.checked)}
+            />
+            <span className="toggle-label">
+              <Lightbulb className="inline-icon" /> Suggested Responses
+            </span>
+            <span className="toggle-hint">
+              {suggestionsEnabled ? "Offer next-action chips each turn" : "Free-text only"}
             </span>
           </label>
 

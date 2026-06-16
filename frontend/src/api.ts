@@ -4,6 +4,7 @@ import type { CharacterLoadPayload } from "./types";
 export const storageKeys = {
   characterCardId: "small-rpg:character-card-id",
   gmEnabled: "small-rpg:gm-enabled",
+  suggestionsEnabled: "small-rpg:suggestions-enabled",
   worldStateEnabled: "small-rpg:world-state-enabled",
   questsEnabled: "small-rpg:quests-enabled",
   worldStateId: "small-rpg:world-state-id",
