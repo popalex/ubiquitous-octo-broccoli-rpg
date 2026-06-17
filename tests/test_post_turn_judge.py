@@ -277,6 +277,47 @@ async def test_suggestions_off_session_yields_none(db_session: AsyncSession) -> 
 
 
 # ---------------------------------------------------------------------------
+# Service: suggest_only (chronicle-reload regeneration)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_suggest_only_returns_chips_without_touching_canon(db_session: AsyncSession) -> None:
+    # Even with a quest payload present, suggest_only applies nothing — no
+    # ledger row, no quests — and just returns cleaned suggestions.
+    settings = make_test_settings(world_state_enabled=True, quests_enabled=True, suggestions_max=2)
+    provider = CountingMockProvider(settings)
+    provider.set_json_response({"quests_new": QUEST_SECTION["quests_new"], "suggestions": ["  Run  ", "", "Hide", "x"]})
+    session = SessionFactory(turn_count=2, suggestions_enabled=True)
+    await db_session.flush()
+
+    suggestions = await _judge(provider, settings).suggest_only(
+        session, user_message="x", response_text="y"
+    )
+
+    assert provider.json_calls == 1
+    assert suggestions == ["Run", "Hide"]
+    assert await _quest_count(db_session, session.id) == 0
+    assert await WorldStateService(provider, settings).current_version(db_session, session.id) == 0
+
+
+@pytest.mark.asyncio
+async def test_suggest_only_off_session_makes_no_call(db_session: AsyncSession) -> None:
+    settings = make_test_settings()
+    provider = CountingMockProvider(settings)
+    provider.set_json_response({"suggestions": ["ignored"]})
+    session = SessionFactory(turn_count=2, suggestions_enabled=False)
+    await db_session.flush()
+
+    suggestions = await _judge(provider, settings).suggest_only(
+        session, user_message="x", response_text="y"
+    )
+
+    assert provider.json_calls == 0
+    assert suggestions == []
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator: the flag routes through the judge
 # ---------------------------------------------------------------------------
 

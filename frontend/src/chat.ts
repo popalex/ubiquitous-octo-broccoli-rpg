@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
+import { attachSuggestionsToLatestReply, cleanSuggestions } from "./suggestions";
 import { withUiSpan } from "./telemetry";
 import type { ChatMessage, GMEvent, QuestUpdateNotification, RetrievedMemory } from "./types";
 
@@ -41,27 +42,16 @@ function handleQuestUpdate(
   ]);
 }
 
-// Attach suggested next-action chips to the most recent assistant/narrator
-// message (in GM mode a narrator event may follow the reply). Ignores empty or
-// malformed payloads so a bad frame never disrupts the finished reply.
+// Attach suggested next-action chips from a live SSE frame to the most recent
+// assistant/narrator message. Targeting lives in the shared helper so the
+// chronicle-reload path attaches chips identically.
 function attachSuggestions(
   suggestions: unknown,
   setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>,
 ): void {
-  if (!Array.isArray(suggestions)) return;
-  const cleaned = suggestions.filter((s): s is string => typeof s === "string" && s.trim() !== "");
+  const cleaned = cleanSuggestions(suggestions);
   if (cleaned.length === 0) return;
-  setChatMessages((current) => {
-    let target = -1;
-    for (let i = current.length - 1; i >= 0; i--) {
-      if (current[i].role === "assistant" || current[i].role === "narrator") {
-        target = i;
-        break;
-      }
-    }
-    if (target === -1) return current;
-    return current.map((msg, i) => (i === target ? { ...msg, suggestions: cleaned } : msg));
-  });
+  setChatMessages((current) => attachSuggestionsToLatestReply(current, cleaned));
 }
 
 export type SendChatParams = {

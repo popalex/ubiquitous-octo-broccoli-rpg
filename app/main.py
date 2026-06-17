@@ -56,6 +56,7 @@ from app.schemas import (
     SessionListResponse,
     SessionMemoryResponse,
     SessionQuestsResponse,
+    SuggestionsResponse,
     TurnResponse,
     WorldStateResponse,
 )
@@ -309,6 +310,37 @@ async def get_session_turns(session_id: str, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=404, detail="Session not found.")
     turns = (await db.scalars(select(Turn).where(Turn.session_id == session_id).order_by(Turn.turn_index.asc()))).all()
     return [TurnResponse.model_validate(t) for t in turns]
+
+
+@app.get("/session/{session_id}/suggestions", response_model=SuggestionsResponse)
+async def get_session_suggestions(session_id: str, db: AsyncSession = Depends(get_db)) -> SuggestionsResponse:
+    """Regenerate ephemeral suggested-response chips for the chronicle's latest
+    reply. Chips are not persisted, so reopening a chronicle has nothing to
+    render; this recomputes them on demand. Best-effort: any failure (or the
+    feature being off, or no reply yet) returns an empty list, never an error."""
+    session = await db.scalar(select(ChatSession).where(ChatSession.id == session_id))
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if not session.suggestions_enabled:
+        return SuggestionsResponse(suggestions=[])
+
+    turns = (await db.scalars(select(Turn).where(Turn.session_id == session_id).order_by(Turn.turn_index.asc()))).all()
+    # Latest assistant reply (incl. GM narration/events) + the user turn before it.
+    reply = next((t for t in reversed(turns) if t.role == "assistant"), None)
+    if reply is None:
+        return SuggestionsResponse(suggestions=[])
+    user_msg = next((t for t in reversed(turns) if t.role == "user" and t.turn_index < reply.turn_index), None)
+
+    try:
+        suggestions = await get_orchestrator().post_turn_judge.suggest_only(
+            session,
+            user_message=user_msg.content if user_msg else "",
+            response_text=reply.content,
+        )
+    except Exception:
+        logger.exception("suggestion regeneration failed for session=%s", session_id)
+        suggestions = []
+    return SuggestionsResponse(suggestions=suggestions)
 
 
 @app.delete("/session/{session_id}", status_code=204)

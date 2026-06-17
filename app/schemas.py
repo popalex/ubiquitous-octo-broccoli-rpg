@@ -94,6 +94,13 @@ class ChatResponse(BaseModel):
     suggestions: list[str] = Field(default_factory=list)
 
 
+class SuggestionsResponse(BaseModel):
+    # Suggested next-action chips regenerated for a chronicle's latest reply on
+    # load. Ephemeral — not persisted; empty when the feature is off or there is
+    # no reply yet.
+    suggestions: list[str] = Field(default_factory=list)
+
+
 class MemoryFactResponse(ORMModel):
     id: str
     content: str

@@ -10,6 +10,7 @@ export const sessionKeys = {
   memory: (id: string) => ["session", id, "memory"] as const,
   worldState: (id: string) => ["session", id, "world-state"] as const,
   quests: (id: string) => ["session", id, "quests"] as const,
+  suggestions: (id: string) => ["session", id, "suggestions"] as const,
 };
 
 /** Session detail + turns — the data needed to render a resumed chronicle. */
@@ -26,6 +27,23 @@ export function useSessionTurns(sessionId: string) {
     queryKey: sessionKeys.turns(sessionId),
     queryFn: () => api<TurnRecord[]>(`/session/${sessionId}/turns`),
     enabled: !!sessionId,
+  });
+}
+
+/**
+ * Regenerated suggested-response chips for the chronicle's latest reply. Chips
+ * aren't persisted, so on reload we recompute them on demand (one judge call).
+ * Gated on `enabled` (the session's resolved suggestions flag) so the call is
+ * skipped entirely when the feature is off; the latest exchange is stable until
+ * a new turn, so the result never goes stale on its own.
+ */
+export function useSessionSuggestions(sessionId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: sessionKeys.suggestions(sessionId),
+    queryFn: () => api<{ suggestions: string[] }>(`/session/${sessionId}/suggestions`),
+    enabled: !!sessionId && enabled,
+    retry: false,
+    staleTime: Infinity,
   });
 }
 

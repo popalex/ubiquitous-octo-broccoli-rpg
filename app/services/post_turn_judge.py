@@ -152,6 +152,45 @@ class PostTurnJudgeService:
             suggestions = self._extract_suggestions(payload) if do_suggestions else []
             return new_ledger, quest_changes, suggestions
 
+    async def suggest_only(
+        self,
+        session: ChatSession,
+        *,
+        user_message: str,
+        response_text: str,
+    ) -> list[str]:
+        """Generate suggested next-action chips for one exchange — nothing else.
+
+        Used when reopening a chronicle to regenerate ephemeral chips for the
+        latest reply. Deliberately runs no world/quest extraction, so a reload
+        never mutates canon. Best-effort: any failure yields ``[]``."""
+        if not session.suggestions_enabled:
+            return []
+        with tracer.start_as_current_span("orchestrator.post_turn_judge") as span:
+            span.set_attribute("rpg.session_id", str(session.id))
+            span.set_attribute("rpg.post_turn.sections", "suggestions")
+            system_prompt = build_post_turn_judge_prompt(world=False, quests=False, suggestions=True)
+            user_content = f"LATEST EXCHANGE:\nPLAYER: {user_message}\nRESPONSE: {response_text}"
+            post_turn_judge_calls.add(1)
+            try:
+                payload = await self.provider.generate_json(
+                    [
+                        ProviderMessage(role="system", content=system_prompt),
+                        ProviderMessage(role="user", content=user_content),
+                    ],
+                    temperature=0.1,
+                    max_tokens=self.settings.post_turn_judge_max_tokens,
+                )
+            except ProviderError as exc:
+                logger.exception("suggestion regeneration failed for session=%s", session.id)
+                record_span_error(span, exc)
+                return []
+            if not isinstance(payload, dict):
+                logger.warning("suggestion regeneration returned non-object for session=%s", session.id)
+                return []
+            set_completion(span, json.dumps(payload))
+            return self._extract_suggestions(payload)
+
     def _extract_suggestions(self, payload: dict) -> list[str]:
         """Pull, clean and clamp the suggestions array. Best-effort: any
         malformed/missing payload yields ``[]``, never raises."""
