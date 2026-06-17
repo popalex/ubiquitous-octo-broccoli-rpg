@@ -98,6 +98,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "on" if settings.post_turn_judge_enabled else "off",
         )
 
+    # Suggested-response chips are produced ONLY by the unified post-turn judge;
+    # the legacy two-call path emits none. Flag the misconfig so the feature
+    # doesn't silently no-op.
+    if settings.suggestions_enabled and not settings.post_turn_judge_enabled:
+        logger.warning(
+            "SUGGESTIONS_ENABLED is on but POST_TURN_JUDGE_ENABLED is off — "
+            "suggested-response chips are produced only by the post-turn judge "
+            "and will never appear. Enable POST_TURN_JUDGE_ENABLED to use them."
+        )
+
     yield
 
     # Shutdown: close provider HTTP clients, but only if the (lazily built,

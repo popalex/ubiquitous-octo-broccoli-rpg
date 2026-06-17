@@ -1,10 +1,20 @@
 import type { ChatMessage } from "./types";
 
-/** Keep only non-empty strings from a raw suggestions payload (a bad frame or
- *  malformed response must never disrupt the finished reply). */
+/** Keep only non-empty, case-insensitively-distinct strings from a raw
+ *  suggestions payload (a bad frame or malformed response must never disrupt
+ *  the finished reply). Dedupe guards the chip React key, which is the text. */
 export function cleanSuggestions(suggestions: unknown): string[] {
   if (!Array.isArray(suggestions)) return [];
-  return suggestions.filter((s): s is string => typeof s === "string" && s.trim() !== "");
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of suggestions) {
+    if (typeof s !== "string") continue;
+    const text = s.trim();
+    if (text === "" || seen.has(text.toLowerCase())) continue;
+    seen.add(text.toLowerCase());
+    out.push(s);
+  }
+  return out;
 }
 
 /** Return a copy of `messages` with `suggestions` set on the most recent

@@ -196,12 +196,18 @@ class PostTurnJudgeService:
         if not isinstance(raw, list):
             return []
         cleaned: list[str] = []
+        seen: set[str] = set()
         for item in raw:
             if not isinstance(item, str):
                 continue
             text = item.strip()
-            if text:
-                cleaned.append(text)
+            # Drop blanks and case-insensitive duplicates — a small model may
+            # repeat a chip, which would collide on the React key and silently
+            # drop one anyway.
+            if not text or text.casefold() in seen:
+                continue
+            seen.add(text.casefold())
+            cleaned.append(text)
             if len(cleaned) >= self.settings.suggestions_max:
                 break
         if cleaned:

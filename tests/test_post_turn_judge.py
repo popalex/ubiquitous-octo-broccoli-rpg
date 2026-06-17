@@ -244,6 +244,22 @@ async def test_suggestions_clamped_and_cleaned(db_session: AsyncSession) -> None
 
 
 @pytest.mark.asyncio
+async def test_suggestions_deduped_case_insensitively(db_session: AsyncSession) -> None:
+    settings = make_test_settings(world_state_enabled=False, quests_enabled=False)
+    provider = MockProvider(settings)
+    # A small model repeats a chip (varying case/whitespace); keep first only.
+    provider.set_json_response({"suggestions": ["Search the desk", "search the desk ", "SEARCH THE DESK", "Flee"]})
+    session = SessionFactory(turn_count=2, suggestions_enabled=True)
+    await db_session.flush()
+
+    _, _, suggestions = await _judge(provider, settings).judge_turn(
+        db_session, session, user_message="x", response_text="y"
+    )
+
+    assert suggestions == ["Search the desk", "Flee"]
+
+
+@pytest.mark.asyncio
 async def test_malformed_suggestions_returns_empty(db_session: AsyncSession) -> None:
     settings = make_test_settings(world_state_enabled=False, quests_enabled=False)
     provider = MockProvider(settings)
