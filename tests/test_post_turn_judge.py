@@ -124,6 +124,30 @@ async def test_bad_quest_section_still_applies_world(db_session: AsyncSession) -
     assert await _quest_count(db_session, session.id) == 0
 
 
+@pytest.mark.asyncio
+async def test_one_bad_quest_item_does_not_sink_the_valid_ones(db_session: AsyncSession) -> None:
+    """A malformed quests_update item (missing slug) drops only itself; the
+    valid quests_new in the same payload still applies (lenient parse)."""
+    settings = make_test_settings(world_state_enabled=False, quests_enabled=True)
+    provider = MockProvider(settings)
+    quest_delta = {
+        "quests_new": QUEST_SECTION["quests_new"],
+        "quests_update": [{"status": "active"}],  # no slug -> invalid
+    }
+    provider.set_json_response({"quest_delta": quest_delta})
+    session = SessionFactory(turn_count=2)
+    await db_session.flush()
+
+    with patch("app.services.quests.quest_extract_failures") as failures:
+        _ledger, changes, _suggestions = await _judge(provider, settings).judge_turn(
+            db_session, session, user_message="x", response_text="y"
+        )
+
+    assert len(changes) == 1  # valid new quest survived
+    assert await _quest_count(db_session, session.id) == 1
+    failures.add.assert_called_once_with(1, {"reason": "schema"})  # bad item metered
+
+
 # ---------------------------------------------------------------------------
 # Service: flag gating
 # ---------------------------------------------------------------------------

@@ -34,7 +34,6 @@ from app.telemetry import (
     canon_extract_failures,
     post_turn_judge_calls,
     post_turn_suggestions,
-    quest_extract_failures,
     record_span_error,
     set_completion,
     tracer,
@@ -216,11 +215,10 @@ class PostTurnJudgeService:
     ) -> list[QuestChange]:
         if not raw:
             return []
-        try:
-            delta = QuestDelta.model_validate(raw)
-        except ValidationError as exc:
-            logger.warning("post-turn judge quest delta invalid for session=%s: %s", session.id, exc)
-            quest_extract_failures.add(1, {"reason": "schema"})
+        # Lenient parse: a single malformed item (e.g. a missing slug) drops
+        # only that item, not the whole quest section.
+        delta = QuestDelta.lenient(raw)
+        if delta.is_empty():
             return []
         try:
             return await self.quests.apply_quest_delta(
