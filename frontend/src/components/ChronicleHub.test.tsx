@@ -22,6 +22,7 @@ function makeChronicle(overrides: Partial<ChronicleListItem> = {}): ChronicleLis
     character_name: "Aria",
     world_name: "Shadowrealm",
     summary: null,
+    suggestions_enabled: false,
     world_state_enabled: false,
     quests_enabled: false,
     parent_session_id: null,

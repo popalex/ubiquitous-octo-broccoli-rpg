@@ -33,6 +33,9 @@ class SessionInitRequest(BaseModel):
     # None inherits the global default (settings.gm_enabled). Unlike the two
     # feature flags below, the session stores the resolved value (no NULL).
     gm_enabled: bool | None = None
+    # None inherits the global default (settings.suggestions_enabled); stored
+    # resolved on the session like gm_enabled.
+    suggestions_enabled: bool | None = None
     current_location: str | None = None
     time_of_day: str | None = None
     # Per-session feature overrides; None inherits the global setting.
@@ -47,6 +50,7 @@ class SessionInitResponse(ORMModel):
     title: str | None
     turn_count: int
     gm_enabled: bool
+    suggestions_enabled: bool
     current_location: str | None
     time_of_day: str | None
     # Resolved (override → global), not the raw nullable override.
@@ -87,6 +91,14 @@ class ChatResponse(BaseModel):
     continuity_issues: list[str]
     retrieved_memories: list[RetrievedMemoryItem]
     quest_updates: list[QuestUpdateNotification] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
+
+
+class SuggestionsResponse(BaseModel):
+    # Suggested next-action chips regenerated for a chronicle's latest reply on
+    # load. Ephemeral — not persisted; empty when the feature is off or there is
+    # no reply yet.
+    suggestions: list[str] = Field(default_factory=list)
 
 
 class MemoryFactResponse(ORMModel):
@@ -134,6 +146,7 @@ class SessionListItem(BaseModel):
     title: str | None
     status: str
     gm_enabled: bool
+    suggestions_enabled: bool
     turn_count: int
     created_at: datetime
     updated_at: datetime
@@ -165,6 +178,7 @@ class SessionDetailResponse(BaseModel):
     title: str | None
     status: str
     gm_enabled: bool
+    suggestions_enabled: bool
     turn_count: int
     created_at: datetime
     updated_at: datetime
@@ -230,6 +244,7 @@ class HealthResponse(BaseModel):
     database: str
     mode: str
     gm_enabled: bool
+    suggestions_enabled: bool
     world_state_enabled: bool
     quests_enabled: bool
 
@@ -359,3 +374,4 @@ class GMChatResponse(BaseModel):
     continuity_issues: list[str]
     retrieved_memories: list[RetrievedMemoryItem]
     quest_updates: list[QuestUpdateNotification] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)

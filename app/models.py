@@ -67,6 +67,7 @@ class Session(TimestampMixin, Base):
 
     # GM mode fields
     gm_enabled: Mapped[bool] = mapped_column(default=False, nullable=False)
+    suggestions_enabled: Mapped[bool] = mapped_column(default=False, nullable=False)
     current_location: Mapped[str | None] = mapped_column(String(200), nullable=True)
     time_of_day: Mapped[str | None] = mapped_column(String(50), nullable=True)
     last_event_turn: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

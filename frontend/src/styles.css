@@ -1062,6 +1062,45 @@ input:disabled {
   50% { box-shadow: 0 0 20px rgba(199, 62, 77, 0.3); }
 }
 
+/* Suggested-response chips: optional next-action shortcuts under the latest
+   reply. The free-text composer always stays available below them. */
+.suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.suggestion-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--parchment);
+  background: rgba(201, 162, 39, 0.08);
+  border: 1px solid rgba(201, 162, 39, 0.3);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: background var(--transition-speed), border-color var(--transition-speed);
+}
+
+.suggestion-chip:hover:not(:disabled) {
+  background: rgba(201, 162, 39, 0.18);
+  border-color: var(--gold);
+}
+
+.suggestion-chip:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.suggestion-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    GM MODE CONTROLS
    ═══════════════════════════════════════════════════════════════════════════ */

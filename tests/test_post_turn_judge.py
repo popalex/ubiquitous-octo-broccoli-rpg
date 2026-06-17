@@ -75,7 +75,7 @@ async def test_judge_applies_both_sections_in_one_call(db_session: AsyncSession)
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="I cut down Voss and vow to avenge the widow", response_text="Voss falls."
     )
 
@@ -98,7 +98,7 @@ async def test_bad_world_section_still_applies_quests(db_session: AsyncSession) 
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -115,13 +115,37 @@ async def test_bad_quest_section_still_applies_world(db_session: AsyncSession) -
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
     assert ledger_row is not None and ledger_row.version == 1  # world section survived
     assert changes == []  # malformed quest section dropped
     assert await _quest_count(db_session, session.id) == 0
+
+
+@pytest.mark.asyncio
+async def test_one_bad_quest_item_does_not_sink_the_valid_ones(db_session: AsyncSession) -> None:
+    """A malformed quests_update item (missing slug) drops only itself; the
+    valid quests_new in the same payload still applies (lenient parse)."""
+    settings = make_test_settings(world_state_enabled=False, quests_enabled=True)
+    provider = MockProvider(settings)
+    quest_delta = {
+        "quests_new": QUEST_SECTION["quests_new"],
+        "quests_update": [{"status": "active"}],  # no slug -> invalid
+    }
+    provider.set_json_response({"quest_delta": quest_delta})
+    session = SessionFactory(turn_count=2)
+    await db_session.flush()
+
+    with patch("app.services.quests.quest_extract_failures") as failures:
+        _ledger, changes, _suggestions = await _judge(provider, settings).judge_turn(
+            db_session, session, user_message="x", response_text="y"
+        )
+
+    assert len(changes) == 1  # valid new quest survived
+    assert await _quest_count(db_session, session.id) == 1
+    failures.add.assert_called_once_with(1, {"reason": "schema"})  # bad item metered
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +162,7 @@ async def test_world_only_session_skips_quests(db_session: AsyncSession) -> None
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -156,7 +180,7 @@ async def test_quests_only_session_skips_world(db_session: AsyncSession) -> None
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -172,12 +196,121 @@ async def test_no_call_when_both_features_off(db_session: AsyncSession) -> None:
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
     assert provider.json_calls == 0  # no enabled section -> no LLM call at all
     assert ledger_row is None and changes == []
+
+
+# ---------------------------------------------------------------------------
+# Service: suggestions section
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_suggestions_returned_and_one_call(db_session: AsyncSession) -> None:
+    # World/quests off, suggestions on: the judge still fires exactly one call.
+    settings = make_test_settings(world_state_enabled=False, quests_enabled=False)
+    provider = CountingMockProvider(settings)
+    provider.set_json_response({"suggestions": ["Search the desk", "Slip out the window"]})
+    session = SessionFactory(turn_count=2, suggestions_enabled=True)
+    await db_session.flush()
+
+    ledger_row, changes, suggestions = await _judge(provider, settings).judge_turn(
+        db_session, session, user_message="x", response_text="y"
+    )
+
+    assert provider.json_calls == 1
+    assert ledger_row is None and changes == []
+    assert suggestions == ["Search the desk", "Slip out the window"]
+
+
+@pytest.mark.asyncio
+async def test_suggestions_clamped_and_cleaned(db_session: AsyncSession) -> None:
+    settings = make_test_settings(world_state_enabled=False, quests_enabled=False, suggestions_max=2)
+    provider = MockProvider(settings)
+    # Blanks and non-strings dropped; clamped to suggestions_max (2).
+    provider.set_json_response({"suggestions": ["  Fight  ", "", 7, "Flee", "Hide", None]})
+    session = SessionFactory(turn_count=2, suggestions_enabled=True)
+    await db_session.flush()
+
+    _, _, suggestions = await _judge(provider, settings).judge_turn(
+        db_session, session, user_message="x", response_text="y"
+    )
+
+    assert suggestions == ["Fight", "Flee"]
+
+
+@pytest.mark.asyncio
+async def test_malformed_suggestions_returns_empty(db_session: AsyncSession) -> None:
+    settings = make_test_settings(world_state_enabled=False, quests_enabled=False)
+    provider = MockProvider(settings)
+    provider.set_json_response({"suggestions": "not a list"})
+    session = SessionFactory(turn_count=2, suggestions_enabled=True)
+    await db_session.flush()
+
+    _, _, suggestions = await _judge(provider, settings).judge_turn(
+        db_session, session, user_message="x", response_text="y"
+    )
+
+    assert suggestions == []
+
+
+@pytest.mark.asyncio
+async def test_suggestions_off_session_yields_none(db_session: AsyncSession) -> None:
+    # Suggestions disabled on the session: even if the model returns them, the
+    # judge does not extract them (and with world/quests off, makes no call).
+    settings = make_test_settings(world_state_enabled=False, quests_enabled=False)
+    provider = CountingMockProvider(settings)
+    provider.set_json_response({"suggestions": ["ignored"]})
+    session = SessionFactory(turn_count=2, suggestions_enabled=False)
+    await db_session.flush()
+
+    _, _, suggestions = await _judge(provider, settings).judge_turn(
+        db_session, session, user_message="x", response_text="y"
+    )
+
+    assert provider.json_calls == 0
+    assert suggestions == []
+
+
+# ---------------------------------------------------------------------------
+# Service: suggest_only (chronicle-reload regeneration)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_suggest_only_returns_chips_without_touching_canon(db_session: AsyncSession) -> None:
+    # Even with a quest payload present, suggest_only applies nothing — no
+    # ledger row, no quests — and just returns cleaned suggestions.
+    settings = make_test_settings(world_state_enabled=True, quests_enabled=True, suggestions_max=2)
+    provider = CountingMockProvider(settings)
+    provider.set_json_response({"quests_new": QUEST_SECTION["quests_new"], "suggestions": ["  Run  ", "", "Hide", "x"]})
+    session = SessionFactory(turn_count=2, suggestions_enabled=True)
+    await db_session.flush()
+
+    suggestions = await _judge(provider, settings).suggest_only(session, user_message="x", response_text="y")
+
+    assert provider.json_calls == 1
+    assert suggestions == ["Run", "Hide"]
+    assert await _quest_count(db_session, session.id) == 0
+    assert await WorldStateService(provider, settings).current_version(db_session, session.id) == 0
+
+
+@pytest.mark.asyncio
+async def test_suggest_only_off_session_makes_no_call(db_session: AsyncSession) -> None:
+    settings = make_test_settings()
+    provider = CountingMockProvider(settings)
+    provider.set_json_response({"suggestions": ["ignored"]})
+    session = SessionFactory(turn_count=2, suggestions_enabled=False)
+    await db_session.flush()
+
+    suggestions = await _judge(provider, settings).suggest_only(session, user_message="x", response_text="y")
+
+    assert provider.json_calls == 0
+    assert suggestions == []
 
 
 # ---------------------------------------------------------------------------

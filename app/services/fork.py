@@ -64,6 +64,7 @@ class ForkService:
                 last_summarized_turn=0,
                 metadata_json=deepcopy(parent.metadata_json),
                 gm_enabled=parent.gm_enabled,
+                suggestions_enabled=parent.suggestions_enabled,
                 current_location=parent.current_location,
                 time_of_day=parent.time_of_day,
                 last_event_turn=min(parent.last_event_turn, at_turn),

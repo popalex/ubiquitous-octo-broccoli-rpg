@@ -14,6 +14,7 @@ from app.schemas import (
 from tests.factories import (
     CharacterCardFactory,
     SessionFactory,
+    TurnFactory,
     WorldStateFactory,
 )
 
@@ -255,6 +256,68 @@ async def test_delete_session_no_longer_in_list(async_client: AsyncClient, db_se
     assert list_response.status_code == 200
     ids = [s["id"] for s in list_response.json()["sessions"]]
     assert session.id not in ids
+
+
+# ===========================================================================
+# Suggestions (regenerate-on-load)
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_suggestions_regenerated_for_latest_reply(async_client: AsyncClient, db_session) -> None:
+    from unittest.mock import patch
+
+    from app.services.orchestrator import get_orchestrator
+
+    session = SessionFactory(suggestions_enabled=True)
+    await db_session.flush()
+    TurnFactory(session=session, turn_index=1, role="user", content="I open the door.")
+    TurnFactory(session=session, turn_index=2, role="assistant", content="It creaks wide.")
+    await db_session.flush()
+
+    mock_orch = MagicMock()
+    mock_orch.post_turn_judge.suggest_only = AsyncMock(return_value=["Step inside", "Listen first"])
+    get_orchestrator.cache_clear()
+    with patch("app.main.get_orchestrator", return_value=mock_orch):
+        response = await async_client.get(f"/session/{session.id}/suggestions")
+
+    assert response.status_code == 200
+    assert response.json()["suggestions"] == ["Step inside", "Listen first"]
+    # Fed the latest reply + the preceding user message.
+    mock_orch.post_turn_judge.suggest_only.assert_awaited_once()
+    kwargs = mock_orch.post_turn_judge.suggest_only.await_args.kwargs
+    assert kwargs["response_text"] == "It creaks wide."
+    assert kwargs["user_message"] == "I open the door."
+
+
+@pytest.mark.asyncio
+async def test_suggestions_empty_when_feature_off(async_client: AsyncClient, db_session) -> None:
+    session = SessionFactory(suggestions_enabled=False)
+    await db_session.flush()
+    TurnFactory(session=session, turn_index=1, role="assistant", content="Hi.")
+    await db_session.flush()
+
+    response = await async_client.get(f"/session/{session.id}/suggestions")
+    assert response.status_code == 200
+    assert response.json()["suggestions"] == []
+
+
+@pytest.mark.asyncio
+async def test_suggestions_empty_when_no_reply_yet(async_client: AsyncClient, db_session) -> None:
+    session = SessionFactory(suggestions_enabled=True)
+    await db_session.flush()
+    TurnFactory(session=session, turn_index=1, role="user", content="Anyone there?")
+    await db_session.flush()
+
+    response = await async_client.get(f"/session/{session.id}/suggestions")
+    assert response.status_code == 200
+    assert response.json()["suggestions"] == []
+
+
+@pytest.mark.asyncio
+async def test_suggestions_not_found_returns_404(async_client: AsyncClient) -> None:
+    response = await async_client.get("/session/nonexistent-id/suggestions")
+    assert response.status_code == 404
 
 
 # ===========================================================================

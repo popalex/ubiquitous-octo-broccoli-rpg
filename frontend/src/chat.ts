@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
+import { attachSuggestionsToLatestReply, cleanSuggestions } from "./suggestions";
 import { withUiSpan } from "./telemetry";
 import type { ChatMessage, GMEvent, QuestUpdateNotification, RetrievedMemory } from "./types";
 
@@ -39,6 +40,18 @@ function handleQuestUpdate(
       messageType: "quest",
     },
   ]);
+}
+
+// Attach suggested next-action chips from a live SSE frame to the most recent
+// assistant/narrator message. Targeting lives in the shared helper so the
+// chronicle-reload path attaches chips identically.
+function attachSuggestions(
+  suggestions: unknown,
+  setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>,
+): void {
+  const cleaned = cleanSuggestions(suggestions);
+  if (cleaned.length === 0) return;
+  setChatMessages((current) => attachSuggestionsToLatestReply(current, cleaned));
 }
 
 export type SendChatParams = {
@@ -213,6 +226,8 @@ async function sendGMStream({
           setStatusText(`Event triggered: ${gmEvent.event_type}`);
         } else if (event.type === "quest_update") {
           handleQuestUpdate(event.quest as QuestUpdateNotification, setChatMessages, setStatusText);
+        } else if (event.type === "suggestions") {
+          attachSuggestions(event.suggestions as string[], setChatMessages);
         } else if (event.type === "error") {
           throw new Error((event.error as string) || "Stream failed.");
         } else if (event.type === "done") {
@@ -315,6 +330,8 @@ async function sendStandardStream({
           setRetrievedMemories(event.memories as RetrievedMemory[]);
         } else if (event.type === "quest_update") {
           handleQuestUpdate(event.quest as QuestUpdateNotification, setChatMessages, setStatusText);
+        } else if (event.type === "suggestions") {
+          attachSuggestions(event.suggestions as string[], setChatMessages);
         } else if (event.type === "error") {
           throw new Error((event.error as string) || "Stream failed.");
         } else if (event.type === "done") {

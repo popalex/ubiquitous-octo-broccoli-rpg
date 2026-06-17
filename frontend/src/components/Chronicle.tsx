@@ -1,5 +1,5 @@
 import { Sparkle } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { sendChat } from "../chat";
@@ -8,6 +8,7 @@ import {
   useSessionDetail,
   useSessionMemory,
   useSessionQuests,
+  useSessionSuggestions,
   useSessionTurns,
   useWorldState,
 } from "../hooks/useSession";
@@ -80,6 +81,7 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
   const memory = useSessionMemory(sessionId);
   const worldState = useWorldState(sessionId);
   const quests = useSessionQuests(sessionId);
+  const suggestions = useSessionSuggestions(sessionId, detail.suggestions_enabled);
   const refreshMemory = useRefreshMemory();
   const forkSession = useForkSession();
   const [forkingTurn, setForkingTurn] = useState<number | null>(null);
@@ -87,6 +89,24 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
   const gmEnabled = detail.gm_enabled;
   const currentLocation = detail.current_location || "";
   const timeOfDay = detail.time_of_day || "morning";
+
+  // Regenerated-on-load chips. Derived (never setState-in-effect): attach the
+  // loaded suggestions to the reply they were generated for — the latest
+  // non-user turn at load. A later live turn carries a fresh id, so stale chips
+  // never bleed onto it, and only the last message renders chips anyway.
+  const loadedReplyId = useMemo(() => {
+    for (let i = initialTurns.length - 1; i >= 0; i--) {
+      if (initialTurns[i].role !== "user") return `${initialTurns[i].turn_index}`;
+    }
+    return null;
+  }, [initialTurns]);
+  const displayMessages = useMemo(() => {
+    const chips = suggestions.data?.suggestions;
+    if (!chips?.length || !loadedReplyId) return chatMessages;
+    return chatMessages.map((m) =>
+      m.id === loadedReplyId && !m.suggestions?.length ? { ...m, suggestions: chips } : m,
+    );
+  }, [chatMessages, suggestions.data, loadedReplyId]);
 
   function handleForkFromTurn(turnIndex: number) {
     if (forkingTurn != null) return;
@@ -104,10 +124,10 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
     );
   }
 
-  function handleSendChat() {
+  function handleSendChat(messageOverride?: string) {
     void sendChat({
       sessionId,
-      chatInput,
+      chatInput: messageOverride ?? chatInput,
       setChatInput,
       gmEnabled,
       currentLocation,
@@ -163,10 +183,14 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
           <span className="meta-label">Quests</span>
           <strong>{detail.quests_enabled ? "On" : "Off"}</strong>
         </div>
+        <div className="summary-item">
+          <span className="meta-label">Suggestions</span>
+          <strong>{detail.suggestions_enabled ? "On" : "Off"}</strong>
+        </div>
       </div>
       <main className="dashboard dashboard-chronicle">
         <ChatPanel
-          chatMessages={chatMessages}
+          chatMessages={displayMessages}
           chatInput={chatInput}
           setChatInput={setChatInput}
           isBusy={isBusy}

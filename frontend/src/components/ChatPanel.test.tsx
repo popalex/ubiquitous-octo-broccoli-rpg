@@ -67,3 +67,34 @@ describe("ChatPanel fork-from-here", () => {
     expect(screen.getByRole("button", { name: /fork from here/i })).toBeDisabled();
   });
 });
+
+describe("ChatPanel suggestion chips", () => {
+  const withSuggestions: ChatMessage[] = [
+    { id: "1", role: "user", content: "I open the door." },
+    // An earlier reply that also carries suggestions — must NOT render them.
+    { id: "2", role: "assistant", content: "The hinges groan.", suggestions: ["Old chip"] },
+    { id: "live-abc", role: "assistant", content: "A draft stirs.", suggestions: ["Light a torch", "Draw your blade"] },
+  ];
+
+  it("renders chips only on the latest reply and sends the chip text on click", async () => {
+    const onSendChat = vi.fn();
+    renderPanel({ chatMessages: withSuggestions, onSendChat });
+
+    // Only the latest message's chips show — the stale "Old chip" is hidden.
+    expect(screen.queryByRole("button", { name: "Old chip" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Light a torch" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Draw your blade" }));
+    expect(onSendChat).toHaveBeenCalledExactlyOnceWith("Draw your blade");
+  });
+
+  it("hides chips while a turn is in flight", () => {
+    renderPanel({ chatMessages: withSuggestions, isBusy: true });
+    expect(screen.queryByRole("button", { name: "Light a torch" })).not.toBeInTheDocument();
+  });
+
+  it("leaves the composer usable alongside chips", () => {
+    renderPanel({ chatMessages: withSuggestions });
+    expect(screen.getByRole("textbox", { name: /write your response/i })).toBeEnabled();
+  });
+});

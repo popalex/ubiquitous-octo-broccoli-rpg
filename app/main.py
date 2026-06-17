@@ -56,6 +56,7 @@ from app.schemas import (
     SessionListResponse,
     SessionMemoryResponse,
     SessionQuestsResponse,
+    SuggestionsResponse,
     TurnResponse,
     WorldStateResponse,
 )
@@ -75,21 +76,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     if settings.dev_mode:
         logger.info(
-            "+ DEV MODE ENABLED - model: %s, timeout: %.0fs, world_state: %s, quests: %s, post_turn_judge: %s",
+            "+ DEV MODE ENABLED - model: %s, timeout: %.0fs, world_state: %s, quests: %s, "
+            "suggestions: %s, post_turn_judge: %s",
             settings.dev_model_name,
             settings.request_timeout_seconds,
             "on" if settings.world_state_enabled else "off",
             "on" if settings.quests_enabled else "off",
+            "on" if settings.suggestions_enabled else "off",
             "on" if settings.post_turn_judge_enabled else "off",
         )
     else:
         logger.info(
-            "+ Production mode - Actor: %s, Memory: %s, GM: %s, world_state: %s, quests: %s, post_turn_judge: %s",
+            "+ Production mode - Actor: %s, Memory: %s, GM: %s, world_state: %s, quests: %s, "
+            "suggestions: %s, post_turn_judge: %s",
             settings.actor_model_name,
             settings.memory_model_name,
             settings.gm_model_name,
             "on" if settings.world_state_enabled else "off",
             "on" if settings.quests_enabled else "off",
+            "on" if settings.suggestions_enabled else "off",
             "on" if settings.post_turn_judge_enabled else "off",
         )
 
@@ -116,6 +121,7 @@ async def health(db: AsyncSession = Depends(get_db)) -> HealthResponse:
             database="ok",
             mode="DEV" if settings.dev_mode else "PROD",
             gm_enabled=settings.gm_enabled,
+            suggestions_enabled=settings.suggestions_enabled,
             world_state_enabled=settings.world_state_enabled,
             quests_enabled=settings.quests_enabled,
         )
@@ -184,6 +190,9 @@ async def init_session(payload: SessionInitRequest, db: AsyncSession = Depends(g
         world_state_id=world.id if world else None,
         title=payload.title,
         gm_enabled=payload.gm_enabled if payload.gm_enabled is not None else settings.gm_enabled,
+        suggestions_enabled=payload.suggestions_enabled
+        if payload.suggestions_enabled is not None
+        else settings.suggestions_enabled,
         current_location=payload.current_location,
         time_of_day=payload.time_of_day,
         world_state_enabled=payload.world_state_enabled,
@@ -200,6 +209,7 @@ async def init_session(payload: SessionInitRequest, db: AsyncSession = Depends(g
         title=session.title,
         turn_count=session.turn_count,
         gm_enabled=session.gm_enabled,
+        suggestions_enabled=session.suggestions_enabled,
         current_location=session.current_location,
         time_of_day=session.time_of_day,
         world_state_enabled=world_state_on(session, settings),
@@ -244,6 +254,7 @@ async def list_sessions(db: AsyncSession = Depends(get_db)) -> SessionListRespon
                 title=s.title,
                 status=s.status,
                 gm_enabled=s.gm_enabled,
+                suggestions_enabled=s.suggestions_enabled,
                 turn_count=s.turn_count,
                 created_at=s.created_at,
                 updated_at=s.updated_at,
@@ -275,6 +286,7 @@ async def get_session(session_id: str, db: AsyncSession = Depends(get_db)) -> Se
         title=session.title,
         status=session.status,
         gm_enabled=session.gm_enabled,
+        suggestions_enabled=session.suggestions_enabled,
         turn_count=session.turn_count,
         created_at=session.created_at,
         updated_at=session.updated_at,
@@ -298,6 +310,37 @@ async def get_session_turns(session_id: str, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=404, detail="Session not found.")
     turns = (await db.scalars(select(Turn).where(Turn.session_id == session_id).order_by(Turn.turn_index.asc()))).all()
     return [TurnResponse.model_validate(t) for t in turns]
+
+
+@app.get("/session/{session_id}/suggestions", response_model=SuggestionsResponse)
+async def get_session_suggestions(session_id: str, db: AsyncSession = Depends(get_db)) -> SuggestionsResponse:
+    """Regenerate ephemeral suggested-response chips for the chronicle's latest
+    reply. Chips are not persisted, so reopening a chronicle has nothing to
+    render; this recomputes them on demand. Best-effort: any failure (or the
+    feature being off, or no reply yet) returns an empty list, never an error."""
+    session = await db.scalar(select(ChatSession).where(ChatSession.id == session_id))
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if not session.suggestions_enabled:
+        return SuggestionsResponse(suggestions=[])
+
+    turns = (await db.scalars(select(Turn).where(Turn.session_id == session_id).order_by(Turn.turn_index.asc()))).all()
+    # Latest assistant reply (incl. GM narration/events) + the user turn before it.
+    reply = next((t for t in reversed(turns) if t.role == "assistant"), None)
+    if reply is None:
+        return SuggestionsResponse(suggestions=[])
+    user_msg = next((t for t in reversed(turns) if t.role == "user" and t.turn_index < reply.turn_index), None)
+
+    try:
+        suggestions = await get_orchestrator().post_turn_judge.suggest_only(
+            session,
+            user_message=user_msg.content if user_msg else "",
+            response_text=reply.content,
+        )
+    except Exception:
+        logger.exception("suggestion regeneration failed for session=%s", session_id)
+        suggestions = []
+    return SuggestionsResponse(suggestions=suggestions)
 
 
 @app.delete("/session/{session_id}", status_code=204)
@@ -348,6 +391,7 @@ async def fork_session(
         title=fork.title,
         status=fork.status,
         gm_enabled=fork.gm_enabled,
+        suggestions_enabled=fork.suggestions_enabled,
         turn_count=fork.turn_count,
         created_at=fork.created_at,
         updated_at=fork.updated_at,

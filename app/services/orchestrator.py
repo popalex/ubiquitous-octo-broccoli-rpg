@@ -147,7 +147,7 @@ class OrchestratorService:
             await self.memory.maybe_refresh(db, session)
         except ProviderError:
             logger.exception("memory refresh skipped for session=%s", session.id)
-        quest_changes = await self._run_post_turn_extraction(
+        quest_changes, suggestions = await self._run_post_turn_extraction(
             db,
             session,
             user_message=user_message,
@@ -164,6 +164,7 @@ class OrchestratorService:
             continuity_applied=continuity.applied,
             continuity_issues=continuity.issues,
             quest_updates=self._quest_change_notifications(quest_changes),
+            suggestions=suggestions,
             retrieved_memories=[
                 RetrievedMemoryItem(
                     id=item.id,
@@ -374,13 +375,14 @@ class OrchestratorService:
             pressure_quests=pressure_quests,
             turn_id=turns_to_add[-1].id,
         )
-        quest_changes += await self._run_post_turn_extraction(
+        extra_changes, suggestions = await self._run_post_turn_extraction(
             db,
             session,
             user_message=user_message,
             response_text=full_assistant_content,
             turn_id=turns_to_add[-1].id,
         )
+        quest_changes += extra_changes
 
         logger.info(
             "gm_chat session=%s turn_count=%s event_triggered=%s",
@@ -398,6 +400,7 @@ class OrchestratorService:
             continuity_applied=continuity.applied,
             continuity_issues=continuity.issues,
             quest_updates=self._quest_change_notifications(quest_changes),
+            suggestions=suggestions,
             retrieved_memories=[
                 RetrievedMemoryItem(
                     id=item.id,
@@ -683,15 +686,18 @@ class OrchestratorService:
             pressure_quests=pressure_quests,
             turn_id=turns_to_add[-1].id,
         )
-        quest_changes += await self._run_post_turn_extraction(
+        extra_changes, suggestions = await self._run_post_turn_extraction(
             db,
             session,
             user_message=user_message,
             response_text=full_assistant_content,
             turn_id=turns_to_add[-1].id,
         )
+        quest_changes += extra_changes
         for change in quest_changes:
             yield f"data: {json.dumps({'type': 'quest_update', 'quest': self._quest_change_payload(change)})}\n\n"
+        if suggestions:
+            yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': suggestions})}\n\n"
 
         chat_turns.add(1, {"gm_enabled": True})
         total_duration = time.perf_counter() - total_start
@@ -812,7 +818,7 @@ class OrchestratorService:
                 await self.memory.maybe_refresh(db, session)
         except ProviderError:
             logger.exception("memory refresh skipped for session=%s", session.id)
-        quest_changes = await self._run_post_turn_extraction(
+        quest_changes, suggestions = await self._run_post_turn_extraction(
             db,
             session,
             user_message=user_message,
@@ -821,6 +827,8 @@ class OrchestratorService:
         )
         for change in quest_changes:
             yield f"data: {json.dumps({'type': 'quest_update', 'quest': self._quest_change_payload(change)})}\n\n"
+        if suggestions:
+            yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': suggestions})}\n\n"
 
         chat_turns.add(1, {"gm_enabled": False})
         logger.info("chat_stream session=%s turn_count=%s", session.id, session.turn_count)
@@ -896,33 +904,35 @@ class OrchestratorService:
         user_message: str,
         response_text: str,
         turn_id: str | None,
-    ) -> list[QuestChange]:
-        """Post-turn structured extraction (world-state ledger + quest judge).
+    ) -> tuple[list[QuestChange], list[str]]:
+        """Post-turn structured extraction (world-state ledger + quest judge +
+        suggested player responses). Returns ``(quest_changes, suggestions)``.
 
         Unified into ONE judge call when ``post_turn_judge_enabled`` is set,
-        else the legacy two separate calls. Memory refresh stays its own call
-        (different cadence) and is not routed through here. Best-effort: never
-        breaks the turn."""
+        else the legacy two separate calls (which produce no suggestions).
+        Memory refresh stays its own call (different cadence) and is not routed
+        through here. Best-effort: never breaks the turn."""
         if self.settings.post_turn_judge_enabled:
             try:
-                _, quest_changes = await self.post_turn_judge.judge_turn(
+                _, quest_changes, suggestions = await self.post_turn_judge.judge_turn(
                     db,
                     session,
                     user_message=user_message,
                     response_text=response_text,
                     turn_id=turn_id,
                 )
-                return quest_changes
+                return quest_changes, suggestions
             except Exception:
                 # Deliberately broad: post-turn side effects must never fail the turn.
                 logger.exception("post-turn judge skipped for session=%s", session.id)
-                return []
+                return [], []
         await self._extract_world_state(
             db, session, user_message=user_message, gm_response=response_text, turn_id=turn_id
         )
-        return await self._extract_quests(
+        quest_changes = await self._extract_quests(
             db, session, user_message=user_message, response_text=response_text, turn_id=turn_id
         )
+        return quest_changes, []
 
     async def _extract_world_state(
         self,

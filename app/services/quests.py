@@ -85,6 +85,33 @@ class QuestDelta(BaseModel):
     def is_empty(self) -> bool:
         return not (self.quests_new or self.quests_update)
 
+    @classmethod
+    def lenient(cls, raw: object) -> QuestDelta:
+        """Parse a judge payload item-by-item, dropping malformed entries.
+
+        Unlike ``model_validate`` (all-or-nothing), one bad ``quests_new`` /
+        ``quests_update`` item — e.g. a small model omitting a required ``slug``
+        — does not discard the whole delta; the valid siblings still apply. Each
+        dropped item is metered on ``quest_extract_failures`` so the loss stays
+        visible. Never raises."""
+        if not isinstance(raw, dict):
+            return cls()
+        new = cls._parse_items(raw.get("quests_new"), NewQuest)
+        update = cls._parse_items(raw.get("quests_update"), QuestUpdateItem)
+        return cls(quests_new=new, quests_update=update)
+
+    @staticmethod
+    def _parse_items(raw: object, model: type[BaseModel]) -> list:
+        if not isinstance(raw, list):
+            return []
+        items = []
+        for item in raw:
+            try:
+                items.append(model.model_validate(item))
+            except ValidationError:
+                quest_extract_failures.add(1, {"reason": "schema"})
+        return items
+
 
 @dataclass(slots=True)
 class QuestChange:
@@ -319,12 +346,10 @@ class QuestService:
                 record_span_error(span, exc)
                 return []
 
-            try:
-                delta = QuestDelta.model_validate(payload)
-            except ValidationError as exc:
-                logger.warning("quest delta invalid for session=%s: %s", session.id, exc)
-                quest_extract_failures.add(1, {"reason": "schema"})
-                record_span_error(span, exc)
+            # Lenient parse: one malformed item drops only itself, not the
+            # whole delta (each drop is metered inside ``lenient``).
+            delta = QuestDelta.lenient(payload)
+            if delta.is_empty():
                 return []
 
             return await self.apply_quest_delta(

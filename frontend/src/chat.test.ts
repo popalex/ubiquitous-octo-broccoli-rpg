@@ -187,6 +187,35 @@ describe("sendChat — standard stream", () => {
     expect(state.statusLog).toContain("Quest started: Find Her");
   });
 
+  it("attaches a suggestions frame to the assistant reply", async () => {
+    mockFetchStream([
+      sseFrame({ type: "chunk", content: "What now?" }),
+      sseFrame({ type: "suggestions", suggestions: ["Search the desk", "Leave quietly"] }),
+      sseFrame({ type: "done", session_id: "sess-1" }),
+    ]);
+    const { params, state } = createHarness();
+
+    await sendChat(params);
+
+    expect(state.messages[1]).toMatchObject({ role: "assistant" });
+    expect(state.messages[1].suggestions).toEqual(["Search the desk", "Leave quietly"]);
+  });
+
+  it("ignores an empty/malformed suggestions frame without killing the stream", async () => {
+    mockFetchStream([
+      sseFrame({ type: "chunk", content: "Onward." }),
+      sseFrame({ type: "suggestions", suggestions: ["", "   ", 42] }),
+      sseFrame({ type: "done", session_id: "sess-1" }),
+    ]);
+    const { params, state } = createHarness();
+
+    await sendChat(params);
+
+    expect(state.messages[1].content).toBe("Onward.");
+    expect(state.messages[1].suggestions).toBeUndefined();
+    expect(state.busyLog).toEqual([true, false]);
+  });
+
   it("rolls back the user message and restores input on an error frame", async () => {
     mockFetchStream([
       sseFrame({ type: "chunk", content: "partial" }),

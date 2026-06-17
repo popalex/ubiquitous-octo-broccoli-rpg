@@ -1,4 +1,4 @@
-import { GitFork, LoaderCircle, Send, Sparkle } from "lucide-react";
+import { GitFork, Lightbulb, LoaderCircle, Send, Sparkle } from "lucide-react";
 import { useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { ChatMessage } from "../types";
@@ -13,7 +13,8 @@ type Props = {
   sessionId: string;
   characterName: string;
   statusText: string;
-  onSendChat: () => void;
+  // Send the composer text, or an explicit message (a clicked suggestion chip).
+  onSendChat: (message?: string) => void;
   // Fork a new chronicle from a persisted turn. Omitted while a fork is busy.
   onForkFromTurn?: (turnIndex: number) => void;
   forkingTurn?: number | null;
@@ -35,6 +36,12 @@ export function ChatPanel({
 
   function handleSend() {
     onSendChat();
+    textareaRef.current?.focus();
+  }
+
+  function handleSuggestion(text: string) {
+    if (isBusy || !sessionId) return;
+    onSendChat(text);
     textareaRef.current?.focus();
   }
 
@@ -69,6 +76,13 @@ export function ChatPanel({
             // reply. Forks are inclusive of the clicked turn.
             const persistedIndex = /^\d+$/.test(message.id) ? Number(message.id) : null;
             const turnIndex = message.role === "user" ? null : persistedIndex;
+            // Chips are ephemeral: show only on the latest reply, once the turn
+            // has settled. The free-text composer always remains available.
+            const showSuggestions =
+              !isBusy &&
+              message.id === lastMessage?.id &&
+              message.role !== "user" &&
+              (message.suggestions?.length ?? 0) > 0;
             return (
               <article
                 key={message.id}
@@ -102,6 +116,22 @@ export function ChatPanel({
                 <div className="message-body">
                   <ReactMarkdown>{message.content}</ReactMarkdown>
                 </div>
+                {showSuggestions && (
+                  <div className="suggestion-chips" role="group" aria-label="Suggested actions">
+                    {message.suggestions!.map((text) => (
+                      <button
+                        key={text}
+                        type="button"
+                        className="suggestion-chip"
+                        aria-label={text}
+                        disabled={isBusy || !sessionId}
+                        onClick={() => handleSuggestion(text)}
+                      >
+                        <Lightbulb className="inline-icon" /> {text}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </article>
             );
           })
