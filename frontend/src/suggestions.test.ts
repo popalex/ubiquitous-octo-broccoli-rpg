@@ -10,6 +10,10 @@ describe("cleanSuggestions", () => {
     expect(cleanSuggestions(["  Run ", "", "   ", 42, null, "Hide"])).toEqual(["  Run ", "Hide"]);
   });
 
+  it("drops case-insensitive duplicates, keeping the first", () => {
+    expect(cleanSuggestions(["Search the desk", "search the desk ", "Flee"])).toEqual(["Search the desk", "Flee"]);
+  });
+
   it("returns [] for non-array payloads", () => {
     expect(cleanSuggestions("not a list")).toEqual([]);
     expect(cleanSuggestions(undefined)).toEqual([]);
