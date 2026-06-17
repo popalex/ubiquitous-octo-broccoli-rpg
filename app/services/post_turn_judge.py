@@ -116,9 +116,7 @@ class PostTurnJudgeService:
             parts.append(f"LATEST EXCHANGE:\nPLAYER: {user_message}\nRESPONSE: {response_text}")
             user_content = "\n\n".join(parts)
 
-            system_prompt = build_post_turn_judge_prompt(
-                world=do_world, quests=do_quests, suggestions=do_suggestions
-            )
+            system_prompt = build_post_turn_judge_prompt(world=do_world, quests=do_quests, suggestions=do_suggestions)
             post_turn_judge_calls.add(1)
             try:
                 payload = await self.provider.generate_json(

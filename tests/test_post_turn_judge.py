@@ -291,9 +291,7 @@ async def test_suggest_only_returns_chips_without_touching_canon(db_session: Asy
     session = SessionFactory(turn_count=2, suggestions_enabled=True)
     await db_session.flush()
 
-    suggestions = await _judge(provider, settings).suggest_only(
-        session, user_message="x", response_text="y"
-    )
+    suggestions = await _judge(provider, settings).suggest_only(session, user_message="x", response_text="y")
 
     assert provider.json_calls == 1
     assert suggestions == ["Run", "Hide"]
@@ -309,9 +307,7 @@ async def test_suggest_only_off_session_makes_no_call(db_session: AsyncSession) 
     session = SessionFactory(turn_count=2, suggestions_enabled=False)
     await db_session.flush()
 
-    suggestions = await _judge(provider, settings).suggest_only(
-        session, user_message="x", response_text="y"
-    )
+    suggestions = await _judge(provider, settings).suggest_only(session, user_message="x", response_text="y")
 
     assert provider.json_calls == 0
     assert suggestions == []

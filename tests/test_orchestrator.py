@@ -481,9 +481,7 @@ async def test_chat_stream_emits_quest_update_before_done(
 
 
 @pytest.mark.asyncio
-async def test_chat_stream_emits_suggestions_before_done(
-    mock_provider: MockProvider, db_session: AsyncSession
-) -> None:
+async def test_chat_stream_emits_suggestions_before_done(mock_provider: MockProvider, db_session: AsyncSession) -> None:
     settings = make_test_settings(memory_summary_interval=100)  # world/quests off
     with patch("app.services.orchestrator.build_provider", return_value=mock_provider):
         orchestrator = OrchestratorService(settings)
