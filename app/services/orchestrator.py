@@ -37,6 +37,55 @@ from app.telemetry import chat_turns, continuity_revisions, retrieval_selected, 
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# SSE frame emitters
+# ---------------------------------------------------------------------------
+# Typed helpers for the Server-Sent Events the stream entry points emit. The
+# wire shape (`data: {json}\n\n`, the `type` discriminator, field names) is the
+# contract the frontend dispatches on (see frontend/src/chat.ts); centralizing
+# it here keeps every frame in lock-step and kills format-typo bugs.
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+def sse_chunk(content: str) -> str:
+    return _sse({"type": "chunk", "content": content})
+
+
+def sse_phase(phase: str) -> str:
+    return _sse({"type": "phase", "phase": phase})
+
+
+def sse_pre_narration_chunk(content: str) -> str:
+    return _sse({"type": "pre_narration_chunk", "content": content})
+
+
+def sse_pre_narration_error(error: str) -> str:
+    return _sse({"type": "pre_narration_error", "error": error})
+
+
+def sse_event(event: object) -> str:
+    return _sse({"type": "event", "event": event})
+
+
+def sse_quest_update(quest: dict) -> str:
+    return _sse({"type": "quest_update", "quest": quest})
+
+
+def sse_suggestions(suggestions: list[str]) -> str:
+    return _sse({"type": "suggestions", "suggestions": suggestions})
+
+
+def sse_done(session_id: str) -> str:
+    return _sse({"type": "done", "session_id": session_id})
+
+
+def sse_error(error: str) -> str:
+    return _sse({"type": "error", "error": error})
+
+
 class OrchestratorService:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
@@ -439,7 +488,7 @@ class OrchestratorService:
         )
         if session is None:
             logger.warning("gm_chat_stream session=%s NOT FOUND", session_id)
-            yield f"data: {json.dumps({'type': 'error', 'error': 'Session not found'})}\n\n"
+            yield sse_error("Session not found")
             return
 
         # Retrieve memories and recent turns
@@ -465,7 +514,7 @@ class OrchestratorService:
         recent_events = self._recent_turns_text(recent_turns[-4:]) if recent_turns else ""
 
         # Send retrieved memories
-        yield f"data: {json.dumps(self._memories_event(retrieved))}\n\n"
+        yield _sse(self._memories_event(retrieved))
 
         # Neglected quests pressure the event check toward consequence events
         pressure_quests = []
@@ -499,7 +548,7 @@ class OrchestratorService:
         pre_narration_start = time.perf_counter()
         try:
             logger.info("gm_chat_stream session=%s pre_narration STARTING", session_id)
-            yield f"data: {json.dumps({'type': 'phase', 'phase': 'pre_narration'})}\n\n"
+            yield sse_phase("pre_narration")
             async for chunk in self.game_master.generate_narration_stream(
                 world_state=session.world_state,
                 recent_events=recent_events,
@@ -507,11 +556,11 @@ class OrchestratorService:
                 scene_context=location or "",
             ):
                 pre_narration_parts.append(chunk)
-                yield f"data: {json.dumps({'type': 'pre_narration_chunk', 'content': chunk})}\n\n"
+                yield sse_pre_narration_chunk(chunk)
         except ProviderError as exc:
             logger.exception("Pre-narration stream failed for session=%s", session.id)
             pre_narration_failed = True
-            yield f"data: {json.dumps({'type': 'pre_narration_error', 'error': str(exc)})}\n\n"
+            yield sse_pre_narration_error(str(exc))
 
         # On failure, discard the partial fragment entirely: a half-written
         # narration must not leak into the actor's context or be persisted.
@@ -542,7 +591,7 @@ class OrchestratorService:
         character_start = time.perf_counter()
         try:
             logger.info("gm_chat_stream session=%s character_reply STARTING", session_id)
-            yield f"data: {json.dumps({'type': 'phase', 'phase': 'character_reply'})}\n\n"
+            yield sse_phase("character_reply")
             async for chunk in self.actor_provider.generate_text_stream(
                 [
                     ProviderMessage(role="system", content=system_prompt),
@@ -552,10 +601,10 @@ class OrchestratorService:
                 max_tokens=self.settings.actor_reserved_output_tokens,
             ):
                 character_reply_parts.append(chunk)
-                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                yield sse_chunk(chunk)
         except ProviderError as exc:
             logger.exception("Character reply stream failed for session=%s", session.id)
-            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
+            yield sse_error(str(exc))
             return
 
         character_reply = "".join(character_reply_parts)
@@ -575,7 +624,7 @@ class OrchestratorService:
                 logger.info(
                     "gm_chat_stream session=%s event_generation STARTING type=%s", session_id, event_check.event_type
                 )
-                yield f"data: {json.dumps({'type': 'phase', 'phase': 'event'})}\n\n"
+                yield sse_phase("event")
                 generated_event = await self.game_master.generate_event(
                     world_state=session.world_state,
                     event_seed=event_check.event_seed,
@@ -591,7 +640,7 @@ class OrchestratorService:
                     "npcs_involved": generated_event.npcs_involved,
                 }
                 post_narration = generated_event.description
-                yield f"data: {json.dumps({'type': 'event', 'event': event_response})}\n\n"
+                yield sse_event(event_response)
                 logger.info(
                     "gm_chat_stream session=%s event_generation DONE duration=%.2fs",
                     session_id,
@@ -669,7 +718,7 @@ class OrchestratorService:
         )
 
         # Memory refresh
-        yield f"data: {json.dumps({'type': 'phase', 'phase': 'summarizing'})}\n\n"
+        yield sse_phase("summarizing")
         try:
             with tracer.start_as_current_span("orchestrator.memory_refresh"):
                 await self.memory.maybe_refresh(db, session)
@@ -695,9 +744,9 @@ class OrchestratorService:
         )
         quest_changes += extra_changes
         for change in quest_changes:
-            yield f"data: {json.dumps({'type': 'quest_update', 'quest': self._quest_change_payload(change)})}\n\n"
+            yield sse_quest_update(self._quest_change_payload(change))
         if suggestions:
-            yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': suggestions})}\n\n"
+            yield sse_suggestions(suggestions)
 
         chat_turns.add(1, {"gm_enabled": True})
         total_duration = time.perf_counter() - total_start
@@ -711,7 +760,7 @@ class OrchestratorService:
             len(character_reply),
         )
 
-        yield f"data: {json.dumps({'type': 'done', 'session_id': session.id})}\n\n"
+        yield sse_done(session.id)
 
     async def chat_stream(self, db: AsyncSession, session_id: str, user_message: str) -> AsyncIterator[str]:
         """Stream chat response as Server-Sent Events (SSE)."""
@@ -721,7 +770,7 @@ class OrchestratorService:
             .where(ChatSession.id == session_id)
         )
         if session is None:
-            yield f"data: {json.dumps({'error': 'Session not found'})}\n\n"
+            yield sse_error("Session not found")
             return
 
         with tracer.start_as_current_span("orchestrator.retrieve") as _span:
@@ -747,7 +796,7 @@ class OrchestratorService:
         )
 
         # Send retrieved memories first
-        yield f"data: {json.dumps(self._memories_event(retrieved))}\n\n"
+        yield _sse(self._memories_event(retrieved))
 
         # Stream the reply chunks
         full_reply_parts: list[str] = []
@@ -761,10 +810,10 @@ class OrchestratorService:
                 max_tokens=self.settings.actor_reserved_output_tokens,
             ):
                 full_reply_parts.append(chunk)
-                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                yield sse_chunk(chunk)
         except ProviderError as exc:
             logger.exception("chat_stream failed for session=%s", session_id)
-            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
+            yield sse_error(str(exc))
             return
 
         full_reply = "".join(full_reply_parts)
@@ -812,7 +861,7 @@ class OrchestratorService:
         )
 
         # Memory refresh
-        yield f"data: {json.dumps({'type': 'phase', 'phase': 'summarizing'})}\n\n"
+        yield sse_phase("summarizing")
         try:
             with tracer.start_as_current_span("orchestrator.memory_refresh"):
                 await self.memory.maybe_refresh(db, session)
@@ -826,15 +875,15 @@ class OrchestratorService:
             turn_id=assistant_turn.id,
         )
         for change in quest_changes:
-            yield f"data: {json.dumps({'type': 'quest_update', 'quest': self._quest_change_payload(change)})}\n\n"
+            yield sse_quest_update(self._quest_change_payload(change))
         if suggestions:
-            yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': suggestions})}\n\n"
+            yield sse_suggestions(suggestions)
 
         chat_turns.add(1, {"gm_enabled": False})
         logger.info("chat_stream session=%s turn_count=%s", session.id, session.turn_count)
 
         # Send completion signal
-        yield f"data: {json.dumps({'type': 'done', 'session_id': session.id})}\n\n"
+        yield sse_done(session.id)
 
     async def _post_stream_continuity(
         self,
