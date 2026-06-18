@@ -52,7 +52,6 @@ from app.schemas import (
     SessionForkRequest,
     SessionInitRequest,
     SessionInitResponse,
-    SessionListItem,
     SessionListResponse,
     SessionMemoryResponse,
     SessionQuestsResponse,
@@ -60,10 +59,14 @@ from app.schemas import (
     TurnResponse,
     WorldStateResponse,
 )
-from app.services.features import quests_on, world_state_on
 from app.services.fork import ForkService
 from app.services.orchestrator import get_orchestrator
 from app.services.quests import TERMINAL_STATUSES, QuestService
+from app.services.session_view import (
+    list_sessions_with_summaries,
+    session_to_detail,
+    session_to_init,
+)
 from app.telemetry import setup_telemetry
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -200,73 +203,12 @@ async def init_session(payload: SessionInitRequest, db: AsyncSession = Depends(g
     await db.commit()
     await db.refresh(session)
 
-    return SessionInitResponse(
-        session_id=session.id,
-        character_card_id=session.character_card_id,
-        world_state_id=session.world_state_id,
-        title=session.title,
-        turn_count=session.turn_count,
-        gm_enabled=session.gm_enabled,
-        suggestions_enabled=session.suggestions_enabled,
-        current_location=session.current_location,
-        time_of_day=session.time_of_day,
-        world_state_enabled=world_state_on(session, settings),
-        quests_enabled=quests_on(session, settings),
-    )
+    return session_to_init(session, settings)
 
 
 @app.get("/sessions", response_model=SessionListResponse)
 async def list_sessions(db: AsyncSession = Depends(get_db)) -> SessionListResponse:
-    sessions = (
-        await db.scalars(
-            select(ChatSession)
-            .where(ChatSession.status != "archived")
-            .options(joinedload(ChatSession.character_card), joinedload(ChatSession.world_state))
-            .order_by(ChatSession.updated_at.desc())
-        )
-    ).all()
-    settings = get_settings()
-    items = []
-    for s in sessions:
-        latest_summary = await db.scalar(
-            select(EpisodeSummary)
-            .where(EpisodeSummary.session_id == s.id)
-            .order_by(EpisodeSummary.created_at.desc())
-            .limit(1)
-        )
-        summary: str | None = None
-        if latest_summary:
-            summary = latest_summary.content[:200]
-        else:
-            last_turn = await db.scalar(
-                select(Turn)
-                .where(Turn.session_id == s.id, Turn.role == "assistant")
-                .order_by(Turn.turn_index.desc())
-                .limit(1)
-            )
-            if last_turn:
-                summary = last_turn.content[:200]
-        items.append(
-            SessionListItem(
-                id=s.id,
-                title=s.title,
-                status=s.status,
-                gm_enabled=s.gm_enabled,
-                suggestions_enabled=s.suggestions_enabled,
-                turn_count=s.turn_count,
-                created_at=s.created_at,
-                updated_at=s.updated_at,
-                character_card_id=s.character_card_id,
-                world_state_id=s.world_state_id,
-                character_name=s.character_card.name if s.character_card else None,
-                world_name=s.world_state.name if s.world_state else None,
-                summary=summary,
-                world_state_enabled=world_state_on(s, settings),
-                quests_enabled=quests_on(s, settings),
-                parent_session_id=s.parent_session_id,
-                forked_at_turn=s.forked_at_turn,
-            )
-        )
+    items = await list_sessions_with_summaries(db, get_settings())
     return SessionListResponse(sessions=items)
 
 
@@ -279,26 +221,7 @@ async def get_session(session_id: str, db: AsyncSession = Depends(get_db)) -> Se
     )
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
-    return SessionDetailResponse(
-        id=session.id,
-        title=session.title,
-        status=session.status,
-        gm_enabled=session.gm_enabled,
-        suggestions_enabled=session.suggestions_enabled,
-        turn_count=session.turn_count,
-        created_at=session.created_at,
-        updated_at=session.updated_at,
-        character_card_id=session.character_card_id,
-        world_state_id=session.world_state_id,
-        character_name=session.character_card.name if session.character_card else None,
-        world_name=session.world_state.name if session.world_state else None,
-        current_location=session.current_location,
-        time_of_day=session.time_of_day,
-        world_state_enabled=world_state_on(session, get_settings()),
-        quests_enabled=quests_on(session, get_settings()),
-        parent_session_id=session.parent_session_id,
-        forked_at_turn=session.forked_at_turn,
-    )
+    return session_to_detail(session, get_settings())
 
 
 @app.get("/session/{session_id}/turns", response_model=list[TurnResponse])
@@ -383,27 +306,7 @@ async def fork_session(
     )
     if fork is None:  # just-committed row; defensive for the type checker
         raise HTTPException(status_code=500, detail="Fork created but could not be reloaded.")
-    settings = get_settings()
-    return SessionDetailResponse(
-        id=fork.id,
-        title=fork.title,
-        status=fork.status,
-        gm_enabled=fork.gm_enabled,
-        suggestions_enabled=fork.suggestions_enabled,
-        turn_count=fork.turn_count,
-        created_at=fork.created_at,
-        updated_at=fork.updated_at,
-        character_card_id=fork.character_card_id,
-        world_state_id=fork.world_state_id,
-        character_name=fork.character_card.name if fork.character_card else None,
-        world_name=fork.world_state.name if fork.world_state else None,
-        current_location=fork.current_location,
-        time_of_day=fork.time_of_day,
-        world_state_enabled=world_state_on(fork, settings),
-        quests_enabled=quests_on(fork, settings),
-        parent_session_id=fork.parent_session_id,
-        forked_at_turn=fork.forked_at_turn,
-    )
+    return session_to_detail(fork, get_settings())
 
 
 @app.post("/chat", response_model=ChatResponse)
