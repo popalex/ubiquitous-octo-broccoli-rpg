@@ -43,7 +43,7 @@ defaulting to `false` — the two flagship features are invisible unless you edi
 
 **Effort:** small-medium. **Risk:** low (additive, defaults preserve behavior).
 
-## 2. Unify the post-turn judge (one LLM call instead of three) — ✅ SHIPPED behind flag (2026-06-13, PR #41)
+## 2. Unify the post-turn judge (one LLM call instead of three) — ✅ DONE (legacy path deleted 2026-06-18)
 
 Shipped on `feature/post-turn-judge` (PR #41): `PostTurnJudgeService`
 (`app/services/post_turn_judge.py`) makes one `generate_json` call validated
@@ -51,10 +51,14 @@ into a typed `TurnJudgment`, gated behind `post_turn_judge_enabled` with the
 legacy two-call path (`maybe_refresh` + `extract_and_apply`) intact as fallback
 in `OrchestratorService._run_post_turn`. Backend tests + eval parity target
 landed (commit `28ab9e7`); dashboard panels added (`6b2d26a`).
-**Follow-up remaining:** (a) ✅ default flipped on (2026-06-14, `feature/post-turn-judge-default-on`)
+**Follow-up:** (a) ✅ default flipped on (2026-06-14, `feature/post-turn-judge-default-on`)
 — `app/config.py` default `True`, prod compose + `.env.sample` to `true` (dev
-override was already on); full suite green (225) with the new default; (b) **delete the
-legacy path** once this bakes on `main` (per the "flag, then delete" decision below).
+override was already on); full suite green (225) with the new default; (b) ✅ **legacy
+path deleted** (2026-06-18, `feature/decommission-legacy-judge`) — removed the
+`post_turn_judge_enabled` flag, the standalone `WorldStateService.extract_and_apply` /
+`QuestService.extract_and_apply` extractors and their prompts; post-turn work now
+routes unconditionally through `judge_turn`, and the eval harness exercises the
+world/quest sections through the unified judge prompt.
 
 **Problem:** every turn fires up to three post-turn LLM calls — memory refresh
 (`MemoryService.maybe_refresh`), world-state extraction
