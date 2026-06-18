@@ -23,15 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings, get_settings
 from app.models import Session as ChatSession
 from app.models import WorldStateLedger
-from app.prompts import WORLD_STATE_EXTRACT_PROMPT
-from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
+from app.providers.base import BaseModelProvider
 from app.telemetry import (
     canon_extract_failures,
     canon_noop_deltas,
     canon_size,
     record_span_error,
     set_completion,
-    tracer,
 )
 
 logger = logging.getLogger(__name__)
@@ -358,59 +356,6 @@ class WorldStateService:
 
         return ledger
 
-    # ------------------------------------------------------------------
-    # Extract (after the turn)
-    # ------------------------------------------------------------------
-
-    async def extract_and_apply(
-        self,
-        db: AsyncSession,
-        session: ChatSession,
-        *,
-        user_message: str,
-        gm_response: str,
-        turn_id: str | None = None,
-    ) -> WorldStateLedger | None:
-        """Extract a delta from the latest exchange, apply it, and persist a new
-        version. Returns the new row, or ``None`` if nothing changed or the
-        extraction failed (failures are logged + metered, never raised)."""
-        with tracer.start_as_current_span("orchestrator.state_extract") as span:
-            span.set_attribute("rpg.session_id", str(session.id))
-            ledger = await self.load_current(db, session.id)
-            base_version = await self.current_version(db, session.id)
-            span.set_attribute("rpg.canon.version", base_version)
-
-            user_content = (
-                f"CURRENT LEDGER:\n{ledger.model_dump_json()}\n\n"
-                f"LATEST EXCHANGE:\nPLAYER: {user_message}\nRESPONSE: {gm_response}"
-            )
-            try:
-                payload = await self.extract_provider.generate_json(
-                    [
-                        ProviderMessage(role="system", content=WORLD_STATE_EXTRACT_PROMPT),
-                        ProviderMessage(role="user", content=user_content),
-                    ],
-                    temperature=0.1,
-                    max_tokens=self.settings.world_state_extract_max_tokens,
-                )
-            except ProviderError as exc:
-                logger.exception("world-state extract failed for session=%s", session.id)
-                canon_extract_failures.add(1, {"reason": "provider"})
-                record_span_error(span, exc)
-                return None
-
-            try:
-                delta = LedgerDelta.model_validate(payload)
-            except ValidationError as exc:
-                logger.warning("world-state delta invalid for session=%s: %s", session.id, exc)
-                canon_extract_failures.add(1, {"reason": "schema"})
-                record_span_error(span, exc)
-                return None
-
-            return await self.apply_world_delta(
-                db, session, delta, ledger=ledger, base_version=base_version, turn_id=turn_id
-            )
-
     async def apply_world_delta(
         self,
         db: AsyncSession,
@@ -424,11 +369,10 @@ class WorldStateService:
         """Apply an already-extracted ledger delta and persist a new version.
 
         Returns the new row, or ``None`` when the delta is empty or leaves the
-        ledger materially unchanged (the no-op guard). Shared by the legacy
-        ``extract_and_apply`` and the unified post-turn judge so the version
-        write, no-op guard, and apply invariants stay single-sourced. Sets
-        attributes on the current span; best-effort (failures logged + metered,
-        never raised)."""
+        ledger materially unchanged (the no-op guard). Called by the unified
+        post-turn judge; keeps the version write, no-op guard, and apply
+        invariants single-sourced. Sets attributes on the current span;
+        best-effort (failures logged + metered, never raised)."""
         span = trace.get_current_span()
         if ledger is None:
             ledger = await self.load_current(db, session.id)

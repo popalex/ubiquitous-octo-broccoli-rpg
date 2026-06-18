@@ -140,8 +140,6 @@ Return strict JSON with this exact shape (omit empty arrays/fields):
 If nothing changed, return {}.
 """.strip()
 
-WORLD_STATE_EXTRACT_PROMPT = f"{_WORLD_STATE_GUIDANCE}\n\n{_WORLD_STATE_SCHEMA}"
-
 
 _QUEST_GUIDANCE = """
 You are the quest tracker for a text roleplay engine. Quests here are
@@ -184,8 +182,6 @@ Return strict JSON with this exact shape (omit empty arrays/fields):
 
 If nothing quest-relevant happened, return {}.
 """.strip()
-
-QUEST_JUDGE_PROMPT = f"{_QUEST_GUIDANCE}\n\n{_QUEST_SCHEMA}"
 
 
 POST_TURN_JUDGE_HEADER = """

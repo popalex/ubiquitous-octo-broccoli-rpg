@@ -908,55 +908,21 @@ class OrchestratorService:
         """Post-turn structured extraction (world-state ledger + quest judge +
         suggested player responses). Returns ``(quest_changes, suggestions)``.
 
-        Unified into ONE judge call when ``post_turn_judge_enabled`` is set,
-        else the legacy two separate calls (which produce no suggestions).
-        Memory refresh stays its own call (different cadence) and is not routed
-        through here. Best-effort: never breaks the turn."""
-        if self.settings.post_turn_judge_enabled:
-            try:
-                _, quest_changes, suggestions = await self.post_turn_judge.judge_turn(
-                    db,
-                    session,
-                    user_message=user_message,
-                    response_text=response_text,
-                    turn_id=turn_id,
-                )
-                return quest_changes, suggestions
-            except Exception:
-                # Deliberately broad: post-turn side effects must never fail the turn.
-                logger.exception("post-turn judge skipped for session=%s", session.id)
-                return [], []
-        await self._extract_world_state(
-            db, session, user_message=user_message, gm_response=response_text, turn_id=turn_id
-        )
-        quest_changes = await self._extract_quests(
-            db, session, user_message=user_message, response_text=response_text, turn_id=turn_id
-        )
-        return quest_changes, []
-
-    async def _extract_world_state(
-        self,
-        db: AsyncSession,
-        session: ChatSession,
-        *,
-        user_message: str,
-        gm_response: str,
-        turn_id: str | None = None,
-    ) -> None:
-        """Fire the after-turn world-state extraction; never break the turn."""
-        if not world_state_on(session, self.settings):
-            return
+        Unified into ONE judge call. Memory refresh stays its own call (different
+        cadence) and is not routed through here. Best-effort: never breaks the turn."""
         try:
-            await self.world_state.extract_and_apply(
+            _, quest_changes, suggestions = await self.post_turn_judge.judge_turn(
                 db,
                 session,
                 user_message=user_message,
-                gm_response=gm_response,
+                response_text=response_text,
                 turn_id=turn_id,
             )
+            return quest_changes, suggestions
         except Exception:
             # Deliberately broad: post-turn side effects must never fail the turn.
-            logger.exception("world-state extract skipped for session=%s", session.id)
+            logger.exception("post-turn judge skipped for session=%s", session.id)
+            return [], []
 
     async def _quest_block(self, db: AsyncSession, session: ChatSession) -> str:
         """Load + render open quests for prompt injection.
@@ -971,31 +937,6 @@ class OrchestratorService:
             logger.exception("quest load skipped for session=%s", session.id)
             return ""
         return self.quests.render_block(quests)
-
-    async def _extract_quests(
-        self,
-        db: AsyncSession,
-        session: ChatSession,
-        *,
-        user_message: str,
-        response_text: str,
-        turn_id: str | None = None,
-    ) -> list[QuestChange]:
-        """Fire the after-turn quest judge; never break the turn."""
-        if not quests_on(session, self.settings):
-            return []
-        try:
-            return await self.quests.extract_and_apply(
-                db,
-                session,
-                user_message=user_message,
-                response_text=response_text,
-                turn_id=turn_id,
-            )
-        except Exception:
-            # Deliberately broad: post-turn side effects must never fail the turn.
-            logger.exception("quest extract skipped for session=%s", session.id)
-            return []
 
     async def _post_event_quest_work(
         self,
