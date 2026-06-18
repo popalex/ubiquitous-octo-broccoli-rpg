@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from functools import lru_cache
 
 from fastapi import HTTPException
@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.config import Settings, get_settings
-from app.models import CharacterCard, Turn, WorldState
 from app.models import Session as ChatSession
+from app.models import Turn
 from app.prompts import ACTOR_SYSTEM_PROMPT
 from app.providers.base import ProviderError, ProviderMessage, build_provider
 from app.schemas import (
@@ -24,17 +24,75 @@ from app.schemas import (
     QuestUpdateNotification,
     RetrievedMemoryItem,
 )
+from app.services.context_packet import (
+    ContextPacketBuilder,
+    continuity_canon,
+    estimate_tokens,
+    hard_rules_text,
+    recent_turns_text,
+)
 from app.services.continuity import ContinuityResult, ContinuityService
 from app.services.features import quests_on, world_state_on
 from app.services.game_master import GameMasterService
 from app.services.memory import MemoryService
 from app.services.post_turn_judge import PostTurnJudgeService
+from app.services.post_turn_runner import PostTurnRunner
 from app.services.quests import QuestChange, QuestService
 from app.services.retrieval import RetrievalService
+from app.services.turn_persister import TurnPersister
 from app.services.world_state import WorldStateService
 from app.telemetry import chat_turns, continuity_revisions, retrieval_selected, tracer
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# SSE frame emitters
+# ---------------------------------------------------------------------------
+# Typed helpers for the Server-Sent Events the stream entry points emit. The
+# wire shape (`data: {json}\n\n`, the `type` discriminator, field names) is the
+# contract the frontend dispatches on (see frontend/src/chat.ts); centralizing
+# it here keeps every frame in lock-step and kills format-typo bugs.
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+def sse_chunk(content: str) -> str:
+    return _sse({"type": "chunk", "content": content})
+
+
+def sse_phase(phase: str) -> str:
+    return _sse({"type": "phase", "phase": phase})
+
+
+def sse_pre_narration_chunk(content: str) -> str:
+    return _sse({"type": "pre_narration_chunk", "content": content})
+
+
+def sse_pre_narration_error(error: str) -> str:
+    return _sse({"type": "pre_narration_error", "error": error})
+
+
+def sse_event(event: object) -> str:
+    return _sse({"type": "event", "event": event})
+
+
+def sse_quest_update(quest: dict) -> str:
+    return _sse({"type": "quest_update", "quest": quest})
+
+
+def sse_suggestions(suggestions: list[str]) -> str:
+    return _sse({"type": "suggestions", "suggestions": suggestions})
+
+
+def sse_done(session_id: str) -> str:
+    return _sse({"type": "done", "session_id": session_id})
+
+
+def sse_error(error: str) -> str:
+    return _sse({"type": "error", "error": error})
 
 
 class OrchestratorService:
@@ -59,6 +117,9 @@ class OrchestratorService:
         self.world_state = WorldStateService(self.memory_provider, self.settings)
         self.quests = QuestService(self.memory_provider, self.settings)
         self.post_turn_judge = PostTurnJudgeService(self.memory_provider, self.world_state, self.quests, self.settings)
+        self.post_turn = PostTurnRunner(self.memory, self.post_turn_judge)
+        self.turns = TurnPersister(estimate_tokens)
+        self.context = ContextPacketBuilder(self.settings)
 
     async def aclose(self) -> None:
         """Close every provider's HTTP client. Dedupes by identity because
@@ -89,12 +150,12 @@ class OrchestratorService:
 
         world_state_block = await self._world_state_block(db, session)
         quest_block = await self._quest_block(db, session)
-        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block, quest_block)
+        context_packet = self.context.build(session, recent_turns, retrieved, world_state_block, quest_block)
         system_prompt = ACTOR_SYSTEM_PROMPT.format(
             character_name=session.character_card.name,
             character_description=session.character_card.description,
             style_guide=session.character_card.style_guide or "Stay grounded, sensory, and concise.",
-            hard_rules=self._hard_rules_text(session.character_card, session.world_state),
+            hard_rules=hard_rules_text(session.character_card, session.world_state),
         )
         draft_reply = await self.actor_provider.generate_text(
             [
@@ -107,9 +168,9 @@ class OrchestratorService:
 
         try:
             continuity = await self.continuity.validate(
-                hard_rules=self._hard_rules_text(session.character_card, session.world_state),
-                world_canon=self._continuity_canon(session, world_state_block),
-                recent_transcript=self._recent_turns_text(recent_turns),
+                hard_rules=hard_rules_text(session.character_card, session.world_state),
+                world_canon=continuity_canon(session, world_state_block),
+                recent_transcript=recent_turns_text(recent_turns),
                 user_message=user_message,
                 draft_reply=draft_reply,
             )
@@ -117,37 +178,16 @@ class OrchestratorService:
             logger.exception("continuity check skipped for session=%s", session.id)
             continuity = ContinuityResult(final_reply=draft_reply, applied=False, issues=[])
 
-        next_user_index = session.turn_count + 1
-        next_actor_index = session.turn_count + 2
-        assistant_turn = Turn(
-            session_id=session.id,
-            turn_index=next_actor_index,
-            role="assistant",
-            content=continuity.final_reply,
-            token_estimate=self._estimate_tokens(continuity.final_reply),
+        assistant_turn = await self.turns.persist_chat_turns(
+            db,
+            session,
+            user_message=user_message,
+            assistant_content=continuity.final_reply,
             continuity_notes="\n".join(continuity.issues) if continuity.issues else None,
         )
-        db.add_all(
-            [
-                Turn(
-                    session_id=session.id,
-                    turn_index=next_user_index,
-                    role="user",
-                    content=user_message,
-                    token_estimate=self._estimate_tokens(user_message),
-                ),
-                assistant_turn,
-            ]
-        )
-        session.turn_count = next_actor_index
-        await db.commit()
-        await db.refresh(session)
 
-        try:
-            await self.memory.maybe_refresh(db, session)
-        except ProviderError:
-            logger.exception("memory refresh skipped for session=%s", session.id)
-        quest_changes, suggestions = await self._run_post_turn_extraction(
+        await self.post_turn.refresh_memory(db, session)
+        quest_changes, suggestions = await self.post_turn.judge(
             db,
             session,
             user_message=user_message,
@@ -213,7 +253,7 @@ class OrchestratorService:
             )
         ).all()
         recent_turns = list(reversed(recent_turns))
-        recent_events = self._recent_turns_text(recent_turns[-4:]) if recent_turns else ""
+        recent_events = recent_turns_text(recent_turns[-4:]) if recent_turns else ""
 
         # Neglected quests pressure the event check toward consequence events
         pressure_quests = []
@@ -247,7 +287,7 @@ class OrchestratorService:
         # Get character response via normal flow
         world_state_block = await self._world_state_block(db, session)
         quest_block = await self._quest_block(db, session)
-        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block, quest_block)
+        context_packet = self.context.build(session, recent_turns, retrieved, world_state_block, quest_block)
 
         # Include GM narration in context if available
         if pre_narration:
@@ -257,7 +297,7 @@ class OrchestratorService:
             character_name=session.character_card.name,
             character_description=session.character_card.description,
             style_guide=session.character_card.style_guide or "Stay grounded, sensory, and concise.",
-            hard_rules=self._hard_rules_text(session.character_card, session.world_state),
+            hard_rules=hard_rules_text(session.character_card, session.world_state),
         )
 
         draft_reply = await self.actor_provider.generate_text(
@@ -272,9 +312,9 @@ class OrchestratorService:
         # Continuity check
         try:
             continuity = await self.continuity.validate(
-                hard_rules=self._hard_rules_text(session.character_card, session.world_state),
-                world_canon=self._continuity_canon(session, world_state_block),
-                recent_transcript=self._recent_turns_text(recent_turns),
+                hard_rules=hard_rules_text(session.character_card, session.world_state),
+                world_canon=continuity_canon(session, world_state_block),
+                recent_transcript=recent_turns_text(recent_turns),
                 user_message=user_message,
                 draft_reply=draft_reply,
             )
@@ -306,64 +346,18 @@ class OrchestratorService:
             except ProviderError:
                 logger.exception("Event generation failed for session=%s", session.id)
 
-        # Persist turns (include pre-narration as GM turn for memory extraction)
-        turns_to_add: list[Turn] = []
-        current_index = session.turn_count
-
-        # Store pre-narration as a separate GM turn if present
-        if pre_narration:
-            current_index += 1
-            turns_to_add.append(
-                Turn(
-                    session_id=session.id,
-                    turn_index=current_index,
-                    role="assistant",
-                    content=f"[Scene Narration]\n{pre_narration}",
-                    token_estimate=self._estimate_tokens(pre_narration),
-                    turn_type="gm_narration",
-                )
-            )
-
-        # User turn
-        current_index += 1
-        turns_to_add.append(
-            Turn(
-                session_id=session.id,
-                turn_index=current_index,
-                role="user",
-                content=user_message,
-                token_estimate=self._estimate_tokens(user_message),
-            )
+        # Persist turns (include pre-narration as a GM turn for memory extraction).
+        assistant_turn = await self.turns.persist_gm_turns(
+            db,
+            session,
+            user_message=user_message,
+            assistant_content=continuity.final_reply,
+            pre_narration=pre_narration,
+            post_narration=post_narration,
+            continuity_notes="\n".join(continuity.issues) if continuity.issues else None,
         )
 
-        # Build full assistant content including post-narration
-        full_assistant_content = continuity.final_reply
-        if post_narration:
-            full_assistant_content = f"{continuity.final_reply}\n\n---\n\n{post_narration}"
-
-        # Assistant turn
-        current_index += 1
-        turns_to_add.append(
-            Turn(
-                session_id=session.id,
-                turn_index=current_index,
-                role="assistant",
-                content=full_assistant_content,
-                token_estimate=self._estimate_tokens(full_assistant_content),
-                continuity_notes="\n".join(continuity.issues) if continuity.issues else None,
-            )
-        )
-
-        db.add_all(turns_to_add)
-        session.turn_count = current_index
-        await db.commit()
-        await db.refresh(session)
-
-        # Memory refresh
-        try:
-            await self.memory.maybe_refresh(db, session)
-        except ProviderError:
-            logger.exception("memory refresh skipped for session=%s", session.id)
+        await self.post_turn.refresh_memory(db, session)
         # Plot-hook offers + escalation run first so the post-turn judge sees
         # any freshly-offered quests in its open-quest context (matches the
         # legacy order where the quest judge ran after this).
@@ -373,14 +367,14 @@ class OrchestratorService:
             event_check=event_check,
             event_description=post_narration,
             pressure_quests=pressure_quests,
-            turn_id=turns_to_add[-1].id,
+            turn_id=assistant_turn.id,
         )
-        extra_changes, suggestions = await self._run_post_turn_extraction(
+        extra_changes, suggestions = await self.post_turn.judge(
             db,
             session,
             user_message=user_message,
-            response_text=full_assistant_content,
-            turn_id=turns_to_add[-1].id,
+            response_text=assistant_turn.content,
+            turn_id=assistant_turn.id,
         )
         quest_changes += extra_changes
 
@@ -439,7 +433,7 @@ class OrchestratorService:
         )
         if session is None:
             logger.warning("gm_chat_stream session=%s NOT FOUND", session_id)
-            yield f"data: {json.dumps({'type': 'error', 'error': 'Session not found'})}\n\n"
+            yield sse_error("Session not found")
             return
 
         # Retrieve memories and recent turns
@@ -462,10 +456,10 @@ class OrchestratorService:
             )
         ).all()
         recent_turns = list(reversed(recent_turns))
-        recent_events = self._recent_turns_text(recent_turns[-4:]) if recent_turns else ""
+        recent_events = recent_turns_text(recent_turns[-4:]) if recent_turns else ""
 
         # Send retrieved memories
-        yield f"data: {json.dumps(self._memories_event(retrieved))}\n\n"
+        yield _sse(self._memories_event(retrieved))
 
         # Neglected quests pressure the event check toward consequence events
         pressure_quests = []
@@ -499,7 +493,7 @@ class OrchestratorService:
         pre_narration_start = time.perf_counter()
         try:
             logger.info("gm_chat_stream session=%s pre_narration STARTING", session_id)
-            yield f"data: {json.dumps({'type': 'phase', 'phase': 'pre_narration'})}\n\n"
+            yield sse_phase("pre_narration")
             async for chunk in self.game_master.generate_narration_stream(
                 world_state=session.world_state,
                 recent_events=recent_events,
@@ -507,11 +501,11 @@ class OrchestratorService:
                 scene_context=location or "",
             ):
                 pre_narration_parts.append(chunk)
-                yield f"data: {json.dumps({'type': 'pre_narration_chunk', 'content': chunk})}\n\n"
+                yield sse_pre_narration_chunk(chunk)
         except ProviderError as exc:
             logger.exception("Pre-narration stream failed for session=%s", session.id)
             pre_narration_failed = True
-            yield f"data: {json.dumps({'type': 'pre_narration_error', 'error': str(exc)})}\n\n"
+            yield sse_pre_narration_error(str(exc))
 
         # On failure, discard the partial fragment entirely: a half-written
         # narration must not leak into the actor's context or be persisted.
@@ -526,7 +520,7 @@ class OrchestratorService:
         # Build context for character response
         world_state_block = await self._world_state_block(db, session)
         quest_block = await self._quest_block(db, session)
-        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block, quest_block)
+        context_packet = self.context.build(session, recent_turns, retrieved, world_state_block, quest_block)
         if pre_narration:
             context_packet = f"[Scene Narration]\n{pre_narration}\n\n{context_packet}"
 
@@ -534,7 +528,7 @@ class OrchestratorService:
             character_name=session.character_card.name,
             character_description=session.character_card.description,
             style_guide=session.character_card.style_guide or "Stay grounded, sensory, and concise.",
-            hard_rules=self._hard_rules_text(session.character_card, session.world_state),
+            hard_rules=hard_rules_text(session.character_card, session.world_state),
         )
 
         # Stream character reply
@@ -542,7 +536,7 @@ class OrchestratorService:
         character_start = time.perf_counter()
         try:
             logger.info("gm_chat_stream session=%s character_reply STARTING", session_id)
-            yield f"data: {json.dumps({'type': 'phase', 'phase': 'character_reply'})}\n\n"
+            yield sse_phase("character_reply")
             async for chunk in self.actor_provider.generate_text_stream(
                 [
                     ProviderMessage(role="system", content=system_prompt),
@@ -552,10 +546,10 @@ class OrchestratorService:
                 max_tokens=self.settings.actor_reserved_output_tokens,
             ):
                 character_reply_parts.append(chunk)
-                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                yield sse_chunk(chunk)
         except ProviderError as exc:
             logger.exception("Character reply stream failed for session=%s", session.id)
-            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
+            yield sse_error(str(exc))
             return
 
         character_reply = "".join(character_reply_parts)
@@ -575,7 +569,7 @@ class OrchestratorService:
                 logger.info(
                     "gm_chat_stream session=%s event_generation STARTING type=%s", session_id, event_check.event_type
                 )
-                yield f"data: {json.dumps({'type': 'phase', 'phase': 'event'})}\n\n"
+                yield sse_phase("event")
                 generated_event = await self.game_master.generate_event(
                     world_state=session.world_state,
                     event_seed=event_check.event_seed,
@@ -591,7 +585,7 @@ class OrchestratorService:
                     "npcs_involved": generated_event.npcs_involved,
                 }
                 post_narration = generated_event.description
-                yield f"data: {json.dumps({'type': 'event', 'event': event_response})}\n\n"
+                yield sse_event(event_response)
                 logger.info(
                     "gm_chat_stream session=%s event_generation DONE duration=%.2fs",
                     session_id,
@@ -600,61 +594,19 @@ class OrchestratorService:
             except ProviderError:
                 logger.exception("Event generation failed for session=%s", session.id)
 
-        # Persist turns (include pre-narration as GM turn for memory extraction)
-        turns_to_add: list[Turn] = []
-        current_index = session.turn_count
-
-        # Store pre-narration as a separate GM turn if present
-        if pre_narration:
-            current_index += 1
-            turns_to_add.append(
-                Turn(
-                    session_id=session.id,
-                    turn_index=current_index,
-                    role="assistant",
-                    content=f"[Scene Narration]\n{pre_narration}",
-                    token_estimate=self._estimate_tokens(pre_narration),
-                    turn_type="gm_narration",
-                )
-            )
-
-        # User turn
-        current_index += 1
-        turns_to_add.append(
-            Turn(
-                session_id=session.id,
-                turn_index=current_index,
-                role="user",
-                content=user_message,
-                token_estimate=self._estimate_tokens(user_message),
-            )
-        )
-
-        # Build full assistant content including post-narration
-        full_assistant_content = character_reply
-        if post_narration:
-            full_assistant_content = f"{character_reply}\n\n---\n\n{post_narration}"
-
-        # Assistant turn
-        current_index += 1
-        turns_to_add.append(
-            Turn(
-                session_id=session.id,
-                turn_index=current_index,
-                role="assistant",
-                content=full_assistant_content,
-                token_estimate=self._estimate_tokens(full_assistant_content),
-            )
-        )
-
         # Rendered before commit: relationships expire on refresh (async lazy-load trap)
-        hard_rules = self._hard_rules_text(session.character_card, session.world_state)
-        world_canon = self._continuity_canon(session, world_state_block)
+        hard_rules = hard_rules_text(session.character_card, session.world_state)
+        world_canon = continuity_canon(session, world_state_block)
 
-        db.add_all(turns_to_add)
-        session.turn_count = current_index
-        await db.commit()
-        await db.refresh(session)
+        # Persist turns (include pre-narration as a GM turn for memory extraction).
+        assistant_turn = await self.turns.persist_gm_turns(
+            db,
+            session,
+            user_message=user_message,
+            assistant_content=character_reply,
+            pre_narration=pre_narration,
+            post_narration=post_narration,
+        )
 
         # Post-stream continuity check → retcon note (reply already shown)
         await self._post_stream_continuity(
@@ -664,17 +616,13 @@ class OrchestratorService:
             reply_text=character_reply,
             hard_rules=hard_rules,
             world_canon=world_canon,
-            recent_transcript=self._recent_turns_text(recent_turns),
-            assistant_turn=turns_to_add[-1],
+            recent_transcript=recent_turns_text(recent_turns),
+            assistant_turn=assistant_turn,
         )
 
         # Memory refresh
-        yield f"data: {json.dumps({'type': 'phase', 'phase': 'summarizing'})}\n\n"
-        try:
-            with tracer.start_as_current_span("orchestrator.memory_refresh"):
-                await self.memory.maybe_refresh(db, session)
-        except ProviderError:
-            logger.exception("memory refresh skipped for session=%s", session.id)
+        yield sse_phase("summarizing")
+        await self.post_turn.refresh_memory(db, session)
         # Plot-hook offers + escalation run first so the post-turn judge sees
         # any freshly-offered quests in its open-quest context (matches the
         # legacy order where the quest judge ran after this).
@@ -684,20 +632,18 @@ class OrchestratorService:
             event_check=event_check,
             event_description=post_narration,
             pressure_quests=pressure_quests,
-            turn_id=turns_to_add[-1].id,
+            turn_id=assistant_turn.id,
         )
-        extra_changes, suggestions = await self._run_post_turn_extraction(
+        extra_changes, suggestions = await self.post_turn.judge(
             db,
             session,
             user_message=user_message,
-            response_text=full_assistant_content,
-            turn_id=turns_to_add[-1].id,
+            response_text=assistant_turn.content,
+            turn_id=assistant_turn.id,
         )
         quest_changes += extra_changes
-        for change in quest_changes:
-            yield f"data: {json.dumps({'type': 'quest_update', 'quest': self._quest_change_payload(change)})}\n\n"
-        if suggestions:
-            yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': suggestions})}\n\n"
+        for frame in self._stream_post_turn_results(quest_changes, suggestions):
+            yield frame
 
         chat_turns.add(1, {"gm_enabled": True})
         total_duration = time.perf_counter() - total_start
@@ -711,7 +657,7 @@ class OrchestratorService:
             len(character_reply),
         )
 
-        yield f"data: {json.dumps({'type': 'done', 'session_id': session.id})}\n\n"
+        yield sse_done(session.id)
 
     async def chat_stream(self, db: AsyncSession, session_id: str, user_message: str) -> AsyncIterator[str]:
         """Stream chat response as Server-Sent Events (SSE)."""
@@ -721,7 +667,7 @@ class OrchestratorService:
             .where(ChatSession.id == session_id)
         )
         if session is None:
-            yield f"data: {json.dumps({'error': 'Session not found'})}\n\n"
+            yield sse_error("Session not found")
             return
 
         with tracer.start_as_current_span("orchestrator.retrieve") as _span:
@@ -738,16 +684,16 @@ class OrchestratorService:
 
         world_state_block = await self._world_state_block(db, session)
         quest_block = await self._quest_block(db, session)
-        context_packet = self._build_context_packet(session, recent_turns, retrieved, world_state_block, quest_block)
+        context_packet = self.context.build(session, recent_turns, retrieved, world_state_block, quest_block)
         system_prompt = ACTOR_SYSTEM_PROMPT.format(
             character_name=session.character_card.name,
             character_description=session.character_card.description,
             style_guide=session.character_card.style_guide or "Stay grounded, sensory, and concise.",
-            hard_rules=self._hard_rules_text(session.character_card, session.world_state),
+            hard_rules=hard_rules_text(session.character_card, session.world_state),
         )
 
         # Send retrieved memories first
-        yield f"data: {json.dumps(self._memories_event(retrieved))}\n\n"
+        yield _sse(self._memories_event(retrieved))
 
         # Stream the reply chunks
         full_reply_parts: list[str] = []
@@ -761,43 +707,25 @@ class OrchestratorService:
                 max_tokens=self.settings.actor_reserved_output_tokens,
             ):
                 full_reply_parts.append(chunk)
-                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                yield sse_chunk(chunk)
         except ProviderError as exc:
             logger.exception("chat_stream failed for session=%s", session_id)
-            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
+            yield sse_error(str(exc))
             return
 
         full_reply = "".join(full_reply_parts)
 
         # Rendered before commit: relationships expire on refresh (async lazy-load trap)
-        hard_rules = self._hard_rules_text(session.character_card, session.world_state)
-        world_canon = self._continuity_canon(session, world_state_block)
+        hard_rules = hard_rules_text(session.character_card, session.world_state)
+        world_canon = continuity_canon(session, world_state_block)
 
         # Persist turns to database
-        next_user_index = session.turn_count + 1
-        next_actor_index = session.turn_count + 2
-        assistant_turn = Turn(
-            session_id=session.id,
-            turn_index=next_actor_index,
-            role="assistant",
-            content=full_reply,
-            token_estimate=self._estimate_tokens(full_reply),
+        assistant_turn = await self.turns.persist_chat_turns(
+            db,
+            session,
+            user_message=user_message,
+            assistant_content=full_reply,
         )
-        db.add_all(
-            [
-                Turn(
-                    session_id=session.id,
-                    turn_index=next_user_index,
-                    role="user",
-                    content=user_message,
-                    token_estimate=self._estimate_tokens(user_message),
-                ),
-                assistant_turn,
-            ]
-        )
-        session.turn_count = next_actor_index
-        await db.commit()
-        await db.refresh(session)
 
         # Post-stream continuity check → retcon note (reply already shown)
         await self._post_stream_continuity(
@@ -807,34 +735,28 @@ class OrchestratorService:
             reply_text=full_reply,
             hard_rules=hard_rules,
             world_canon=world_canon,
-            recent_transcript=self._recent_turns_text(recent_turns),
+            recent_transcript=recent_turns_text(recent_turns),
             assistant_turn=assistant_turn,
         )
 
         # Memory refresh
-        yield f"data: {json.dumps({'type': 'phase', 'phase': 'summarizing'})}\n\n"
-        try:
-            with tracer.start_as_current_span("orchestrator.memory_refresh"):
-                await self.memory.maybe_refresh(db, session)
-        except ProviderError:
-            logger.exception("memory refresh skipped for session=%s", session.id)
-        quest_changes, suggestions = await self._run_post_turn_extraction(
+        yield sse_phase("summarizing")
+        await self.post_turn.refresh_memory(db, session)
+        quest_changes, suggestions = await self.post_turn.judge(
             db,
             session,
             user_message=user_message,
             response_text=full_reply,
             turn_id=assistant_turn.id,
         )
-        for change in quest_changes:
-            yield f"data: {json.dumps({'type': 'quest_update', 'quest': self._quest_change_payload(change)})}\n\n"
-        if suggestions:
-            yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': suggestions})}\n\n"
+        for frame in self._stream_post_turn_results(quest_changes, suggestions):
+            yield frame
 
         chat_turns.add(1, {"gm_enabled": False})
         logger.info("chat_stream session=%s turn_count=%s", session.id, session.turn_count)
 
         # Send completion signal
-        yield f"data: {json.dumps({'type': 'done', 'session_id': session.id})}\n\n"
+        yield sse_done(session.id)
 
     async def _post_stream_continuity(
         self,
@@ -892,37 +814,17 @@ class OrchestratorService:
             block = self.world_state.render_block(ledger)
             span.set_attribute(
                 "rpg.canon.injected_token_estimate",
-                0 if not block.strip() else self._estimate_tokens(block),
+                0 if not block.strip() else estimate_tokens(block),
             )
             return block
 
-    async def _run_post_turn_extraction(
-        self,
-        db: AsyncSession,
-        session: ChatSession,
-        *,
-        user_message: str,
-        response_text: str,
-        turn_id: str | None,
-    ) -> tuple[list[QuestChange], list[str]]:
-        """Post-turn structured extraction (world-state ledger + quest judge +
-        suggested player responses). Returns ``(quest_changes, suggestions)``.
-
-        Unified into ONE judge call. Memory refresh stays its own call (different
-        cadence) and is not routed through here. Best-effort: never breaks the turn."""
-        try:
-            _, quest_changes, suggestions = await self.post_turn_judge.judge_turn(
-                db,
-                session,
-                user_message=user_message,
-                response_text=response_text,
-                turn_id=turn_id,
-            )
-            return quest_changes, suggestions
-        except Exception:
-            # Deliberately broad: post-turn side effects must never fail the turn.
-            logger.exception("post-turn judge skipped for session=%s", session.id)
-            return [], []
+    def _stream_post_turn_results(self, quest_changes: list[QuestChange], suggestions: list[str]) -> Iterator[str]:
+        """SSE frames for the post-turn results, shared by both stream paths:
+        one quest_update per change, then a single suggestions frame (if any)."""
+        for change in quest_changes:
+            yield sse_quest_update(self._quest_change_payload(change))
+        if suggestions:
+            yield sse_suggestions(suggestions)
 
     async def _quest_block(self, db: AsyncSession, session: ChatSession) -> str:
         """Load + render open quests for prompt injection.
@@ -1015,90 +917,6 @@ class OrchestratorService:
     @classmethod
     def _quest_change_notifications(cls, changes: list[QuestChange]) -> list[QuestUpdateNotification]:
         return [QuestUpdateNotification(**cls._quest_change_payload(c)) for c in changes]
-
-    def _build_context_packet(
-        self,
-        session: ChatSession,
-        recent_turns: list[Turn],
-        retrieved: list,
-        world_state_block: str = "",
-        quest_block: str = "",
-    ) -> str:
-        remaining_budget = self.settings.actor_context_budget
-        sections: list[str] = []
-
-        if world_state_block.strip():
-            remaining_budget = self._append_section(
-                sections, "Canonical World State", world_state_block, remaining_budget, required=True
-            )
-
-        if quest_block.strip():
-            remaining_budget = self._append_section(sections, "Active Quests", quest_block, remaining_budget)
-
-        hard_rules = self._hard_rules_text(session.character_card, session.world_state)
-        remaining_budget = self._append_section(
-            sections, "Hard Rules And Canon", hard_rules, remaining_budget, required=True
-        )
-
-        retcon_notes = "\n".join(f"- {turn.retcon_note}" for turn in recent_turns if turn.retcon_note)
-        if retcon_notes:
-            retcon_body = (
-                "Earlier replies contradicted established canon. The corrections below are canon; "
-                "quietly conform to them in the narrative without mentioning the mistake:\n"
-                f"{retcon_notes}"
-            )
-            remaining_budget = self._append_section(
-                sections, "Continuity Corrections", retcon_body, remaining_budget, required=True
-            )
-
-        recent_text = self._recent_turns_text(recent_turns)
-        remaining_budget = self._append_section(sections, "Recent Turns", recent_text, remaining_budget)
-
-        facts = "\n".join(f"- {item.content}" for item in retrieved if item.kind == "fact")
-        remaining_budget = self._append_section(sections, "Retrieved Facts", facts, remaining_budget)
-
-        summaries = "\n".join(f"- {item.content}" for item in retrieved if item.kind == "summary")
-        self._append_section(sections, "Episode Summaries", summaries, remaining_budget)
-
-        return "\n\n".join(section for section in sections if section.strip())
-
-    def _append_section(
-        self, sections: list[str], title: str, body: str, remaining_budget: int, *, required: bool = False
-    ) -> int:
-        if not body.strip():
-            return remaining_budget
-        cost = self._estimate_tokens(body)
-        if cost > remaining_budget and not required:
-            return remaining_budget
-        sections.append(f"{title}:\n{body}")
-        return max(0, remaining_budget - cost)
-
-    @staticmethod
-    def _recent_turns_text(turns: list[Turn]) -> str:
-        return "\n".join(f"{turn.role.upper()}: {turn.content}" for turn in turns)
-
-    @staticmethod
-    def _continuity_canon(session: ChatSession, world_state_block: str) -> str:
-        """Canon text continuity defends: the static world canon plus, when
-        enabled, the live ledger (the authoritative source of truth)."""
-        canon = session.world_state.canon if session.world_state else ""
-        if world_state_block.strip():
-            return f"{world_state_block}\n\n{canon}".strip()
-        return canon
-
-    @staticmethod
-    def _hard_rules_text(character: CharacterCard, world: WorldState | None) -> str:
-        parts = [character.hard_rules]
-        if world is not None:
-            if world.hard_rules.strip():
-                parts.append(world.hard_rules)
-            if world.canon.strip():
-                parts.append(f"Canon:\n{world.canon}")
-        return "\n\n".join(part for part in parts if part.strip())
-
-    @staticmethod
-    def _estimate_tokens(text: str) -> int:
-        return max(1, int(len(text.split()) * 1.3))
 
 
 @lru_cache(maxsize=1)

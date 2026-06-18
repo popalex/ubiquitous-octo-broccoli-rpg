@@ -182,6 +182,20 @@ async def test_chat_stream_yields_sse_chunks(orchestrator: OrchestratorService, 
     assert last_data.get("type") == "done"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", ["chat_stream", "gm_chat_stream"])
+async def test_stream_missing_session_emits_typed_error(
+    orchestrator: OrchestratorService, db_session: AsyncSession, stream: str
+) -> None:
+    # Both stream entry points emit a single typed error frame the frontend can
+    # dispatch on (the standard path previously omitted the `type` key).
+    chunks = [c async for c in getattr(orchestrator, stream)(db_session, "does-not-exist", "Hello!")]
+
+    assert len(chunks) == 1
+    payload = json.loads(chunks[0].removeprefix("data: ").strip())
+    assert payload == {"type": "error", "error": "Session not found"}
+
+
 # ---------------------------------------------------------------------------
 # gm_chat — returns GMChatResponse with narration
 # ---------------------------------------------------------------------------
