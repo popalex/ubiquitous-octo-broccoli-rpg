@@ -67,7 +67,7 @@ docker compose exec api alembic upgrade head
 3. **Generate** the actor reply via the actor provider, using `ACTOR_SYSTEM_PROMPT`.
 4. **Continuity check** (`ContinuityService`) — a second LLM validates the draft against hard rules/canon and may revise it. Failures are swallowed (turn still completes).
 5. **Persist** user + assistant `Turn` rows, bump `session.turn_count`, commit.
-6. **Post-turn (best-effort, never breaks the turn):** `MemoryService.maybe_refresh` and `WorldStateService.extract_and_apply`.
+6. **Post-turn (best-effort, never breaks the turn):** `MemoryService.maybe_refresh` and `PostTurnJudgeService.judge_turn` — one unified LLM call that produces the world-state delta, quest delta, and suggestion chips, each applied independently via `WorldStateService.apply_world_delta` / `QuestService.apply_quest_delta`.
 
 GM mode (`gm_chat`) wraps this with pre-narration (scene-setting), event triggering/generation, and post-narration. Streaming variants (`chat_stream`, `gm_chat_stream`) emit SSE events (`type: memories|phase|chunk|event|done|error`) and **skip the continuity check for speed**. The orchestrator is a singleton via `@lru_cache get_orchestrator()` — call `get_orchestrator.cache_clear()` when swapping settings/providers (tests do this).
 

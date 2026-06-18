@@ -1,8 +1,7 @@
 """Tests for the unified post-turn judge (§2).
 
 Service-level: one combined call, per-section independence, flag gating.
-Orchestrator-level: the post_turn_judge_enabled flag routes the post-turn work
-through the judge (vs the legacy two-call path).
+Orchestrator-level: post-turn work runs through the judge (unconditionally).
 """
 
 from __future__ import annotations
@@ -190,6 +189,26 @@ async def test_quests_only_session_skips_world(db_session: AsyncSession) -> None
 
 
 @pytest.mark.asyncio
+async def test_quest_interval_gate_skips_quest_section(db_session: AsyncSession) -> None:
+    # Off-interval turns drop the quest section even though quests are enabled;
+    # the world section still applies in the same call.
+    settings = make_test_settings(world_state_enabled=True, quests_enabled=True, quest_extraction_interval=3)
+    provider = CountingMockProvider(settings)
+    provider.set_json_response(COMBINED)
+    session = SessionFactory(turn_count=4)  # 4 % 3 != 0
+    await db_session.flush()
+
+    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
+        db_session, session, user_message="x", response_text="y"
+    )
+
+    assert provider.json_calls == 1
+    assert ledger_row is not None and ledger_row.version == 1  # world still applied
+    assert changes == []  # quest section gated out
+    assert await _quest_count(db_session, session.id) == 0
+
+
+@pytest.mark.asyncio
 async def test_no_call_when_both_features_off(db_session: AsyncSession) -> None:
     settings = make_test_settings(world_state_enabled=False, quests_enabled=False)
     provider = CountingMockProvider(settings)
@@ -330,13 +349,13 @@ async def test_suggest_only_off_session_makes_no_call(db_session: AsyncSession) 
 
 
 # ---------------------------------------------------------------------------
-# Orchestrator: the flag routes through the judge
+# Orchestrator: post-turn work runs through the judge (now unconditional)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_routes_through_judge_when_enabled(db_session: AsyncSession) -> None:
-    settings = make_test_settings(world_state_enabled=True, quests_enabled=True, post_turn_judge_enabled=True)
+async def test_orchestrator_routes_post_turn_through_judge(db_session: AsyncSession) -> None:
+    settings = make_test_settings(world_state_enabled=True, quests_enabled=True)
     provider = MockProvider(settings)
     # The actor draft + continuity use generate_text/json with the default
     # payloads; script the post-turn judge's combined payload for generate_json.

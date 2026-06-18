@@ -447,9 +447,9 @@ async def test_chat_survives_quest_extraction_failure(mock_provider: MockProvide
     await db_session.flush()
 
     async def boom(*args, **kwargs):
-        raise RuntimeError("quest judge exploded")
+        raise RuntimeError("post-turn judge exploded")
 
-    orchestrator.quests.extract_and_apply = boom  # type: ignore[method-assign]
+    orchestrator.post_turn_judge.judge_turn = boom  # type: ignore[method-assign]
 
     result = await orchestrator.chat(db_session, session.id, "Hello!")
     assert isinstance(result, ChatResponse)

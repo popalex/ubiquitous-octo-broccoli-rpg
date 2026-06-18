@@ -15,7 +15,6 @@ services:
       WORLD_STATE_ENABLED: ${WORLD_STATE_ENABLED:-true}
       QUESTS_ENABLED: ${QUESTS_ENABLED:-true}
       SUGGESTIONS_ENABLED: ${SUGGESTIONS_ENABLED:-true}
-      POST_TURN_JUDGE_ENABLED: ${POST_TURN_JUDGE_ENABLED:-true}
 
   frontend:
     # ── dev (Vite HMR) ──────────────────────────────────────
