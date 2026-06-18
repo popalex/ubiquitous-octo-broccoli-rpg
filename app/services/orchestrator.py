@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from functools import lru_cache
 
 from fastapi import HTTPException
@@ -36,6 +36,7 @@ from app.services.features import quests_on, world_state_on
 from app.services.game_master import GameMasterService
 from app.services.memory import MemoryService
 from app.services.post_turn_judge import PostTurnJudgeService
+from app.services.post_turn_runner import PostTurnRunner
 from app.services.quests import QuestChange, QuestService
 from app.services.retrieval import RetrievalService
 from app.services.turn_persister import TurnPersister
@@ -116,6 +117,7 @@ class OrchestratorService:
         self.world_state = WorldStateService(self.memory_provider, self.settings)
         self.quests = QuestService(self.memory_provider, self.settings)
         self.post_turn_judge = PostTurnJudgeService(self.memory_provider, self.world_state, self.quests, self.settings)
+        self.post_turn = PostTurnRunner(self.memory, self.post_turn_judge)
         self.turns = TurnPersister(estimate_tokens)
         self.context = ContextPacketBuilder(self.settings)
 
@@ -184,11 +186,8 @@ class OrchestratorService:
             continuity_notes="\n".join(continuity.issues) if continuity.issues else None,
         )
 
-        try:
-            await self.memory.maybe_refresh(db, session)
-        except ProviderError:
-            logger.exception("memory refresh skipped for session=%s", session.id)
-        quest_changes, suggestions = await self._run_post_turn_extraction(
+        await self.post_turn.refresh_memory(db, session)
+        quest_changes, suggestions = await self.post_turn.judge(
             db,
             session,
             user_message=user_message,
@@ -358,11 +357,7 @@ class OrchestratorService:
             continuity_notes="\n".join(continuity.issues) if continuity.issues else None,
         )
 
-        # Memory refresh
-        try:
-            await self.memory.maybe_refresh(db, session)
-        except ProviderError:
-            logger.exception("memory refresh skipped for session=%s", session.id)
+        await self.post_turn.refresh_memory(db, session)
         # Plot-hook offers + escalation run first so the post-turn judge sees
         # any freshly-offered quests in its open-quest context (matches the
         # legacy order where the quest judge ran after this).
@@ -374,7 +369,7 @@ class OrchestratorService:
             pressure_quests=pressure_quests,
             turn_id=assistant_turn.id,
         )
-        extra_changes, suggestions = await self._run_post_turn_extraction(
+        extra_changes, suggestions = await self.post_turn.judge(
             db,
             session,
             user_message=user_message,
@@ -627,11 +622,7 @@ class OrchestratorService:
 
         # Memory refresh
         yield sse_phase("summarizing")
-        try:
-            with tracer.start_as_current_span("orchestrator.memory_refresh"):
-                await self.memory.maybe_refresh(db, session)
-        except ProviderError:
-            logger.exception("memory refresh skipped for session=%s", session.id)
+        await self.post_turn.refresh_memory(db, session)
         # Plot-hook offers + escalation run first so the post-turn judge sees
         # any freshly-offered quests in its open-quest context (matches the
         # legacy order where the quest judge ran after this).
@@ -643,7 +634,7 @@ class OrchestratorService:
             pressure_quests=pressure_quests,
             turn_id=assistant_turn.id,
         )
-        extra_changes, suggestions = await self._run_post_turn_extraction(
+        extra_changes, suggestions = await self.post_turn.judge(
             db,
             session,
             user_message=user_message,
@@ -651,10 +642,8 @@ class OrchestratorService:
             turn_id=assistant_turn.id,
         )
         quest_changes += extra_changes
-        for change in quest_changes:
-            yield sse_quest_update(self._quest_change_payload(change))
-        if suggestions:
-            yield sse_suggestions(suggestions)
+        for frame in self._stream_post_turn_results(quest_changes, suggestions):
+            yield frame
 
         chat_turns.add(1, {"gm_enabled": True})
         total_duration = time.perf_counter() - total_start
@@ -752,22 +741,16 @@ class OrchestratorService:
 
         # Memory refresh
         yield sse_phase("summarizing")
-        try:
-            with tracer.start_as_current_span("orchestrator.memory_refresh"):
-                await self.memory.maybe_refresh(db, session)
-        except ProviderError:
-            logger.exception("memory refresh skipped for session=%s", session.id)
-        quest_changes, suggestions = await self._run_post_turn_extraction(
+        await self.post_turn.refresh_memory(db, session)
+        quest_changes, suggestions = await self.post_turn.judge(
             db,
             session,
             user_message=user_message,
             response_text=full_reply,
             turn_id=assistant_turn.id,
         )
-        for change in quest_changes:
-            yield sse_quest_update(self._quest_change_payload(change))
-        if suggestions:
-            yield sse_suggestions(suggestions)
+        for frame in self._stream_post_turn_results(quest_changes, suggestions):
+            yield frame
 
         chat_turns.add(1, {"gm_enabled": False})
         logger.info("chat_stream session=%s turn_count=%s", session.id, session.turn_count)
@@ -835,33 +818,13 @@ class OrchestratorService:
             )
             return block
 
-    async def _run_post_turn_extraction(
-        self,
-        db: AsyncSession,
-        session: ChatSession,
-        *,
-        user_message: str,
-        response_text: str,
-        turn_id: str | None,
-    ) -> tuple[list[QuestChange], list[str]]:
-        """Post-turn structured extraction (world-state ledger + quest judge +
-        suggested player responses). Returns ``(quest_changes, suggestions)``.
-
-        Unified into ONE judge call. Memory refresh stays its own call (different
-        cadence) and is not routed through here. Best-effort: never breaks the turn."""
-        try:
-            _, quest_changes, suggestions = await self.post_turn_judge.judge_turn(
-                db,
-                session,
-                user_message=user_message,
-                response_text=response_text,
-                turn_id=turn_id,
-            )
-            return quest_changes, suggestions
-        except Exception:
-            # Deliberately broad: post-turn side effects must never fail the turn.
-            logger.exception("post-turn judge skipped for session=%s", session.id)
-            return [], []
+    def _stream_post_turn_results(self, quest_changes: list[QuestChange], suggestions: list[str]) -> Iterator[str]:
+        """SSE frames for the post-turn results, shared by both stream paths:
+        one quest_update per change, then a single suggestions frame (if any)."""
+        for change in quest_changes:
+            yield sse_quest_update(self._quest_change_payload(change))
+        if suggestions:
+            yield sse_suggestions(suggestions)
 
     async def _quest_block(self, db: AsyncSession, session: ChatSession) -> str:
         """Load + render open quests for prompt injection.
