@@ -31,6 +31,7 @@ from app.services.memory import MemoryService
 from app.services.post_turn_judge import PostTurnJudgeService
 from app.services.quests import QuestChange, QuestService
 from app.services.retrieval import RetrievalService
+from app.services.turn_persister import TurnPersister
 from app.services.world_state import WorldStateService
 from app.telemetry import chat_turns, continuity_revisions, retrieval_selected, tracer
 
@@ -108,6 +109,7 @@ class OrchestratorService:
         self.world_state = WorldStateService(self.memory_provider, self.settings)
         self.quests = QuestService(self.memory_provider, self.settings)
         self.post_turn_judge = PostTurnJudgeService(self.memory_provider, self.world_state, self.quests, self.settings)
+        self.turns = TurnPersister(self._estimate_tokens)
 
     async def aclose(self) -> None:
         """Close every provider's HTTP client. Dedupes by identity because
@@ -166,31 +168,13 @@ class OrchestratorService:
             logger.exception("continuity check skipped for session=%s", session.id)
             continuity = ContinuityResult(final_reply=draft_reply, applied=False, issues=[])
 
-        next_user_index = session.turn_count + 1
-        next_actor_index = session.turn_count + 2
-        assistant_turn = Turn(
-            session_id=session.id,
-            turn_index=next_actor_index,
-            role="assistant",
-            content=continuity.final_reply,
-            token_estimate=self._estimate_tokens(continuity.final_reply),
+        assistant_turn = await self.turns.persist_chat_turns(
+            db,
+            session,
+            user_message=user_message,
+            assistant_content=continuity.final_reply,
             continuity_notes="\n".join(continuity.issues) if continuity.issues else None,
         )
-        db.add_all(
-            [
-                Turn(
-                    session_id=session.id,
-                    turn_index=next_user_index,
-                    role="user",
-                    content=user_message,
-                    token_estimate=self._estimate_tokens(user_message),
-                ),
-                assistant_turn,
-            ]
-        )
-        session.turn_count = next_actor_index
-        await db.commit()
-        await db.refresh(session)
 
         try:
             await self.memory.maybe_refresh(db, session)
@@ -355,58 +339,16 @@ class OrchestratorService:
             except ProviderError:
                 logger.exception("Event generation failed for session=%s", session.id)
 
-        # Persist turns (include pre-narration as GM turn for memory extraction)
-        turns_to_add: list[Turn] = []
-        current_index = session.turn_count
-
-        # Store pre-narration as a separate GM turn if present
-        if pre_narration:
-            current_index += 1
-            turns_to_add.append(
-                Turn(
-                    session_id=session.id,
-                    turn_index=current_index,
-                    role="assistant",
-                    content=f"[Scene Narration]\n{pre_narration}",
-                    token_estimate=self._estimate_tokens(pre_narration),
-                    turn_type="gm_narration",
-                )
-            )
-
-        # User turn
-        current_index += 1
-        turns_to_add.append(
-            Turn(
-                session_id=session.id,
-                turn_index=current_index,
-                role="user",
-                content=user_message,
-                token_estimate=self._estimate_tokens(user_message),
-            )
+        # Persist turns (include pre-narration as a GM turn for memory extraction).
+        assistant_turn = await self.turns.persist_gm_turns(
+            db,
+            session,
+            user_message=user_message,
+            assistant_content=continuity.final_reply,
+            pre_narration=pre_narration,
+            post_narration=post_narration,
+            continuity_notes="\n".join(continuity.issues) if continuity.issues else None,
         )
-
-        # Build full assistant content including post-narration
-        full_assistant_content = continuity.final_reply
-        if post_narration:
-            full_assistant_content = f"{continuity.final_reply}\n\n---\n\n{post_narration}"
-
-        # Assistant turn
-        current_index += 1
-        turns_to_add.append(
-            Turn(
-                session_id=session.id,
-                turn_index=current_index,
-                role="assistant",
-                content=full_assistant_content,
-                token_estimate=self._estimate_tokens(full_assistant_content),
-                continuity_notes="\n".join(continuity.issues) if continuity.issues else None,
-            )
-        )
-
-        db.add_all(turns_to_add)
-        session.turn_count = current_index
-        await db.commit()
-        await db.refresh(session)
 
         # Memory refresh
         try:
@@ -422,14 +364,14 @@ class OrchestratorService:
             event_check=event_check,
             event_description=post_narration,
             pressure_quests=pressure_quests,
-            turn_id=turns_to_add[-1].id,
+            turn_id=assistant_turn.id,
         )
         extra_changes, suggestions = await self._run_post_turn_extraction(
             db,
             session,
             user_message=user_message,
-            response_text=full_assistant_content,
-            turn_id=turns_to_add[-1].id,
+            response_text=assistant_turn.content,
+            turn_id=assistant_turn.id,
         )
         quest_changes += extra_changes
 
@@ -649,61 +591,19 @@ class OrchestratorService:
             except ProviderError:
                 logger.exception("Event generation failed for session=%s", session.id)
 
-        # Persist turns (include pre-narration as GM turn for memory extraction)
-        turns_to_add: list[Turn] = []
-        current_index = session.turn_count
-
-        # Store pre-narration as a separate GM turn if present
-        if pre_narration:
-            current_index += 1
-            turns_to_add.append(
-                Turn(
-                    session_id=session.id,
-                    turn_index=current_index,
-                    role="assistant",
-                    content=f"[Scene Narration]\n{pre_narration}",
-                    token_estimate=self._estimate_tokens(pre_narration),
-                    turn_type="gm_narration",
-                )
-            )
-
-        # User turn
-        current_index += 1
-        turns_to_add.append(
-            Turn(
-                session_id=session.id,
-                turn_index=current_index,
-                role="user",
-                content=user_message,
-                token_estimate=self._estimate_tokens(user_message),
-            )
-        )
-
-        # Build full assistant content including post-narration
-        full_assistant_content = character_reply
-        if post_narration:
-            full_assistant_content = f"{character_reply}\n\n---\n\n{post_narration}"
-
-        # Assistant turn
-        current_index += 1
-        turns_to_add.append(
-            Turn(
-                session_id=session.id,
-                turn_index=current_index,
-                role="assistant",
-                content=full_assistant_content,
-                token_estimate=self._estimate_tokens(full_assistant_content),
-            )
-        )
-
         # Rendered before commit: relationships expire on refresh (async lazy-load trap)
         hard_rules = self._hard_rules_text(session.character_card, session.world_state)
         world_canon = self._continuity_canon(session, world_state_block)
 
-        db.add_all(turns_to_add)
-        session.turn_count = current_index
-        await db.commit()
-        await db.refresh(session)
+        # Persist turns (include pre-narration as a GM turn for memory extraction).
+        assistant_turn = await self.turns.persist_gm_turns(
+            db,
+            session,
+            user_message=user_message,
+            assistant_content=character_reply,
+            pre_narration=pre_narration,
+            post_narration=post_narration,
+        )
 
         # Post-stream continuity check → retcon note (reply already shown)
         await self._post_stream_continuity(
@@ -714,7 +614,7 @@ class OrchestratorService:
             hard_rules=hard_rules,
             world_canon=world_canon,
             recent_transcript=self._recent_turns_text(recent_turns),
-            assistant_turn=turns_to_add[-1],
+            assistant_turn=assistant_turn,
         )
 
         # Memory refresh
@@ -733,14 +633,14 @@ class OrchestratorService:
             event_check=event_check,
             event_description=post_narration,
             pressure_quests=pressure_quests,
-            turn_id=turns_to_add[-1].id,
+            turn_id=assistant_turn.id,
         )
         extra_changes, suggestions = await self._run_post_turn_extraction(
             db,
             session,
             user_message=user_message,
-            response_text=full_assistant_content,
-            turn_id=turns_to_add[-1].id,
+            response_text=assistant_turn.content,
+            turn_id=assistant_turn.id,
         )
         quest_changes += extra_changes
         for change in quest_changes:
@@ -823,30 +723,12 @@ class OrchestratorService:
         world_canon = self._continuity_canon(session, world_state_block)
 
         # Persist turns to database
-        next_user_index = session.turn_count + 1
-        next_actor_index = session.turn_count + 2
-        assistant_turn = Turn(
-            session_id=session.id,
-            turn_index=next_actor_index,
-            role="assistant",
-            content=full_reply,
-            token_estimate=self._estimate_tokens(full_reply),
+        assistant_turn = await self.turns.persist_chat_turns(
+            db,
+            session,
+            user_message=user_message,
+            assistant_content=full_reply,
         )
-        db.add_all(
-            [
-                Turn(
-                    session_id=session.id,
-                    turn_index=next_user_index,
-                    role="user",
-                    content=user_message,
-                    token_estimate=self._estimate_tokens(user_message),
-                ),
-                assistant_turn,
-            ]
-        )
-        session.turn_count = next_actor_index
-        await db.commit()
-        await db.refresh(session)
 
         # Post-stream continuity check → retcon note (reply already shown)
         await self._post_stream_continuity(
