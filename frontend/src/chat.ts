@@ -108,6 +108,97 @@ export async function sendChat(params: SendChatParams): Promise<void> {
   );
 }
 
+/** Append streamed text to the message with ``messageId`` (no-op if it isn't
+ * in the list yet — the GM reply bubble is added lazily on `character_reply`). */
+function appendChunk(
+  setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>,
+  messageId: string,
+  content: string,
+): void {
+  setChatMessages((current) =>
+    current.map((msg) => (msg.id === messageId ? { ...msg, content: msg.content + content } : msg)),
+  );
+}
+
+type SSEEvent = Record<string, unknown>;
+type SSEHandler = (event: SSEEvent) => void | Promise<void>;
+/** Maps an SSE `type` to its handler; unknown types are ignored. */
+type SSEHandlers = Record<string, SSEHandler>;
+
+/** Open an SSE POST stream, throwing on a non-OK response. */
+async function openStream(url: string, body: object): Promise<Response> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(response.statusText || "Stream request failed");
+  return response;
+}
+
+/** Read an SSE body to completion, dispatching each parsed frame to its
+ * handler. Handles the `data:` prefix, blank/keep-alive lines, malformed JSON
+ * (skipped), and frames split across read boundaries. A throwing handler (e.g.
+ * the `error` frame) propagates to the caller's try/catch for rollback. */
+async function readSSEStream(response: Response, handlers: SSEHandlers): Promise<void> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Failed to get response reader");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const jsonStr = line.slice(6);
+      if (!jsonStr.trim()) continue;
+
+      let event: SSEEvent;
+      try {
+        event = JSON.parse(jsonStr) as SSEEvent;
+      } catch {
+        continue; // Skip malformed JSON lines
+      }
+
+      const handler = handlers[event.type as string];
+      if (handler) await handler(event);
+    }
+  }
+}
+
+/** Frame handlers common to both stream paths (standard's events are a strict
+ * subset of the GM path's). Each path spreads these and adds/overrides its own
+ * `phase` / `done` (and, for GM, the pre-narration + event frames). */
+function commonStreamHandlers({
+  assistantMessageId,
+  setChatMessages,
+  setRetrievedMemories,
+  setStatusText,
+}: {
+  assistantMessageId: string;
+  setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>;
+  setRetrievedMemories: Dispatch<SetStateAction<RetrievedMemory[]>>;
+  setStatusText: (v: string) => void;
+}): SSEHandlers {
+  return {
+    chunk: (event) => appendChunk(setChatMessages, assistantMessageId, event.content as string),
+    memories: (event) => setRetrievedMemories(event.memories as RetrievedMemory[]),
+    quest_update: (event) =>
+      handleQuestUpdate(event.quest as QuestUpdateNotification, setChatMessages, setStatusText),
+    suggestions: (event) => attachSuggestions(event.suggestions as string[], setChatMessages),
+    error: (event) => {
+      throw new Error((event.error as string) || "Stream failed.");
+    },
+  };
+}
+
 async function sendGMStream({
   sessionId,
   currentInput,
@@ -132,50 +223,22 @@ async function sendGMStream({
   ]);
   setStatusText("The Game Master weaves the tale...");
 
+  let hasAddedAssistant = false;
+  let hasPreNarration = false;
+
   try {
-    const response = await fetch("/api/gm/chat/stream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_id: sessionId,
-        user_message: currentInput,
-        gm_mode: true,
-        location: currentLocation || null,
-        time_of_day: timeOfDay || null,
-      }),
+    const response = await openStream("/api/gm/chat/stream", {
+      session_id: sessionId,
+      user_message: currentInput,
+      gm_mode: true,
+      location: currentLocation || null,
+      time_of_day: timeOfDay || null,
     });
 
-    if (!response.ok) throw new Error(response.statusText || "Stream request failed");
-
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error("Failed to get response reader");
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let hasAddedAssistant = false;
-    let hasPreNarration = false;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const jsonStr = line.slice(6);
-        if (!jsonStr.trim()) continue;
-
-        let event: Record<string, unknown>;
-        try {
-          event = JSON.parse(jsonStr) as Record<string, unknown>;
-        } catch {
-          continue; // Skip malformed JSON lines
-        }
-
-        if (event.type === "phase" && event.phase === "character_reply") {
+    await readSSEStream(response, {
+      ...commonStreamHandlers({ assistantMessageId, setChatMessages, setRetrievedMemories, setStatusText }),
+      phase: (event) => {
+        if (event.phase === "character_reply") {
           if (!hasAddedAssistant) {
             hasAddedAssistant = true;
             setChatMessages((current) => [
@@ -184,61 +247,43 @@ async function sendGMStream({
             ]);
             setStatusText("Character responds...");
           }
-        } else if (event.type === "phase" && event.phase === "summarizing") {
+        } else if (event.phase === "summarizing") {
           setStatusText("Updating memory scrolls…");
-        } else if (event.type === "pre_narration_chunk") {
-          hasPreNarration = true;
-          setChatMessages((current) =>
-            current.map((msg) =>
-              msg.id === preNarrationId
-                ? { ...msg, content: msg.content + (event.content as string) }
-                : msg
-            )
-          );
-        } else if (event.type === "pre_narration_error") {
-          // The GM narration broke mid-stream. Discard the half-written bubble
-          // (the backend discards it too) rather than leaving a dangling fragment.
-          hasPreNarration = false;
-          setChatMessages((current) => current.filter((msg) => msg.id !== preNarrationId));
-          setStatusText("The Game Master faltered; continuing without narration…");
-        } else if (event.type === "chunk") {
-          setChatMessages((current) =>
-            current.map((msg) =>
-              msg.id === assistantMessageId
-                ? { ...msg, content: msg.content + (event.content as string) }
-                : msg
-            )
-          );
-        } else if (event.type === "memories") {
-          setRetrievedMemories(event.memories as RetrievedMemory[]);
-        } else if (event.type === "event") {
-          const gmEvent = event.event as GMEvent;
-          setLastEvent(gmEvent);
-          setChatMessages((current) => [
-            ...current,
-            {
-              id: crypto.randomUUID(),
-              role: "narrator",
-              content: gmEvent.description,
-              messageType: "event",
-            },
-          ]);
-          setStatusText(`Event triggered: ${gmEvent.event_type}`);
-        } else if (event.type === "quest_update") {
-          handleQuestUpdate(event.quest as QuestUpdateNotification, setChatMessages, setStatusText);
-        } else if (event.type === "suggestions") {
-          attachSuggestions(event.suggestions as string[], setChatMessages);
-        } else if (event.type === "error") {
-          throw new Error((event.error as string) || "Stream failed.");
-        } else if (event.type === "done") {
-          // Best-effort: a failed refetch must not wipe the finished reply.
-          await refreshMemory(sessionId).catch(() => {});
-          if (!hasPreNarration) {
-            setChatMessages((current) => current.filter((msg) => msg.id !== preNarrationId));
-          }
         }
-      }
-    }
+      },
+      pre_narration_chunk: (event) => {
+        hasPreNarration = true;
+        appendChunk(setChatMessages, preNarrationId, event.content as string);
+      },
+      pre_narration_error: () => {
+        // The GM narration broke mid-stream. Discard the half-written bubble
+        // (the backend discards it too) rather than leaving a dangling fragment.
+        hasPreNarration = false;
+        setChatMessages((current) => current.filter((msg) => msg.id !== preNarrationId));
+        setStatusText("The Game Master faltered; continuing without narration…");
+      },
+      event: (event) => {
+        const gmEvent = event.event as GMEvent;
+        setLastEvent(gmEvent);
+        setChatMessages((current) => [
+          ...current,
+          {
+            id: crypto.randomUUID(),
+            role: "narrator",
+            content: gmEvent.description,
+            messageType: "event",
+          },
+        ]);
+        setStatusText(`Event triggered: ${gmEvent.event_type}`);
+      },
+      done: async () => {
+        // Best-effort: a failed refetch must not wipe the finished reply.
+        await refreshMemory(sessionId).catch(() => {});
+        if (!hasPreNarration) {
+          setChatMessages((current) => current.filter((msg) => msg.id !== preNarrationId));
+        }
+      },
+    });
 
     setContinuityIssues([]);
     setStatusText("The tale unfolds...");
@@ -279,67 +324,21 @@ async function sendStandardStream({
   setStatusText("Generating in-character reply...");
 
   try {
-    const response = await fetch("/api/chat/stream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_id: sessionId,
-        user_message: currentInput,
-      }),
+    const response = await openStream("/api/chat/stream", {
+      session_id: sessionId,
+      user_message: currentInput,
     });
 
-    if (!response.ok) throw new Error(response.statusText || "Stream request failed");
-
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error("Failed to get response reader");
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const jsonStr = line.slice(6);
-        if (!jsonStr.trim()) continue;
-
-        let event: Record<string, unknown>;
-        try {
-          event = JSON.parse(jsonStr) as Record<string, unknown>;
-        } catch {
-          continue; // Skip malformed JSON lines
-        }
-
-        if (event.type === "chunk") {
-          setChatMessages((current) =>
-            current.map((msg) =>
-              msg.id === assistantMessageId
-                ? { ...msg, content: msg.content + (event.content as string) }
-                : msg
-            )
-          );
-        } else if (event.type === "phase" && event.phase === "summarizing") {
-          setStatusText("Updating memory scrolls…");
-        } else if (event.type === "memories") {
-          setRetrievedMemories(event.memories as RetrievedMemory[]);
-        } else if (event.type === "quest_update") {
-          handleQuestUpdate(event.quest as QuestUpdateNotification, setChatMessages, setStatusText);
-        } else if (event.type === "suggestions") {
-          attachSuggestions(event.suggestions as string[], setChatMessages);
-        } else if (event.type === "error") {
-          throw new Error((event.error as string) || "Stream failed.");
-        } else if (event.type === "done") {
-          // Best-effort: a failed refetch must not wipe the finished reply.
-          await refreshMemory(sessionId).catch(() => {});
-        }
-      }
-    }
+    await readSSEStream(response, {
+      ...commonStreamHandlers({ assistantMessageId, setChatMessages, setRetrievedMemories, setStatusText }),
+      phase: (event) => {
+        if (event.phase === "summarizing") setStatusText("Updating memory scrolls…");
+      },
+      done: async () => {
+        // Best-effort: a failed refetch must not wipe the finished reply.
+        await refreshMemory(sessionId).catch(() => {});
+      },
+    });
 
     setContinuityIssues([]);
     setStatusText("Reply generated.");
