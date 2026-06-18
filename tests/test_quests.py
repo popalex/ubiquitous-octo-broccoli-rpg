@@ -282,13 +282,29 @@ def test_render_pressure_lists_quests() -> None:
 
 
 # ---------------------------------------------------------------------------
-# extract_and_apply (DB)
+# apply_quest_delta (DB) — the kept apply path, exercised by the post-turn judge
 # ---------------------------------------------------------------------------
 
 
-async def test_extract_and_apply_persists_new_quest(db_session: AsyncSession) -> None:
-    provider = MockProvider()
-    provider.set_json_response(
+async def _apply(svc: QuestService, db: AsyncSession, session, payload: dict) -> list:
+    """Parse ``payload`` leniently and apply it through the kept
+    ``apply_quest_delta`` path (mirrors what the unified post-turn judge does)."""
+    quests, reserved = await svc.load_open_and_reserved(db, session)
+    delta = QuestDelta.lenient(payload)
+    if delta.is_empty():
+        return []
+    return await svc.apply_quest_delta(db, session, delta, quests=quests, reserved_slugs=reserved)
+
+
+async def test_apply_persists_new_quest(db_session: AsyncSession) -> None:
+    svc = QuestService(MockProvider(), make_test_settings(quests_enabled=True))
+    session = SessionFactory(turn_count=2)
+    await db_session.flush()
+
+    changes = await _apply(
+        svc,
+        db_session,
+        session,
         {
             "quests_new": [
                 {
@@ -300,14 +316,7 @@ async def test_extract_and_apply_persists_new_quest(db_session: AsyncSession) ->
                     "stages": [{"id": "ask-around", "description": "Ask around"}],
                 }
             ]
-        }
-    )
-    svc = QuestService(provider, make_test_settings(quests_enabled=True))
-    session = SessionFactory(turn_count=2)
-    await db_session.flush()
-
-    changes = await svc.extract_and_apply(
-        db_session, session, user_message="I'll find your sister, Maren.", response_text="Maren weeps with relief."
+        },
     )
     assert len(changes) == 1
     rows = (await db_session.scalars(select(Quest).where(Quest.session_id == session.id))).all()
@@ -317,59 +326,46 @@ async def test_extract_and_apply_persists_new_quest(db_session: AsyncSession) ->
     assert rows[0].origin == "emergent"
 
 
-async def test_extract_and_apply_updates_existing_quest(db_session: AsyncSession) -> None:
-    provider = MockProvider()
-    svc = QuestService(provider, make_test_settings(quests_enabled=True))
+async def test_apply_updates_existing_quest(db_session: AsyncSession) -> None:
+    svc = QuestService(MockProvider(), make_test_settings(quests_enabled=True))
     session = SessionFactory(turn_count=4)
     quest = QuestFactory(session=session, slug="find-marens-sister")
     await db_session.flush()
 
-    provider.set_json_response(
+    changes = await _apply(
+        svc,
+        db_session,
+        session,
         {
             "quests_update": [
                 {"slug": "find-marens-sister", "stages_complete": ["ask-around"], "progress_note": "Innkeeper talked."}
             ]
-        }
+        },
     )
-    changes = await svc.extract_and_apply(db_session, session, user_message="a", response_text="b")
     assert changes[0].change == "advanced"
     await db_session.refresh(quest)
     assert quest.stages[0]["done"] is True
     assert quest.last_progress_turn == 4
 
 
-async def test_extract_empty_delta_writes_nothing(db_session: AsyncSession) -> None:
-    provider = MockProvider()
-    provider.set_json_response({})
-    svc = QuestService(provider, make_test_settings(quests_enabled=True))
+async def test_apply_empty_delta_writes_nothing(db_session: AsyncSession) -> None:
+    svc = QuestService(MockProvider(), make_test_settings(quests_enabled=True))
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    changes = await svc.extract_and_apply(db_session, session, user_message="a", response_text="b")
+    changes = await _apply(svc, db_session, session, {})
     assert changes == []
     rows = (await db_session.scalars(select(Quest).where(Quest.session_id == session.id))).all()
     assert rows == []
 
 
-async def test_extract_invalid_delta_is_noop(db_session: AsyncSession) -> None:
-    provider = MockProvider()
-    provider.set_json_response({"quests_new": "not a list"})
-    svc = QuestService(provider, make_test_settings(quests_enabled=True))
+async def test_apply_invalid_delta_is_noop(db_session: AsyncSession) -> None:
+    # A whole-section type error -> lenient parse yields an empty delta -> no-op.
+    svc = QuestService(MockProvider(), make_test_settings(quests_enabled=True))
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    changes = await svc.extract_and_apply(db_session, session, user_message="a", response_text="b")
-    assert changes == []
-
-
-async def test_extract_interval_gate_skips(db_session: AsyncSession) -> None:
-    provider = MockProvider()
-    provider.set_json_response({"quests_new": [{"slug": "q", "title": "Q", "description": "x"}]})
-    svc = QuestService(provider, make_test_settings(quests_enabled=True, quest_extraction_interval=3))
-    session = SessionFactory(turn_count=4)  # 4 % 3 != 0
-    await db_session.flush()
-
-    changes = await svc.extract_and_apply(db_session, session, user_message="a", response_text="b")
+    changes = await _apply(svc, db_session, session, {"quests_new": "not a list"})
     assert changes == []
 
 

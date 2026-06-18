@@ -19,8 +19,6 @@ from app.prompts import (
     GM_NARRATION_PROMPT,
     GM_SYSTEM_PROMPT,
     MEMORY_EXTRACT_PROMPT,
-    QUEST_JUDGE_PROMPT,
-    WORLD_STATE_EXTRACT_PROMPT,
     build_post_turn_judge_prompt,
 )
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
@@ -32,8 +30,6 @@ class Target(StrEnum):
 
     CONTINUITY = "continuity"
     MEMORY = "memory"
-    WORLD_STATE = "world_state"
-    QUESTS = "quests"
     GM_NARRATION = "gm_narration"
     POST_TURN_JUDGE = "post_turn_judge"
 
@@ -70,32 +66,6 @@ def build_messages(target: Target, inputs: dict) -> list[ProviderMessage]:
         return [
             ProviderMessage(role="system", content=MEMORY_EXTRACT_PROMPT),
             ProviderMessage(role="user", content=inputs["transcript"]),
-        ]
-    if target is Target.WORLD_STATE:
-        # Mirrors WorldStateService.extract_and_apply (app/services/world_state.py).
-        return [
-            ProviderMessage(role="system", content=WORLD_STATE_EXTRACT_PROMPT),
-            ProviderMessage(
-                role="user",
-                content=(
-                    f"CURRENT LEDGER:\n{inputs['ledger_json']}\n\n"
-                    f"LATEST EXCHANGE:\nPLAYER: {inputs['user_message']}\n"
-                    f"RESPONSE: {inputs['gm_response']}"
-                ),
-            ),
-        ]
-    if target is Target.QUESTS:
-        # Mirrors QuestService.extract_and_apply (app/services/quests.py).
-        return [
-            ProviderMessage(role="system", content=QUEST_JUDGE_PROMPT),
-            ProviderMessage(
-                role="user",
-                content=(
-                    f"OPEN QUESTS:\n{inputs['open_quests_json']}\n\n"
-                    f"LATEST EXCHANGE:\nPLAYER: {inputs['user_message']}\n"
-                    f"RESPONSE: {inputs['gm_response']}"
-                ),
-            ),
         ]
     if target is Target.GM_NARRATION:
         # Mirrors GameMasterService.generate_narration (app/services/game_master.py).

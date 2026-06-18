@@ -225,26 +225,33 @@ def test_render_block_leads_with_dead() -> None:
 
 
 # ---------------------------------------------------------------------------
-# extract_and_apply (DB)
+# apply_world_delta (DB) — the kept apply path, exercised by the post-turn judge
 # ---------------------------------------------------------------------------
 
 
+async def _apply(svc: WorldStateService, db: AsyncSession, session, payload: dict) -> WorldStateLedger | None:
+    """Validate ``payload`` as a delta and apply it through the kept
+    ``apply_world_delta`` path (mirrors what the unified post-turn judge does)."""
+    ledger = await svc.load_current(db, session.id)
+    base_version = await svc.current_version(db, session.id)
+    delta = LedgerDelta.model_validate(payload)
+    return await svc.apply_world_delta(db, session, delta, ledger=ledger, base_version=base_version)
+
+
 @pytest.mark.asyncio
-async def test_extract_and_apply_persists_version(db_session: AsyncSession) -> None:
-    provider = MockProvider()
-    provider.set_json_response(
-        {
-            "entities_upsert": [{"id": "kael", "name": "Kael", "status": "dead"}],
-            "facts_add": ["Kael fell to the wraith."],
-        }
-    )
-    settings = make_test_settings(world_state_enabled=True)
-    svc = WorldStateService(provider, settings)
+async def test_apply_persists_version(db_session: AsyncSession) -> None:
+    svc = WorldStateService(MockProvider(), make_test_settings(world_state_enabled=True))
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    row = await svc.extract_and_apply(
-        db_session, session, user_message="I strike the wraith", gm_response="Kael falls, slain."
+    row = await _apply(
+        svc,
+        db_session,
+        session,
+        {
+            "entities_upsert": [{"id": "kael", "name": "Kael", "status": "dead"}],
+            "facts_add": ["Kael fell to the wraith."],
+        },
     )
     assert row is not None
     assert row.version == 1
@@ -255,16 +262,13 @@ async def test_extract_and_apply_persists_version(db_session: AsyncSession) -> N
 
 
 @pytest.mark.asyncio
-async def test_extract_increments_version(db_session: AsyncSession) -> None:
-    provider = MockProvider()
-    provider.set_json_response({"facts_add": ["fact one"]})
-    svc = WorldStateService(provider, make_test_settings(world_state_enabled=True))
+async def test_apply_increments_version(db_session: AsyncSession) -> None:
+    svc = WorldStateService(MockProvider(), make_test_settings(world_state_enabled=True))
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    await svc.extract_and_apply(db_session, session, user_message="a", gm_response="b")
-    provider.set_json_response({"facts_add": ["fact two"]})
-    row = await svc.extract_and_apply(db_session, session, user_message="c", gm_response="d")
+    await _apply(svc, db_session, session, {"facts_add": ["fact one"]})
+    row = await _apply(svc, db_session, session, {"facts_add": ["fact two"]})
     assert row.version == 2
 
     rows = (await db_session.scalars(select(WorldStateLedger).where(WorldStateLedger.session_id == session.id))).all()
@@ -274,54 +278,34 @@ async def test_extract_increments_version(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_extract_noop_delta_writes_no_new_version(db_session: AsyncSession) -> None:
+async def test_apply_noop_delta_writes_no_new_version(db_session: AsyncSession) -> None:
     # A non-empty delta that only restates existing state (small models do this
-    # on description-only turns) must not churn a new ledger version.
-    provider = MockProvider()
+    # on description-only turns) must not churn a new ledger version (§5a guard).
     seed = {
         "location": {"name": "Ashfall Keep", "description": "A ruined fortress."},
         "entities_upsert": [{"id": "kael", "name": "Kael", "status": "dead"}],
         "facts_add": ["The gate is barred."],
     }
-    provider.set_json_response(seed)
-    svc = WorldStateService(provider, make_test_settings(world_state_enabled=True))
+    svc = WorldStateService(MockProvider(), make_test_settings(world_state_enabled=True))
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    first = await svc.extract_and_apply(db_session, session, user_message="a", gm_response="b")
+    first = await _apply(svc, db_session, session, seed)
     assert first.version == 1
 
     # Same delta again -> applies to an identical ledger -> materially unchanged.
-    provider.set_json_response(seed)
-    row = await svc.extract_and_apply(db_session, session, user_message="I look around", gm_response="Dust drifts.")
+    row = await _apply(svc, db_session, session, seed)
     assert row is None
     assert await svc.current_version(db_session, session.id) == 1
 
 
 @pytest.mark.asyncio
-async def test_extract_empty_delta_writes_nothing(db_session: AsyncSession) -> None:
-    provider = MockProvider()
-    provider.set_json_response({})
-    svc = WorldStateService(provider, make_test_settings(world_state_enabled=True))
+async def test_apply_empty_delta_writes_nothing(db_session: AsyncSession) -> None:
+    svc = WorldStateService(MockProvider(), make_test_settings(world_state_enabled=True))
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    row = await svc.extract_and_apply(db_session, session, user_message="a", gm_response="b")
-    assert row is None
-    assert await svc.current_version(db_session, session.id) == 0
-
-
-@pytest.mark.asyncio
-async def test_extract_invalid_provider_json_skips(db_session: AsyncSession) -> None:
-    # MockProvider.generate_json returns a non-dict-shaped payload that fails
-    # schema validation -> extraction is skipped, turn is never broken.
-    provider = MockProvider()
-    provider.set_json_response({"entities_upsert": "not a list"})
-    svc = WorldStateService(provider, make_test_settings(world_state_enabled=True))
-    session = SessionFactory(turn_count=2)
-    await db_session.flush()
-
-    row = await svc.extract_and_apply(db_session, session, user_message="a", gm_response="b")
+    row = await _apply(svc, db_session, session, {})
     assert row is None
     assert await svc.current_version(db_session, session.id) == 0
 

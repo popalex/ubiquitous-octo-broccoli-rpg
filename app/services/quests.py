@@ -30,10 +30,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings, get_settings
 from app.models import Quest
 from app.models import Session as ChatSession
-from app.prompts import QUEST_FROM_EVENT_PROMPT, QUEST_JUDGE_PROMPT
+from app.prompts import QUEST_FROM_EVENT_PROMPT
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
 from app.schemas import QuestStageSchema as QuestStage
-from app.telemetry import quest_extract_failures, quest_updates, record_span_error, set_completion, tracer
+from app.telemetry import quest_extract_failures, quest_updates, record_span_error, set_completion
 
 logger = logging.getLogger(__name__)
 
@@ -295,67 +295,6 @@ class QuestService:
 
         return changes
 
-    # ------------------------------------------------------------------
-    # Extract (after the turn)
-    # ------------------------------------------------------------------
-
-    async def extract_and_apply(
-        self,
-        db: AsyncSession,
-        session: ChatSession,
-        *,
-        user_message: str,
-        response_text: str,
-        turn_id: str | None = None,
-    ) -> list[QuestChange]:
-        """Run the post-turn quest judge and persist its delta.
-
-        Best-effort: provider/schema failures are logged + metered and return
-        an empty list — never raised."""
-        if session.turn_count % self.settings.quest_extraction_interval != 0:
-            return []
-        with tracer.start_as_current_span("orchestrator.quest_extract") as span:
-            span.set_attribute("rpg.session_id", str(session.id))
-            quests, reserved_slugs = await self.load_open_and_reserved(db, session)
-            open_json = [
-                {
-                    "slug": q.slug,
-                    "title": q.title,
-                    "quest_type": q.quest_type,
-                    "description": q.description,
-                    "status": q.status,
-                    "stages": q.stages,
-                }
-                for q in quests
-            ]
-            user_content = (
-                f"OPEN QUESTS:\n{open_json}\n\nLATEST EXCHANGE:\nPLAYER: {user_message}\nRESPONSE: {response_text}"
-            )
-            try:
-                payload = await self.judge_provider.generate_json(
-                    [
-                        ProviderMessage(role="system", content=QUEST_JUDGE_PROMPT),
-                        ProviderMessage(role="user", content=user_content),
-                    ],
-                    temperature=self.settings.quest_temperature,
-                    max_tokens=self.settings.quest_extract_max_tokens,
-                )
-            except ProviderError as exc:
-                logger.exception("quest judge failed for session=%s", session.id)
-                quest_extract_failures.add(1, {"reason": "provider"})
-                record_span_error(span, exc)
-                return []
-
-            # Lenient parse: one malformed item drops only itself, not the
-            # whole delta (each drop is metered inside ``lenient``).
-            delta = QuestDelta.lenient(payload)
-            if delta.is_empty():
-                return []
-
-            return await self.apply_quest_delta(
-                db, session, delta, quests=quests, reserved_slugs=reserved_slugs, turn_id=turn_id
-            )
-
     async def load_open_and_reserved(self, db: AsyncSession, session: ChatSession) -> tuple[list[Quest], set[str]]:
         """Load open quests (for the judge) plus the reserved terminal slugs.
 
@@ -381,10 +320,9 @@ class QuestService:
     ) -> list[QuestChange]:
         """Apply an already-extracted quest delta and persist its changes.
 
-        Shared by the legacy ``extract_and_apply`` and the unified post-turn
-        judge so the invariants, slug reservation, and persistence stay
-        single-sourced. Sets attributes on the current span; best-effort
-        (failures logged + metered, never raised)."""
+        Called by the unified post-turn judge; keeps the invariants, slug
+        reservation, and persistence single-sourced. Sets attributes on the
+        current span; best-effort (failures logged + metered, never raised)."""
         span = trace.get_current_span()
         if delta.is_empty():
             span.set_attribute("rpg.quest.delta.empty", True)

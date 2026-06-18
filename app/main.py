@@ -77,35 +77,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.dev_mode:
         logger.info(
             "+ DEV MODE ENABLED - model: %s, timeout: %.0fs, world_state: %s, quests: %s, "
-            "suggestions: %s, post_turn_judge: %s",
+            "suggestions: %s",
             settings.dev_model_name,
             settings.request_timeout_seconds,
             "on" if settings.world_state_enabled else "off",
             "on" if settings.quests_enabled else "off",
             "on" if settings.suggestions_enabled else "off",
-            "on" if settings.post_turn_judge_enabled else "off",
         )
     else:
         logger.info(
             "+ Production mode - Actor: %s, Memory: %s, GM: %s, world_state: %s, quests: %s, "
-            "suggestions: %s, post_turn_judge: %s",
+            "suggestions: %s",
             settings.actor_model_name,
             settings.memory_model_name,
             settings.gm_model_name,
             "on" if settings.world_state_enabled else "off",
             "on" if settings.quests_enabled else "off",
             "on" if settings.suggestions_enabled else "off",
-            "on" if settings.post_turn_judge_enabled else "off",
-        )
-
-    # Suggested-response chips are produced ONLY by the unified post-turn judge;
-    # the legacy two-call path emits none. Flag the misconfig so the feature
-    # doesn't silently no-op.
-    if settings.suggestions_enabled and not settings.post_turn_judge_enabled:
-        logger.warning(
-            "SUGGESTIONS_ENABLED is on but POST_TURN_JUDGE_ENABLED is off — "
-            "suggested-response chips are produced only by the post-turn judge "
-            "and will never appear. Enable POST_TURN_JUDGE_ENABLED to use them."
         )
 
     yield

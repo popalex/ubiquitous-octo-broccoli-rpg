@@ -11,8 +11,8 @@ of the response is parsed and applied **independently** through the existing
 service apply paths, so a malformed or failing section never sinks the other —
 and the whole thing is best-effort, never breaking the turn.
 
-Ships dark behind ``post_turn_judge_enabled``; the orchestrator keeps the
-legacy two-call path as the fallback.
+This is the only post-turn structured-extraction path; the orchestrator always
+routes through ``judge_turn``.
 """
 
 from __future__ import annotations
