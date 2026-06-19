@@ -11,3 +11,8 @@ frontend/.vite/
 *.tsbuildinfo
 frontend/public/templates-extra.json
 test-results.xml
+# Playwright E2E artifacts
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/.playwright/
