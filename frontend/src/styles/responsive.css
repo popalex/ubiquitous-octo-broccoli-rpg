@@ -1,0 +1,189 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   RESPONSIVE BREAKPOINTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 1400px) {
+  .dashboard {
+    grid-template-columns: 1fr 1.3fr;
+  }
+
+  .dashboard-chronicle {
+    grid-template-columns: 1.4fr 0.85fr;
+  }
+  
+  .panel-right {
+    grid-column: span 2;
+    min-height: auto;
+  }
+
+  .dashboard-chronicle .panel-right {
+    grid-column: auto;
+  }
+  
+  .stack {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-md);
+  }
+}
+
+@media (max-width: 1024px) {
+  .dashboard {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-chronicle {
+    grid-template-columns: 1fr;
+  }
+  
+  .panel {
+    min-height: auto;
+  }
+  
+  .panel-right {
+    grid-column: auto;
+  }
+  
+  .stack {
+    grid-template-columns: 1fr;
+  }
+  
+  .chat-log {
+    max-height: 35rem;
+  }
+
+  .ambient-left,
+  .ambient-right {
+    width: 200px;
+    height: 200px;
+    opacity: 0.1;
+  }
+}
+
+@media (max-width: 768px) {
+  .shell {
+    padding: var(--space-lg);
+  }
+  
+  .masthead {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-md);
+  }
+  
+  .template-grid,
+  .form-row,
+  .session-meta {
+    grid-template-columns: 1fr;
+  }
+  
+  .button-row {
+    flex-direction: column;
+  }
+  
+  .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  h1 {
+    font-size: 1.8rem;
+  }
+  
+  .shell::before,
+  .shell::after {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) and (orientation: landscape) {
+  .dashboard-chronicle {
+    grid-template-columns: 1fr 1fr;
+  }
+  .chat-log {
+    max-height: 18rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .shell {
+    padding: var(--space-md);
+  }
+  .ambient-left,
+  .ambient-right {
+    display: none;
+  }
+  .status-strip {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.4rem;
+  }
+  .pill {
+    width: 100%;
+    justify-content: center;
+  }
+  .hub-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY & REDUCED MOTION
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Visually hidden but available to assistive technology */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Skip-to-content link — first focusable element in App */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: var(--space-md);
+  z-index: 1000;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--charcoal);
+  color: var(--gold);
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-sm);
+  font-family: "Cinzel", serif;
+  font-size: var(--text-sm);
+  transition: top 0.2s ease;
+}
+
+.skip-link:focus {
+  top: var(--space-md);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Focus states for keyboard navigation */
+*:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
