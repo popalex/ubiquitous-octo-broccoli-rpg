@@ -94,16 +94,30 @@ the real `api.ts` wrapper, not stubbed functions.
 Flows: create chronicle → send message → streamed reply renders → open quest
 journal → delete session.
 
-- **Phase 1 — route-interception mode:** `page.route` mocks `/api/*`
-  (including a scripted SSE body for the stream). Fast, deterministic, runs
-  per-push in a new CI job (cache the browser install). Tests the real built
-  frontend against a faked API.
-- **Phase 2 (optional) — full-stack mode:** promote the test `MockProvider`
-  out of `tests/conftest.py` into `build_provider("mock", ...)`
-  (`app/providers/`), so `docker compose` can run the entire stack with
-  canned LLM responses. Then a true frontend↔FastAPI↔Postgres smoke can run
-  nightly or pre-release — not per-push. Only build this if phase 1 misses
-  real integration bugs (e.g. SSE framing, proxy behavior).
+- **Phase 1 — route-interception mode — ✅ DONE (2026-06-19,
+  `feature/playwright-smoke`).** `frontend/e2e/smoke.spec.ts` (6 tests): hub
+  list, empty vault, create-chronicle journey, streamed reply, quest journal,
+  delete. A single `page.route("**/api/**")` catch-all (`e2e/fixtures/mockApi.ts`)
+  answers every call from an in-memory store, with the chat reply served as a
+  scripted `text/event-stream` body — **no backend, Postgres, or Ollama; the
+  "LLM" is the strings in the SSE frames.** `playwright.config.ts` builds +
+  previews the real frontend; a new per-push `e2e` CI job installs only
+  chromium. The mock is wired via an auto-fixture (`e2e/fixtures/test.ts`) and
+  gated by `E2E_MODE` so the same specs run unchanged in Phase 2.
+  - **Gotchas captured:** the chat stream is `POST /api/chat/stream` (session
+    id in the body), *not* under `/session/:id`; an unmocked route returns 501
+    → surfaces as the "Not Implemented" status string. `templates-extra.json`
+    is gitignored, so CI uses base templates only (the create flow drives
+    "Guide Rowan").
+- **Phase 2 — full-stack contract mode (planned; explicitly wanted).** Run
+  frontend ↔ real FastAPI ↔ Postgres with the **LLM faked at the backend**
+  (promote `tests/conftest.py`'s `MockProvider` into `build_provider("mock", …)`
+  in `app/providers/`) so `docker compose` runs the whole stack with **no
+  Ollama**. Start that stack, set `E2E_MODE=live` + `E2E_BASE_URL`, and the
+  Phase-1 specs re-run against the real API contract (the seeding helpers move
+  to UI-driven setup in live mode). This is the layer that catches
+  frontend↔backend contract drift, which neither the unit suite nor Phase 1
+  can. Run pre-release / nightly, not per-push.
 
 ## Non-goals
 
