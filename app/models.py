@@ -1,20 +1,60 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
-from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from ulid import ULID
 
 from app.config import get_settings
 from app.db import Base
 
 EMBEDDING_DIMENSION = get_settings().embedding_dimension
 
+# Entity IDs are canonical 26-char ULIDs (Crockford base32, time-sortable).
+# ULID storage width; the column type below. A ULID is shorter than a UUID, so
+# this also structurally rejects legacy 36-char UUIDs.
+ULID_LENGTH = 26
+# Crockford base32 alphabet excludes I, L, O, U.
+ULID_REGEX = "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+_ULID_RE = re.compile(ULID_REGEX)
+
+# The id column type, shared by every primary key. Foreign-key columns inherit
+# this type from the referenced column via SQLAlchemy's ForeignKey inference, so
+# the whole ID graph is String(26) without restating it on every FK.
+IdType = String(ULID_LENGTH)
+
 
 def new_id() -> str:
-    return str(uuid4())
+    """Generate a fresh entity ID as a canonical 26-char ULID."""
+    return str(ULID())
+
+
+def is_ulid(value: str) -> bool:
+    """True if ``value`` is a canonical 26-char Crockford-base32 ULID."""
+    return bool(_ULID_RE.match(value))
+
+
+def _id_check(table: str) -> CheckConstraint:
+    """DB-level guard that a table's primary key is a well-formed ULID.
+
+    Kept in the model (not only the migration) so the schema built by
+    ``create_all`` in tests matches the migrated production schema.
+    """
+    return CheckConstraint(f"id ~ '{ULID_REGEX}'", name=f"ck_{table}_id_ulid")
 
 
 class TimestampMixin:
@@ -29,8 +69,9 @@ class TimestampMixin:
 
 class CharacterCard(TimestampMixin, Base):
     __tablename__ = "character_cards"
+    __table_args__ = (_id_check("character_cards"),)
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    id: Mapped[str] = mapped_column(IdType, primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     hard_rules: Mapped[str] = mapped_column(Text, nullable=False)
@@ -42,8 +83,9 @@ class CharacterCard(TimestampMixin, Base):
 
 class WorldState(TimestampMixin, Base):
     __tablename__ = "world_states"
+    __table_args__ = (_id_check("world_states"),)
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    id: Mapped[str] = mapped_column(IdType, primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     canon: Mapped[str] = mapped_column(Text, nullable=False)
@@ -55,8 +97,9 @@ class WorldState(TimestampMixin, Base):
 
 class Session(TimestampMixin, Base):
     __tablename__ = "sessions"
+    __table_args__ = (_id_check("sessions"),)
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    id: Mapped[str] = mapped_column(IdType, primary_key=True, default=new_id)
     character_card_id: Mapped[str] = mapped_column(ForeignKey("character_cards.id", ondelete="CASCADE"), index=True)
     world_state_id: Mapped[str | None] = mapped_column(ForeignKey("world_states.id", ondelete="SET NULL"), index=True)
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -104,9 +147,12 @@ class Session(TimestampMixin, Base):
 
 class Turn(TimestampMixin, Base):
     __tablename__ = "turns"
-    __table_args__ = (UniqueConstraint("session_id", "turn_index", name="uq_turn_session_index"),)
+    __table_args__ = (
+        UniqueConstraint("session_id", "turn_index", name="uq_turn_session_index"),
+        _id_check("turns"),
+    )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    id: Mapped[str] = mapped_column(IdType, primary_key=True, default=new_id)
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
     turn_index: Mapped[int] = mapped_column(Integer, nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -125,8 +171,9 @@ class Turn(TimestampMixin, Base):
 
 class MemoryFact(TimestampMixin, Base):
     __tablename__ = "memory_facts"
+    __table_args__ = (_id_check("memory_facts"),)
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    id: Mapped[str] = mapped_column(IdType, primary_key=True, default=new_id)
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
     character_card_id: Mapped[str | None] = mapped_column(
         ForeignKey("character_cards.id", ondelete="SET NULL"), nullable=True
@@ -142,8 +189,9 @@ class MemoryFact(TimestampMixin, Base):
 
 class EpisodeSummary(TimestampMixin, Base):
     __tablename__ = "episode_summaries"
+    __table_args__ = (_id_check("episode_summaries"),)
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    id: Mapped[str] = mapped_column(IdType, primary_key=True, default=new_id)
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
     start_turn_index: Mapped[int] = mapped_column(Integer, nullable=False)
     end_turn_index: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -165,9 +213,12 @@ class WorldStateLedger(Base):
     """
 
     __tablename__ = "world_state_ledger"
-    __table_args__ = (UniqueConstraint("session_id", "version", name="uq_world_state_ledger_session_version"),)
+    __table_args__ = (
+        UniqueConstraint("session_id", "version", name="uq_world_state_ledger_session_version"),
+        _id_check("world_state_ledger"),
+    )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    id: Mapped[str] = mapped_column(IdType, primary_key=True, default=new_id)
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     # The turn that produced this version (nullable: backfill/manual edits).
@@ -191,9 +242,12 @@ class Quest(TimestampMixin, Base):
     """
 
     __tablename__ = "quests"
-    __table_args__ = (UniqueConstraint("session_id", "slug", name="uq_quest_session_slug"),)
+    __table_args__ = (
+        UniqueConstraint("session_id", "slug", name="uq_quest_session_slug"),
+        _id_check("quests"),
+    )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    id: Mapped[str] = mapped_column(IdType, primary_key=True, default=new_id)
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
     slug: Mapped[str] = mapped_column(String(120), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -218,8 +272,9 @@ class Quest(TimestampMixin, Base):
 
 class RelationshipState(TimestampMixin, Base):
     __tablename__ = "relationship_states"
+    __table_args__ = (_id_check("relationship_states"),)
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    id: Mapped[str] = mapped_column(IdType, primary_key=True, default=new_id)
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
     source_entity: Mapped[str] = mapped_column(String(120), nullable=False)
     target_entity: Mapped[str] = mapped_column(String(120), nullable=False)
