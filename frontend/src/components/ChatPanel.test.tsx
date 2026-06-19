@@ -98,3 +98,60 @@ describe("ChatPanel suggestion chips", () => {
     expect(screen.getByRole("textbox", { name: /write your response/i })).toBeEnabled();
   });
 });
+
+describe("ChatPanel message rendering", () => {
+  it("renders each message with content and a role label", () => {
+    renderPanel();
+    expect(screen.getByText("I open the door.")).toBeInTheDocument();
+    expect(screen.getByText("The hinges groan.")).toBeInTheDocument();
+    // User lines are labelled "You"; the assistant uses the character name.
+    expect(screen.getByText("You")).toBeInTheDocument();
+    expect(screen.getAllByText("Aria").length).toBeGreaterThan(0);
+    // The narrator turn is labelled "Game Master".
+    expect(screen.getByText("Game Master")).toBeInTheDocument();
+  });
+
+  it("tags each message with role + type classes", () => {
+    renderPanel();
+    const narrator = screen.getByText("Outside, thunder rolls.").closest("article")!;
+    expect(narrator).toHaveClass("message-narrator");
+    expect(narrator).toHaveClass("message-type-event");
+  });
+
+  it("shows the empty state when there are no messages", () => {
+    renderPanel({ chatMessages: [] });
+    expect(screen.getByText(/the pages await your tale/i)).toBeInTheDocument();
+    expect(screen.queryByText("I open the door.")).not.toBeInTheDocument();
+  });
+
+  it("renders the status text in the composer", () => {
+    renderPanel({ statusText: "weaving the tale…" });
+    expect(screen.getByText("weaving the tale…")).toBeInTheDocument();
+  });
+});
+
+describe("ChatPanel composer", () => {
+  it("calls onSendChat and forwards typed input", async () => {
+    const onSendChat = vi.fn();
+    const setChatInput = vi.fn();
+    renderPanel({ onSendChat, setChatInput });
+
+    await userEvent.type(screen.getByRole("textbox", { name: /write your response/i }), "hi");
+    expect(setChatInput).toHaveBeenCalled();
+
+    // Send with no explicit argument — composes from the controlled input.
+    await userEvent.click(screen.getByRole("button", { name: /send turn/i }));
+    expect(onSendChat).toHaveBeenCalledExactlyOnceWith();
+  });
+
+  it("disables the send button while busy and shows a weaving label", () => {
+    renderPanel({ isBusy: true });
+    expect(screen.getByRole("button", { name: /weaving/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /send turn/i })).not.toBeInTheDocument();
+  });
+
+  it("disables the send button when there is no active session", () => {
+    renderPanel({ sessionId: "" });
+    expect(screen.getByRole("button", { name: /send turn/i })).toBeDisabled();
+  });
+});
