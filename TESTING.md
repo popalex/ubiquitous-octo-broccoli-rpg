@@ -7,7 +7,7 @@ Companion to `TODO.md` (feature roadmap). Drafted 2026-06-11.
 | Layer | State |
 |---|---|
 | Backend | ~175 pytest tests across 11 files, against real Postgres+pgvector (testcontainers), deterministic `MockProvider`, streaming paths covered. **Strong — no investment needed.** |
-| Frontend unit | 23 Vitest tests: `api.test.ts`, `turns.test.ts`, `ErrorBoundary.test.tsx`, `chat.test.ts` (SSE streaming, both modes). No coverage of components or hooks yet. |
+| Frontend unit | 80 Vitest tests across lib (`api`, `turns`, `chat`, `suggestions`), components (`ChatPanel`, `ChronicleHub`, `QuestJournal`, `CodexPanel`, `ErrorBoundary`), and hooks (`useSession`, `useSessionMutations`) — RTL + MSW. |
 | Frontend CI | Lints + typechecks + runs `pnpm test`. |
 | E2E | None. |
 | LLM quality | ✅ On-demand eval harness landed (`evals/`, `TODO.md` §5a, PR #34): 16 golden cases scoring continuity/memory/ledger/quests/GM against a real local model, `pytest -m eval` / `make eval`, excluded from CI. A CI-safe `MockProvider` plumbing self-test runs in the normal suite. Still out of scope for *this* doc (frontend-focused). |
@@ -62,15 +62,29 @@ Note: cards in `ChronicleHub` are themselves `role="button"`, so their
 accessible name *contains* inner controls — query inner buttons by an exact
 `aria-label`, not a substring/regex, to disambiguate.
 
-Remaining targets in value order:
+Remaining targets in value order — ✅ all four landed (2026-06-19,
+`feature/frontend-component-tests`; shared QueryClient render/`renderHook`
+helper in `frontend/src/test/renderWithClient.tsx`):
 
-1. `QuestJournal.tsx` — newest, most conditional rendering (stages, statuses,
-   patch interactions against `/session/{id}/quests`).
-2. `ChronicleHub.tsx` — session list, create/delete flows (fork badge done).
-3. `ChatPanel.tsx` — message rendering, busy states, streamed-reply display
-   (fork button done).
-4. `useSession.ts` / `useSessionMutations.ts` — TanStack Query cache behavior;
-   invalidation after mutations is classic regression territory.
+1. ✅ `QuestJournal.tsx` — `QuestJournal.test.tsx` (9 tests): empty/null state,
+   active/escalating/offered/concluded section sorting, hidden empty sections,
+   escalating flag, stakes + stage done-state, concluded resolution, Abandon
+   shown only on active arcs and PATCHing `status: abandoned` via MSW.
+2. ✅ `ChronicleHub.tsx` — `ChronicleHub.test.tsx` (now 12 tests): list sort by
+   `updated_at`, feature/turn badges, card navigation, empty state + create
+   routing, delete flow (confirm/decline/failure-alert via mocked
+   `window.confirm`/`alert`), error banner + retry (fork badge already done).
+3. ✅ `ChatPanel.tsx` — `ChatPanel.test.tsx` (now 15 tests): message content +
+   role labels, role/type classes, empty state, status text, composer
+   send/typing, busy + no-session disabled states (fork + suggestion chips
+   already done).
+4. ✅ `useSession.ts` / `useSessionMutations.ts` — `useSession.test.ts` (8) +
+   `useSessionMutations.test.ts` (4): query-key shape, enabled-gating
+   (`useSessionDetail`/`useSessionSuggestions` idle when off), `retry: false`
+   error surfacing, `useRefreshMemory` invalidating exactly memory/world-state/
+   quests (not detail/turns) + stable callback identity, and
+   `useStartSession`/`useForkSession` request bodies (at_turn variants) +
+   error propagation.
 
 MSW mocks `/api/*` at the network level so hooks/components are tested through
 the real `api.ts` wrapper, not stubbed functions.
