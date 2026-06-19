@@ -1,0 +1,112 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   INSPECTOR PANEL
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.subpanel {
+  padding: var(--space-md);
+  background: rgba(10, 9, 8, 0.6);
+  border: 1px solid var(--dust);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--gold);
+}
+
+.subpanel h3 {
+  font-size: 1.1rem;
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid rgba(201, 162, 39, 0.15);
+}
+
+.subpanel-summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.subpanel-summary::-webkit-details-marker {
+  display: none;
+}
+
+.subpanel-summary::before {
+  content: "▶";
+  font-size: 0.7rem;
+  color: var(--gold);
+  transition: transform var(--transition-speed) ease;
+}
+
+details[open] .subpanel-summary::before {
+  transform: rotate(90deg);
+}
+
+.subpanel-summary h3 {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.muted {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 0.95rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MEMORY CARDS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.memory-card {
+  padding: var(--space-sm) 0;
+  border-top: 1px solid rgba(201, 162, 39, 0.1);
+  margin-top: var(--space-sm);
+}
+
+.memory-card:first-of-type {
+  border-top: none;
+  margin-top: 0;
+}
+
+.memory-topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.memory-topline span:first-child {
+  color: var(--gold);
+}
+
+.memory-topline span:last-child {
+  color: var(--text-muted);
+  background: var(--charcoal);
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+}
+
+.memory-card p {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+
+.issue-card {
+  padding: var(--space-sm) 0;
+  border-top: 1px solid rgba(199, 62, 77, 0.15);
+  margin-top: var(--space-sm);
+  color: var(--crimson-glow);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.issue-card::before {
+  content: "⚠ ";
+  opacity: 0.8;
+}
+

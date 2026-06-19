@@ -1,0 +1,62 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   ARCANE CHRONICLE — Fantasy Grimoire Theme
+   A mystical control room for roleplay adventures
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Core palette - aged parchment meets arcane darkness */
+  --void: #0a0908;
+  --obsidian: #12100e;
+  --charcoal: #1a1714;
+  --slate: #2a2520;
+  --dust: #3d3631;
+  
+  /* Parchment tones */
+  --parchment: #f4e8d3;
+  --parchment-soft: #e8dcc6;
+  --parchment-dark: #d4c4a8;
+  --ink: #2b2118;
+  
+  /* Accent colors - mystical crimson & gold */
+  --crimson: #8b2635;
+  --crimson-glow: #c73e4d;
+  --gold: #c9a227;
+  --gold-bright: #e8c547;
+  --emerald: #2d6a4f;
+  --azure: #4a7c9b;
+  
+  /* Text */
+  --text-primary: #f0e6d3;
+  --text-muted: #a89f8f;
+  --text-accent: #d4af37;
+  
+  /* Effects */
+  --glow-crimson: 0 0 30px rgba(139, 38, 53, 0.4);
+  --glow-gold: 0 0 20px rgba(201, 162, 39, 0.3);
+  --paper-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --inner-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+  
+  /* Border radius */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+
+  /* Animation */
+  --transition-speed: 0.3s;
+
+  /* Spacing rhythm */
+  --space-xs: 0.35rem;
+  --space-sm: 0.65rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.5rem;
+
+  /* Type scale */
+  --text-xs: 0.65rem;
+  --text-sm: 0.8rem;
+  --text-base: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.6rem;
+  --text-2xl: clamp(2.2rem, 4vw, 3.5rem);
+}
+

@@ -1,0 +1,72 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SHELL CONTAINER
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.shell {
+  position: relative;
+  z-index: 2;
+  min-height: 100vh;
+  padding: var(--space-xl);
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+/* Decorative corner flourishes */
+.shell::before,
+.shell::after {
+  content: "❧";
+  position: fixed;
+  font-size: 2.5rem;
+  color: var(--gold);
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+.shell::before {
+  top: 1.5rem;
+  left: 1.5rem;
+}
+
+.shell::after {
+  bottom: 1.5rem;
+  right: 1.5rem;
+  transform: rotate(180deg);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AMBIENT ORB EFFECTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ambient {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+  animation: pulse 8s ease-in-out infinite alternate;
+}
+
+.ambient-left {
+  width: 450px;
+  height: 450px;
+  left: -150px;
+  top: 10%;
+  background: radial-gradient(circle, var(--crimson) 0%, transparent 70%);
+  opacity: 0.25;
+}
+
+.ambient-right {
+  width: 400px;
+  height: 400px;
+  right: -100px;
+  top: 40%;
+  background: radial-gradient(circle, var(--gold) 0%, transparent 70%);
+  opacity: 0.15;
+  animation-delay: -4s;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 0.2; }
+  100% { transform: scale(1.15); opacity: 0.3; }
+}
+

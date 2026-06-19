@@ -1,0 +1,74 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   DASHBOARD GRID
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.dashboard {
+  display: grid;
+  grid-template-columns: 1.1fr 1.4fr 0.85fr;
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+/* Chronicle-only 2-column layout (play phase) */
+.dashboard-chronicle {
+  grid-template-columns: 1.6fr 0.85fr;
+}
+
+/* Right-hand column stacks the Codex (world-state ledger) above the Archive */
+.panel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  align-items: stretch;
+  min-width: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WIZARD: CODEX STAGE (full-width character setup)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.codex-stage {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.codex-panel {
+  animation-delay: 0s;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CHRONICLE SUMMARY BAR
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.chronicle-summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md) var(--space-xl);
+  padding: var(--space-md) var(--space-lg);
+  margin-bottom: var(--space-lg);
+  background: linear-gradient(135deg, rgba(26, 23, 20, 0.85) 0%, rgba(18, 16, 14, 0.9) 100%);
+  border: 1px solid var(--dust);
+  border-radius: var(--radius-md);
+  box-shadow: var(--inner-shadow);
+  animation: fadeSlideIn 0.4s ease-out both;
+}
+
+.chronicle-summary-bar .summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.chronicle-summary-bar .meta-label {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.chronicle-summary-bar strong {
+  font-size: 0.95rem;
+  color: var(--text-accent);
+}
+
