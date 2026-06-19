@@ -73,9 +73,8 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
   const [retrievedMemories, setRetrievedMemories] = useState<RetrievedMemory[]>([]);
   const [continuityIssues, setContinuityIssues] = useState<string[]>([]);
   const [, setLastEvent] = useState<GMEvent | null>(null);
-  const [statusText, setStatusText] = useState(
-    `Chronicle ${detail.gm_enabled ? "GM Mode" : "Standard"}. ${detail.turn_count} turns recorded.`,
-  );
+  const baseStatus = `Chronicle ${detail.gm_enabled ? "GM Mode" : "Standard"}. ${detail.turn_count} turns recorded.`;
+  const [statusText, setStatusText] = useState(baseStatus);
   const [isBusy, setIsBusy] = useState(false);
 
   const memory = useSessionMemory(sessionId);
@@ -107,6 +106,30 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
       m.id === loadedReplyId && !m.suggestions?.length ? { ...m, suggestions: chips } : m,
     );
   }, [chatMessages, suggestions.data, loadedReplyId]);
+
+  // On reload, chips aren't persisted — `useSessionSuggestions` fires a fresh
+  // (slow) judge call. Overlay that lifecycle onto the status bar so the user
+  // knows chips are coming, then that they've arrived. Derived (never
+  // setState-in-effect); `isBusy` yields the bar to the live chat flow, which
+  // owns `statusText` while a turn streams.
+  const displayStatus = useMemo(() => {
+    if (isBusy) return statusText;
+    if (detail.suggestions_enabled && suggestions.isLoading) {
+      return `${baseStatus} Summoning suggested replies…`;
+    }
+    if (detail.suggestions_enabled && suggestions.isSuccess && suggestions.data?.suggestions?.length) {
+      return `${baseStatus} Suggested replies ready.`;
+    }
+    return statusText;
+  }, [
+    isBusy,
+    statusText,
+    baseStatus,
+    detail.suggestions_enabled,
+    suggestions.isLoading,
+    suggestions.isSuccess,
+    suggestions.data,
+  ]);
 
   function handleForkFromTurn(turnIndex: number) {
     if (forkingTurn != null) return;
@@ -196,7 +219,7 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
           isBusy={isBusy}
           sessionId={sessionId}
           characterName={detail.character_name || ""}
-          statusText={statusText}
+          statusText={displayStatus}
           onSendChat={handleSendChat}
           onForkFromTurn={handleForkFromTurn}
           forkingTurn={forkingTurn}
