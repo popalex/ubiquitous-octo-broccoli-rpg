@@ -16,7 +16,7 @@ one static dict satisfies them all without breaking a turn.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 
 from app.config import Settings, get_settings
 from app.providers.base import BaseModelProvider, ProviderMessage
@@ -97,7 +97,7 @@ class MockProvider(BaseModelProvider):
         *,
         temperature: float,
         max_tokens: int,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncGenerator[str, None]:
         # Yield word-by-word so the SSE chunk path (chat.ts) is exercised the
         # way a real streaming model would drive it.
         for word in _MOCK_REPLY.split(" "):
