@@ -92,10 +92,21 @@ async def test_builtin_mock_generate_json_satisfies_all_consumers() -> None:
     assert payload["ok"] is True
     assert payload["issues"] == []
     assert payload["revised_response"] == ""
-    # Post-turn judge reads these.
-    assert payload["world_delta"] == {}
-    assert payload["quest_delta"] == {}
     assert payload["suggestions"] == []
+
+    # Post-turn judge: the canned deltas must parse into the real schemas and be
+    # non-empty, so a live turn provably mutates the ledger and creates a quest.
+    from app.services.quests import QuestDelta
+    from app.services.world_state import LedgerDelta
+
+    world = LedgerDelta.model_validate(payload["world_delta"])
+    assert not world.is_empty()
+    assert world.entities_upsert[0].name == "The Harbormaster"
+
+    quest = QuestDelta.lenient(payload["quest_delta"])
+    assert not quest.is_empty()
+    assert quest.quests_new[0].slug == "the-blue-lanterns"
+    assert quest.quests_new[0].quest_type == "mystery"
 
 
 @pytest.mark.asyncio

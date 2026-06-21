@@ -121,14 +121,22 @@ journal → delete session.
   api container) — **no Ollama, no Grafana/otel.** `E2E_MODE=live` +
   `E2E_BASE_URL` make the fixture skip browser interception.
   - **Design note (deviation from the original plan):** rather than re-running
-    the Phase-1 specs verbatim, the live layer is a dedicated self-contained
-    journey (`frontend/e2e/live.spec.ts`, gated `E2E_MODE === "live"`): create a
-    uniquely-titled chronicle → send a turn → assert the streamed reply renders
-    → confirm it persists in the hub → delete it. The Phase-1 specs hardcode ids
-    and assume pre-seeded sessions/quests that can't exist in a real, shared,
-    parallel-worker DB, so `smoke.spec.ts` is gated to *skip* in live mode and
-    the live spec creates and tears down only its own data. Same flows and
-    user-visible assertions, but reliable against the real contract.
+    the Phase-1 specs verbatim, the live layer is a pair of dedicated
+    self-contained specs (`frontend/e2e/live.spec.ts`, gated
+    `E2E_MODE === "live"`), each creating a uniquely-titled chronicle and
+    tearing down only its own data (safe on a shared, parallel-worker DB):
+    1. **core journey** — create → send → streamed reply renders → persists in
+       the hub → delete.
+    2. **quest/world round-trip** — send a turn, then assert the post-turn
+       judge's canned `quest_delta`/`world_delta` (from the mock provider) were
+       applied server-side, persisted, refetched, and rendered: the quest "The
+       Blue Lanterns" in the Journal and the NPC "The Harbormaster" in the
+       Codex. This is the feature-level contract Phase 1 can only *fake*.
+
+    The Phase-1 specs hardcode ids and assume pre-seeded sessions/quests that
+    can't exist in a real DB, so `smoke.spec.ts` is gated to *skip* in live mode.
+    Same flows and user-visible assertions, but reliable against the real
+    contract.
   - **CI:** `.github/workflows/e2e-live.yml` (nightly cron + `workflow_dispatch`,
     not per-push) brings up the stack with `--wait`, runs the live specs, dumps
     logs + uploads the report on failure, and tears down with `down -v`.

@@ -28,14 +28,44 @@ _MOCK_REPLY = (
     "Tell me what you seek, and I will guide you."
 )
 
+# Canned post-turn judge output. The world/quest deltas are non-empty so the
+# live E2E suite can prove a turn actually mutates the ledger and creates a
+# quest, and that both render — the contract Phase 1 (browser-faked /api) can't
+# exercise. Shapes match LedgerDelta / QuestDelta (app/services/{world_state,
+# quests}.py); applies are idempotent by entity id / quest slug, so re-running
+# the judge on later turns is a harmless no-op. Continuity reads only
+# ok/issues/revised_response and ignores the rest.
 _MOCK_JSON: dict = {
     # Continuity check: no issues, empty revision keeps the actor draft as-is.
     "ok": True,
     "issues": [],
     "revised_response": "",
-    # Post-turn judge: no canon/quest changes, no suggestion chips.
-    "world_delta": {},
-    "quest_delta": {},
+    # World-state ledger delta: one NPC + one canon fact.
+    "world_delta": {
+        "entities_upsert": [
+            {
+                "id": "harbormaster",
+                "name": "The Harbormaster",
+                "kind": "npc",
+                "facts": ["Tends the blue harbor lanterns."],
+            }
+        ],
+        "facts_add": ["The harbor lanterns glow blue when the old wards are active."],
+    },
+    # Quest delta: one new, active quest (emergent quests start active).
+    "quest_delta": {
+        "quests_new": [
+            {
+                "slug": "the-blue-lanterns",
+                "title": "The Blue Lanterns",
+                "quest_type": "mystery",
+                "description": "Discover why the harbor lanterns burn blue.",
+                "stakes": "The harbor's safety",
+                "stages": [{"id": "st1", "description": "Question the harbormaster", "done": False}],
+            }
+        ],
+        "quests_update": [],
+    },
     "suggestions": [],
 }
 
