@@ -1,0 +1,82 @@
+# docker-compose.e2e.yml — Phase-2 full-stack E2E (TESTING.md §4).
+#
+# A STANDALONE stack (run with `-f docker-compose.e2e.yml`, NOT merged with the
+# base compose) that brings up just frontend + backend + database to test
+# frontend↔backend contract drift. The LLM is faked in the backend via the
+# built-in `mock` provider (ACTOR/MEMORY/EMBEDDING/GM_PROVIDER=mock), so there is
+# **no Ollama, no Grafana/otel** — only Postgres, FastAPI, and the Vite dev
+# server (which proxies /api to the api container, same as local dev).
+#
+# Bring it up, run the live Playwright specs against it, tear it down:
+#   docker compose -f docker-compose.e2e.yml up -d --build --wait
+#   cd frontend && E2E_MODE=live E2E_BASE_URL=http://localhost:5173 pnpm e2e
+#   docker compose -f docker-compose.e2e.yml down -v
+services:
+  postgres:
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_DB: roleplay
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d roleplay"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/roleplay
+      # Fake the LLM in-process — all four slots use the deterministic mock.
+      ACTOR_PROVIDER: mock
+      MEMORY_PROVIDER: mock
+      EMBEDDING_PROVIDER: mock
+      GM_PROVIDER: mock
+      # Telemetry off: no otel-lgtm container in this stack.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+      # Exercise the feature paths the live specs touch.
+      GM_ENABLED: "false"
+      WORLD_STATE_ENABLED: "true"
+      QUESTS_ENABLED: "true"
+      SUGGESTIONS_ENABLED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      target: dev
+    environment:
+      # Vite dev server proxies the browser's /api calls to the api container.
+      VITE_API_PROXY_TARGET: http://api:8000
+      # See docker-compose.override.yml: lets pnpm's deps check proceed with no TTY.
+      CI: "true"
+    # The `dev` image carries only node_modules; the source is bind-mounted (the
+    # anonymous volume keeps the image's installed node_modules), same as the
+    # dev override. Without this, `pnpm dev` has no project files to serve.
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "5173:5173"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173"]
+      interval: 5s
+      timeout: 5s
+      retries: 24

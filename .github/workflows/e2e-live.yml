@@ -1,0 +1,57 @@
+# Phase-2 full-stack E2E (TESTING.md §4): frontend ↔ real FastAPI ↔ Postgres,
+# LLM faked server-side by the built-in `mock` provider. Heavier than the
+# per-push Phase-1 smoke suite (it builds + runs the whole Docker stack), so it
+# runs nightly and on demand — not on every push.
+name: e2e-live
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * *" # 04:00 UTC nightly
+
+jobs:
+  e2e-live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start full stack (frontend + api + postgres, no Ollama)
+        run: docker compose -f docker-compose.e2e.yml up -d --build --wait
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright browser
+        working-directory: frontend
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run live E2E specs against the real stack
+        working-directory: frontend
+        env:
+          E2E_MODE: live
+          E2E_BASE_URL: http://localhost:5173
+        run: pnpm e2e
+
+      - name: Dump stack logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.e2e.yml logs --no-color
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-live
+          path: frontend/playwright-report/
+          retention-days: 7
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v

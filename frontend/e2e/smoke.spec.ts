@@ -1,5 +1,10 @@
 import { expect, test } from "./fixtures/test";
 
+// Phase 1: browser-faked /api, no backend. In live mode (Phase 2) these specs
+// would hit the real API with hardcoded ids / pre-seeded state they can't
+// create, so skip them — live.spec.ts covers the full stack instead.
+test.skip(process.env.E2E_MODE === "live", "route-interception mode only");
+
 test.describe("Chronicle Vault smoke", () => {
   test("lists existing chronicles in the hub", async ({ page, mock }) => {
     mock.seedSession({ id: "s1", title: "The First Tale" });

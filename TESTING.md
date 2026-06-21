@@ -109,15 +109,29 @@ journal → delete session.
     → surfaces as the "Not Implemented" status string. `templates-extra.json`
     is gitignored, so CI uses base templates only (the create flow drives
     "Guide Rowan").
-- **Phase 2 — full-stack contract mode (planned; explicitly wanted).** Run
-  frontend ↔ real FastAPI ↔ Postgres with the **LLM faked at the backend**
-  (promote `tests/conftest.py`'s `MockProvider` into `build_provider("mock", …)`
-  in `app/providers/`) so `docker compose` runs the whole stack with **no
-  Ollama**. Start that stack, set `E2E_MODE=live` + `E2E_BASE_URL`, and the
-  Phase-1 specs re-run against the real API contract (the seeding helpers move
-  to UI-driven setup in live mode). This is the layer that catches
-  frontend↔backend contract drift, which neither the unit suite nor Phase 1
-  can. Run pre-release / nightly, not per-push.
+- **Phase 2 — full-stack contract mode — ✅ DONE (2026-06-21,
+  `feature/e2e-phase2-mock-provider`).** Runs frontend ↔ real FastAPI ↔ Postgres
+  with the **LLM faked at the backend**: `tests/conftest.py`'s test-only
+  `MockProvider` was promoted into a real `build_provider("mock", …)` slot
+  (`app/providers/mock_provider.py`) — deterministic canned reply (streamed
+  word-by-word), hashed embeddings, and a benign superset `generate_json` that
+  satisfies continuity + the post-turn judge (all consumers use `.get()`).
+  `docker-compose.e2e.yml` is a **standalone** stack (postgres + api with all
+  four provider slots = `mock` + the **Vite dev server** proxying `/api` to the
+  api container) — **no Ollama, no Grafana/otel.** `E2E_MODE=live` +
+  `E2E_BASE_URL` make the fixture skip browser interception.
+  - **Design note (deviation from the original plan):** rather than re-running
+    the Phase-1 specs verbatim, the live layer is a dedicated self-contained
+    journey (`frontend/e2e/live.spec.ts`, gated `E2E_MODE === "live"`): create a
+    uniquely-titled chronicle → send a turn → assert the streamed reply renders
+    → confirm it persists in the hub → delete it. The Phase-1 specs hardcode ids
+    and assume pre-seeded sessions/quests that can't exist in a real, shared,
+    parallel-worker DB, so `smoke.spec.ts` is gated to *skip* in live mode and
+    the live spec creates and tears down only its own data. Same flows and
+    user-visible assertions, but reliable against the real contract.
+  - **CI:** `.github/workflows/e2e-live.yml` (nightly cron + `workflow_dispatch`,
+    not per-push) brings up the stack with `--wait`, runs the live specs, dumps
+    logs + uploads the report on failure, and tears down with `down -v`.
 
 ## Non-goals
 

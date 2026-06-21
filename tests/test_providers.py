@@ -47,6 +47,70 @@ async def test_mock_provider_embed_texts_returns_correct_dimension() -> None:
 
 
 # ===========================================================================
+# Built-in mock provider (full-stack E2E Phase 2 — build_provider("mock"))
+# ===========================================================================
+
+
+def test_build_provider_mock_returns_mock_provider() -> None:
+    from app.providers.base import build_provider
+    from app.providers.mock_provider import MockProvider as BuiltinMockProvider
+
+    settings = make_test_settings()
+    provider = build_provider("mock", "mock", settings, slot="actor")
+    assert isinstance(provider, BuiltinMockProvider)
+    assert provider.slot == "actor"
+
+
+@pytest.mark.asyncio
+async def test_builtin_mock_generate_text_returns_canned_reply() -> None:
+    from app.providers.mock_provider import MockProvider as BuiltinMockProvider
+
+    provider = BuiltinMockProvider(settings=make_test_settings())
+    result = await provider.generate_text(MSG, temperature=0.7, max_tokens=100)
+    # The live-mode E2E specs assert this substring renders.
+    assert "glow blue tonight" in result
+
+
+@pytest.mark.asyncio
+async def test_builtin_mock_stream_chunks_join_to_full_reply() -> None:
+    from app.providers.mock_provider import MockProvider as BuiltinMockProvider
+
+    provider = BuiltinMockProvider(settings=make_test_settings())
+    chunks = [c async for c in provider.generate_text_stream(MSG, temperature=0.7, max_tokens=100)]
+    assert len(chunks) > 1  # streamed word-by-word, not a single blob
+    full = await provider.generate_text(MSG, temperature=0.7, max_tokens=100)
+    assert "".join(chunks).strip() == full
+
+
+@pytest.mark.asyncio
+async def test_builtin_mock_generate_json_satisfies_all_consumers() -> None:
+    from app.providers.mock_provider import MockProvider as BuiltinMockProvider
+
+    provider = BuiltinMockProvider(settings=make_test_settings())
+    payload = await provider.generate_json(MSG, temperature=0.2, max_tokens=200)
+    # Continuity reads these; empty revision keeps the draft.
+    assert payload["ok"] is True
+    assert payload["issues"] == []
+    assert payload["revised_response"] == ""
+    # Post-turn judge reads these.
+    assert payload["world_delta"] == {}
+    assert payload["quest_delta"] == {}
+    assert payload["suggestions"] == []
+
+
+@pytest.mark.asyncio
+async def test_builtin_mock_embeddings_deterministic_and_varied() -> None:
+    from app.providers.mock_provider import MockProvider as BuiltinMockProvider
+
+    provider = BuiltinMockProvider(settings=make_test_settings())
+    first = await provider.embed_texts(["hello", "world"])
+    second = await provider.embed_texts(["hello", "world"])
+    assert all(len(v) == EMBEDDING_DIM for v in first)
+    assert first == second  # deterministic
+    assert first[0] != first[1]  # distinct inputs don't collapse
+
+
+# ===========================================================================
 # OllamaProvider (unit, httpx mocked)
 # ===========================================================================
 
