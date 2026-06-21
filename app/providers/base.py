@@ -104,4 +104,9 @@ def build_provider(
 
         return OllamaProvider(model_name=model_name, settings=resolved_settings, slot=slot)
 
+    if provider_name == "mock":
+        from app.providers.mock_provider import MockProvider
+
+        return MockProvider(model_name=model_name, settings=resolved_settings, slot=slot)
+
     raise ProviderError(f"Unsupported provider: {provider_name}")

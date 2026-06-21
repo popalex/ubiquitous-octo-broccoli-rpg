@@ -269,6 +269,28 @@ pnpm build       # typecheck + production build
 
 ESLint config lives in `frontend/eslint.config.js`; Vitest config in `frontend/vitest.config.ts`.
 
+**End-to-end (Playwright):**
+
+```bash
+cd frontend
+pnpm install
+pnpm exec playwright install --with-deps chromium   # one-time
+
+# Phase 1 — route-interception (default): the built frontend with every /api
+# call faked in the browser. No backend, Postgres, or Ollama. Runs per-push in CI.
+pnpm e2e
+
+# Phase 2 — full-stack contract test: frontend ↔ real FastAPI ↔ Postgres, with
+# the LLM faked server-side by the built-in `mock` provider (no Ollama/Grafana).
+# Bring up the standalone stack, point the live specs at it, tear it down:
+docker compose -f docker-compose.e2e.yml up -d --build --wait      # from repo root
+E2E_MODE=live E2E_BASE_URL=http://localhost:5173 pnpm e2e          # from frontend/
+docker compose -f docker-compose.e2e.yml down -v                   # from repo root
+```
+
+Phase 2 runs nightly / on demand in CI (`.github/workflows/e2e-live.yml`), not
+per-push. See `TESTING.md` §4 for the design.
+
 ## Notes
 
 - `MEMORY_SUMMARY_INTERVAL=6` means the system summarizes every 6 stored turns, which is 3 user/assistant exchanges.
