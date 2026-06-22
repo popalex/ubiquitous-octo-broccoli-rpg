@@ -332,10 +332,10 @@ class OrchestratorService:
             quest_pressure=QuestService.render_pressure(pressure_quests),
         )
 
-        # Dice / skill check (§4c): roll before the outcome is narrated so the
-        # GM/actor prose can respect the result.
+        # Dice / skill check (§4c): roll so the result can steer the character
+        # reply. The scene is set before the action resolves, so it does NOT get
+        # the roll directive — only the outcome reply (context_packet) does.
         dice_result, roll_directive_text = await self._maybe_roll_skill_check(db, session, user_message)
-        action_for_gm = f"{user_message}\n\n{roll_directive_text}" if roll_directive_text else user_message
 
         # Generate pre-narration (scene setting)
         pre_narration = None
@@ -343,7 +343,7 @@ class OrchestratorService:
             pre_narration = await self.game_master.generate_narration(
                 world_state=session.world_state,
                 recent_events=recent_events,
-                player_action=action_for_gm,
+                player_action=user_message,
                 scene_context=location or "",
             )
         except ProviderError:
@@ -558,12 +558,12 @@ class OrchestratorService:
             event_check.should_trigger,
         )
 
-        # Dice / skill check (§4c): roll before any outcome is narrated and emit
-        # the roll frame up front so the UI shows the d20 before the prose lands.
+        # Dice / skill check (§4c): compute the roll now so its result can steer
+        # the character reply, but emit the frame AFTER the scene narration (see
+        # below) so the chip lands in narrative order: scene -> roll -> outcome.
+        # The scene is set before the action resolves, so it does NOT get the
+        # roll directive — only the outcome reply does.
         dice_result, roll_directive_text = await self._maybe_roll_skill_check(db, session, user_message)
-        action_for_gm = f"{user_message}\n\n{roll_directive_text}" if roll_directive_text else user_message
-        if dice_result is not None:
-            yield sse_roll(dice_result.model_dump())
 
         # Stream pre-narration
         pre_narration_parts: list[str] = []
@@ -575,7 +575,7 @@ class OrchestratorService:
             async for chunk in self.game_master.generate_narration_stream(
                 world_state=session.world_state,
                 recent_events=recent_events,
-                player_action=action_for_gm,
+                player_action=user_message,
                 scene_context=location or "",
             ):
                 pre_narration_parts.append(chunk)
@@ -594,6 +594,10 @@ class OrchestratorService:
             time.perf_counter() - pre_narration_start,
             len(pre_narration or ""),
         )
+
+        # Now that the scene has landed, surface the roll — before the outcome reply.
+        if dice_result is not None:
+            yield sse_roll(dice_result.model_dump())
 
         # Build context for character response
         world_state_block = await self._world_state_block(db, session)
