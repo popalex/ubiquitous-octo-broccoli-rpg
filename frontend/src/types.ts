@@ -6,6 +6,7 @@ export type Health = {
   suggestions_enabled: boolean;
   world_state_enabled: boolean;
   quests_enabled: boolean;
+  dice_enabled: boolean;
 };
 
 export type ChronicleListItem = {
@@ -25,6 +26,7 @@ export type ChronicleListItem = {
   // Resolved per-session feature flags (session override → global).
   world_state_enabled: boolean;
   quests_enabled: boolean;
+  dice_enabled: boolean;
   // Fork lineage: null parent = an original chronicle.
   parent_session_id: string | null;
   forked_at_turn: number | null;
@@ -48,6 +50,7 @@ export type SessionDetail = {
   // Resolved per-session feature flags (session override → global).
   world_state_enabled: boolean;
   quests_enabled: boolean;
+  dice_enabled: boolean;
   // Fork lineage: null parent = an original chronicle.
   parent_session_id: string | null;
   forked_at_turn: number | null;
@@ -166,10 +169,21 @@ export type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "narrator";
   content: string;
-  messageType?: "chat" | "pre_narration" | "post_narration" | "event" | "quest";
+  messageType?: "chat" | "pre_narration" | "post_narration" | "event" | "quest" | "roll";
+  // Set on a "roll" message — renders as a dice chip instead of prose.
+  roll?: DiceRoll;
   // Suggested next-action chips offered after this reply (ephemeral; only the
   // latest assistant/narrator message renders them).
   suggestions?: string[];
+};
+
+export type DiceRoll = {
+  skill_label: string;
+  dc: number;
+  die: number; // raw d20, 1-20
+  outcome: "success" | "failure" | "critical_success";
+  // Why the GM set that DC — DC-encoded competence made visible.
+  rationale: string | null;
 };
 
 export type GMEvent = {
@@ -185,6 +199,7 @@ export type GMChatResponse = {
   character_reply: string;
   post_narration: string | null;
   event: GMEvent | null;
+  roll: DiceRoll | null;
   continuity_applied: boolean;
   continuity_issues: string[];
   retrieved_memories: RetrievedMemory[];

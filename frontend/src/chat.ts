@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import { attachSuggestionsToLatestReply, cleanSuggestions } from "./suggestions";
 import { withUiSpan } from "./telemetry";
-import type { ChatMessage, GMEvent, QuestUpdateNotification, RetrievedMemory } from "./types";
+import type { ChatMessage, DiceRoll, GMEvent, QuestUpdateNotification, RetrievedMemory } from "./types";
 
 /** Quest changes worth announcing as a narrator card (vs. status-bar only). */
 const ANNOUNCED_QUEST_CHANGES = ["offered", "started", "escalated", "completed", "failed"];
@@ -261,6 +261,21 @@ async function sendGMStream({
         hasPreNarration = false;
         setChatMessages((current) => current.filter((msg) => msg.id !== preNarrationId));
         setStatusText("The Game Master faltered; continuing without narration…");
+      },
+      roll: (event) => {
+        const roll = event.roll as DiceRoll;
+        const verdict = roll.outcome.replace("_", " ");
+        setChatMessages((current) => [
+          ...current,
+          {
+            id: crypto.randomUUID(),
+            role: "narrator",
+            content: `Skill check — ${roll.skill_label} vs DC ${roll.dc}: rolled ${roll.die} (${verdict})`,
+            messageType: "roll",
+            roll,
+          },
+        ]);
+        setStatusText(`Skill check: ${roll.skill_label} — ${verdict}`);
       },
       event: (event) => {
         const gmEvent = event.event as GMEvent;

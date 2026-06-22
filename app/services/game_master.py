@@ -21,6 +21,7 @@ from app.config import Settings, get_settings
 from app.models import Session as ChatSession
 from app.models import Turn, WorldState
 from app.prompts import (
+    GM_ACTION_CHECK_PROMPT,
     GM_EVENT_CHECK_PROMPT,
     GM_EVENT_GENERATE_PROMPT,
     GM_NARRATION_PROMPT,
@@ -30,6 +31,7 @@ from app.prompts import (
     GM_WORLD_STATE_UPDATE_PROMPT,
 )
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
+from app.services.dice import clamp_dc
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -78,6 +80,18 @@ class EventCheckResult:
     event_seed: str
     urgency: str
     reasoning: str
+
+
+@dataclass(slots=True)
+class ActionAssessment:
+    """Whether the player's latest action needs a d20 skill check, and the
+    GM-proposed skill + DC + rationale if so (§4c). DC encodes competence —
+    there is no character stat block."""
+
+    requires_check: bool
+    skill_label: str = ""
+    dc: int = 10
+    rationale: str = ""
 
 
 @dataclass(slots=True)
@@ -316,6 +330,61 @@ class GameMasterService:
             urgency=str(result.get("urgency", "gradual")),
             reasoning=str(result.get("reasoning", "")),
         )
+
+    async def assess_action(
+        self,
+        db: AsyncSession,
+        session: ChatSession,
+        player_action: str,
+    ) -> ActionAssessment:
+        """Decide whether the player's latest action needs a d20 skill check.
+
+        One fast JSON call. Competence is encoded in the GM-chosen DC (judged
+        from the character description — there is no stat block) and explained
+        in ``rationale``. Best-effort: any provider/parse failure returns "no
+        check" so a turn is never blocked.
+        """
+        recent_turns = (
+            await db.scalars(
+                select(Turn).where(Turn.session_id == session.id).order_by(Turn.turn_index.desc()).limit(6)
+            )
+        ).all()
+        recent_transcript = "\n".join(f"{turn.role.upper()}: {turn.content}" for turn in reversed(recent_turns))
+
+        prompt = GM_ACTION_CHECK_PROMPT.format(
+            character_name=session.character_card.name,
+            character_description=session.character_card.description,
+            recent_transcript=recent_transcript or "None.",
+            player_action=player_action,
+        )
+
+        try:
+            result = await self.gm_provider.generate_json(
+                [ProviderMessage(role="user", content=prompt)],
+                temperature=self.settings.dice_assess_temperature,
+                max_tokens=self.settings.dice_assess_max_tokens,
+            )
+        except ProviderError:
+            logger.exception("Action assessment failed for session=%s", session.id)
+            return ActionAssessment(requires_check=False)
+
+        if not bool(result.get("requires_check", False)):
+            return ActionAssessment(requires_check=False)
+
+        try:
+            dc = clamp_dc(int(result.get("dc", 10)))
+        except (TypeError, ValueError):
+            dc = 10
+        skill = str(result.get("skill_label", "")).strip() or "Skill"
+        rationale = str(result.get("rationale", "")).strip()
+        logger.info(
+            "assess_action session=%s requires_check skill=%s dc=%s rationale=%s",
+            session.id,
+            skill,
+            dc,
+            rationale,
+        )
+        return ActionAssessment(requires_check=True, skill_label=skill, dc=dc, rationale=rationale)
 
     async def generate_event(
         self,

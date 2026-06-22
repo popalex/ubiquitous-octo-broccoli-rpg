@@ -21,3 +21,9 @@ def quests_on(session: ChatSession, settings: Settings) -> bool:
     if session.quests_enabled is not None:
         return session.quests_enabled
     return settings.quests_enabled
+
+
+def dice_on(session: ChatSession, settings: Settings) -> bool:
+    if session.dice_enabled is not None:
+        return session.dice_enabled
+    return settings.dice_enabled

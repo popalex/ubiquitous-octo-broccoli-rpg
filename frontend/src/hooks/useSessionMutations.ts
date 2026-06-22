@@ -21,6 +21,7 @@ type SessionInitResult = {
   // Resolved per-session feature flags (session override → global).
   world_state_enabled: boolean;
   quests_enabled: boolean;
+  dice_enabled: boolean;
 };
 
 export type SessionInitInput = {
@@ -35,6 +36,7 @@ export type SessionInitInput = {
   // null inherits the backend's global setting.
   world_state_enabled: boolean | null;
   quests_enabled: boolean | null;
+  dice_enabled: boolean | null;
 };
 
 /** POST /character/load — upserts the character + world templates. */

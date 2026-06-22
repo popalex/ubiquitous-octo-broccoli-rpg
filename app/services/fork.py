@@ -70,6 +70,7 @@ class ForkService:
                 last_event_turn=min(parent.last_event_turn, at_turn),
                 world_state_enabled=parent.world_state_enabled,
                 quests_enabled=parent.quests_enabled,
+                dice_enabled=parent.dice_enabled,
                 parent_session_id=parent.id,
                 forked_at_turn=at_turn,
             )

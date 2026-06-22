@@ -1,4 +1,4 @@
-import { BookOpen, Lightbulb, Sparkle, Sparkles, Swords, Target, Zap } from "lucide-react";
+import { BookOpen, Dices, Lightbulb, Sparkle, Sparkles, Swords, Target, Zap } from "lucide-react";
 import type { FormEvent } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
@@ -24,6 +24,8 @@ type Props = {
   setWorldStateEnabled: (v: boolean) => void;
   questsEnabled: boolean;
   setQuestsEnabled: (v: boolean) => void;
+  diceEnabled: boolean;
+  setDiceEnabled: (v: boolean) => void;
   currentLocation: string;
   setCurrentLocation: (v: string) => void;
   timeOfDay: string;
@@ -63,6 +65,8 @@ export function CharacterPanel({
   setWorldStateEnabled,
   questsEnabled,
   setQuestsEnabled,
+  diceEnabled,
+  setDiceEnabled,
   currentLocation,
   setCurrentLocation,
   timeOfDay,
@@ -273,6 +277,20 @@ export function CharacterPanel({
             </span>
             <span className="toggle-hint">
               {suggestionsEnabled ? "Offer next-action chips each turn" : "Free-text only"}
+            </span>
+          </label>
+
+          <label className="gm-toggle">
+            <input
+              type="checkbox"
+              checked={diceEnabled}
+              onChange={(e) => setDiceEnabled(e.target.checked)}
+            />
+            <span className="toggle-label">
+              <Dices className="inline-icon" /> Dice / Skill Checks
+            </span>
+            <span className="toggle-hint">
+              {diceEnabled ? "GM rolls a d20 on uncertain actions" : "No dice rolls"}
             </span>
           </label>
 

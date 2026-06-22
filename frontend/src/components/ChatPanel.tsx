@@ -2,6 +2,7 @@ import { GitFork, Lightbulb, LoaderCircle, Send, Sparkle } from "lucide-react";
 import { useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { ChatMessage } from "../types";
+import { DiceRollChip } from "./DiceRollChip";
 import { Button } from "./ui/Button";
 import { EmptyState } from "./ui/EmptyState";
 
@@ -114,7 +115,11 @@ export function ChatPanel({
                   )}
                 </div>
                 <div className="message-body">
-                  <ReactMarkdown>{message.content}</ReactMarkdown>
+                  {message.roll ? (
+                    <DiceRollChip roll={message.roll} />
+                  ) : (
+                    <ReactMarkdown>{message.content}</ReactMarkdown>
+                  )}
                 </div>
                 {showSuggestions && (
                   <div className="suggestion-chips" role="group" aria-label="Suggested actions">

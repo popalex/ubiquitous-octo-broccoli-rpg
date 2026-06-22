@@ -119,6 +119,7 @@ class Session(TimestampMixin, Base):
     # (resolution in app/services/features.py).
     world_state_enabled: Mapped[bool | None] = mapped_column(nullable=True)
     quests_enabled: Mapped[bool | None] = mapped_column(nullable=True)
+    dice_enabled: Mapped[bool | None] = mapped_column(nullable=True)
 
     # Rewind & fork (§4a): set on a session created by forking another at a
     # given turn. NULL parent = an original chronicle. The parent is never
@@ -143,6 +144,7 @@ class Session(TimestampMixin, Base):
         back_populates="session", cascade="all, delete-orphan"
     )
     quests: Mapped[list[Quest]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    dice_rolls: Mapped[list[DiceRoll]] = relationship(back_populates="session", cascade="all, delete-orphan")
 
 
 class Turn(TimestampMixin, Base):
@@ -268,6 +270,37 @@ class Quest(TimestampMixin, Base):
     source_turn_id: Mapped[str | None] = mapped_column(ForeignKey("turns.id", ondelete="SET NULL"), nullable=True)
 
     session: Mapped[Session] = relationship(back_populates="quests")
+
+
+class DiceRoll(TimestampMixin, Base):
+    """A server-rolled d20 skill check resolved in GM mode (§4c).
+
+    When the player attempts an uncertain action, the GM assesses a descriptive
+    ``skill_label`` and a difficulty ``dc`` (competence lives in the DC — there
+    is no character stat block — and ``rationale`` records *why* that DC, so the
+    UI/logs can show it). The server rolls ``die`` (1-20); ``outcome`` is one of
+    ``success`` / ``failure`` / ``critical_success`` (nat 20). There is no
+    critical-failure tier by design. Persisted for auditability and to re-render
+    the roll in a chronicle's transcript. Gated behind ``DICE_ENABLED``.
+    """
+
+    __tablename__ = "dice_rolls"
+    __table_args__ = (_id_check("dice_rolls"),)
+
+    id: Mapped[str] = mapped_column(IdType, primary_key=True, default=new_id)
+    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
+    # The assistant turn this roll resolved (SET NULL keeps the audit row if the
+    # turn is ever removed). Nullable because the roll is computed mid-stream,
+    # before the turn row exists.
+    turn_id: Mapped[str | None] = mapped_column(ForeignKey("turns.id", ondelete="SET NULL"), nullable=True)
+    skill_label: Mapped[str] = mapped_column(String(60), nullable=False)
+    dc: Mapped[int] = mapped_column(Integer, nullable=False)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    die: Mapped[int] = mapped_column(Integer, nullable=False)  # raw d20, 1-20
+    # success | failure | critical_success
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    session: Mapped[Session] = relationship(back_populates="dice_rolls")
 
 
 class RelationshipState(TimestampMixin, Base):

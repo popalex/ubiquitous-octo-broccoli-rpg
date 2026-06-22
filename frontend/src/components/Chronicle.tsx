@@ -210,6 +210,10 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
           <span className="meta-label">Suggestions</span>
           <strong>{detail.suggestions_enabled ? "On" : "Off"}</strong>
         </div>
+        <div className="summary-item">
+          <span className="meta-label">Dice</span>
+          <strong>{detail.dice_enabled ? "On" : "Off"}</strong>
+        </div>
       </div>
       <main className="dashboard dashboard-chronicle">
         <ChatPanel

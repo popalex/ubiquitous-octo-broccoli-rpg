@@ -7,6 +7,7 @@ export const storageKeys = {
   suggestionsEnabled: "small-rpg:suggestions-enabled",
   worldStateEnabled: "small-rpg:world-state-enabled",
   questsEnabled: "small-rpg:quests-enabled",
+  diceEnabled: "small-rpg:dice-enabled",
   worldStateId: "small-rpg:world-state-id",
   sessionId: "small-rpg:session-id",
   sessionTitle: "small-rpg:session-title",

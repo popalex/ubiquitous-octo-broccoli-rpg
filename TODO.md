@@ -15,8 +15,12 @@ Shipped on `feature/roadmap-quick-wins`: nullable `Session` overrides +
 migration, `app/services/features.py` resolution (override → global), flags
 accepted by `/session/init` and returned resolved in init/list/detail, UI
 toggles in chronicle creation, per-session state in the summary bar, hub-card
-badges. Per the bake-first decision the globals still ship `false` —
-**flipping the defaults after real-session baking remains a follow-up.**
+badges. Per the bake-first decision the globals initially shipped `false`.
+Follow-up shipped 2026-06-22 (PR #64, `feature/feature-flags-default-on`):
+after baking, the four globals (`gm_enabled`, `world_state_enabled`,
+`quests_enabled`, `suggestions_enabled`) now **default `true`** in
+`app/config.py`, the prod `docker-compose.yml`, and `.env.sample`; per-session
+overrides still win. The test baseline pins them off in `make_test_settings`.
 Follow-up shipped 2026-06-12: the UI toggles (incl. a new global GM default,
 `GM_ENABLED`) now seed from the compose-provided globals via `/health`;
 an explicit user choice in localStorage still wins.
@@ -162,12 +166,31 @@ live. With §1's toggles users can now actually enable it. Added
 endpoint" idea was a *maybe* and is skipped until the full payload proves
 heavy.
 
-### 4c. Dice / skill checks
+### 4c. Dice / skill checks — ✅ DONE (2026-06-22, `feature/dice-skill-checks`)
 Lightweight d20 texture for GM mode, not a combat engine.
 - Server rolls (auditable, persisted on the turn) when the GM model requests a
   check; new SSE event `type: roll`; UI renders an animated roll chip.
 - GM prompt addition: when an action's outcome is uncertain, emit a check
   request (skill, DC) instead of narrating success.
+
+Shipped: **DC-only** model — there is no character stat block, so competence is
+encoded entirely in the GM-chosen DC and surfaced via a `rationale` string (UI
+chip subtitle + INFO log). A dedicated `GameMasterService.assess_action` JSON
+call (NOT folded into the event-check, whose interval/probability gating would
+fire it only ~⅓ of turns) decides if the action is uncertain; `app/services/dice.py`
+`roll_check` rolls server-side. Outcomes are `success` / `failure` /
+`critical_success` (nat 20) — **no critical-failure tier** (a nat 1 is just a
+failure; matches 5e RAW for ability checks and avoids punishing competent
+characters). Wired into `gm_chat` + `gm_chat_stream`: the roll fires before the
+outcome is narrated, emits a `type: roll` SSE frame, injects a directive so the
+prose respects the result, and persists a `DiceRoll` row. Gated behind
+`DICE_ENABLED` (ships dark in prod, on in the dev override, per-session override
+column + `dice_on` resolver). `rpg.dice.rolls` metric + Grafana panel; frontend
+`DiceRollChip`, a creation-flow toggle (seeded from the `/health` global default,
+like quests/suggestions) + a Dice on/off badge in the chronicle summary bar.
+**Follow-up:** re-render persisted rolls on chronicle reload + carry them across
+forks (rolls render live + are stored for audit, but aren't yet re-attached to
+reloaded turns).
 
 ### 4d. Chronicle export
 Turns + episode summaries → clean Markdown (chapters from summaries, dialogue
