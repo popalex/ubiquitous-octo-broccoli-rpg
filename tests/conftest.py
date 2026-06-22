@@ -23,6 +23,14 @@ def make_test_settings(**overrides) -> Settings:
         database_url="postgresql+psycopg://test:test@localhost/test",
         openai_api_key="test-key",
         dev_mode=False,
+        # Pin the gameplay feature flags off in the test baseline so the suite is
+        # insulated from the product defaults (now on in app.config). Tests opt
+        # into exactly the sections they exercise — this also keeps the post-turn
+        # judge's single-section bare-payload mapping unambiguous in fixtures.
+        gm_enabled=False,
+        suggestions_enabled=False,
+        world_state_enabled=False,
+        quests_enabled=False,
     )
     defaults.update(overrides)
     return Settings(**defaults)

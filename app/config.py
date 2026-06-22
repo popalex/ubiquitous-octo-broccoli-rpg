@@ -67,14 +67,14 @@ class Settings(BaseSettings):
 
     # Default GM mode for new sessions: /session/init inherits it when the
     # request omits gm_enabled, and the UI seeds its toggle from /health.
-    gm_enabled: bool = False
+    gm_enabled: bool = True
 
     # Suggested player responses: after each turn the post-turn judge proposes
     # 2-4 short next actions, shown as clickable chips (the free-text composer
     # stays). Chosen per-session at chronicle creation; /session/init inherits
     # this when the request omits suggestions_enabled, and the UI seeds its
-    # toggle from /health. Ships dark in prod (dev override on), like gm_enabled.
-    suggestions_enabled: bool = False
+    # toggle from /health. On by default after baking (TODO §1 follow-up).
+    suggestions_enabled: bool = True
     suggestions_max: int = 4  # cap on chips offered per turn
 
     # GM event generation settings
@@ -83,18 +83,20 @@ class Settings(BaseSettings):
 
     # World-state ledger: an authoritative, structured record of canon
     # (entities, inventory, threads, location, facts) injected as hard
-    # constraints and updated every turn. Ships dark behind this flag.
-    world_state_enabled: bool = False
+    # constraints and updated every turn. On by default after baking
+    # (TODO §1 follow-up); set the flag false to ship it dark again.
+    world_state_enabled: bool = True
     world_state_max_entities: int = 30
     world_state_max_threads: int = 20
     world_state_max_facts: int = 40
     world_state_extract_max_tokens: int = 800
 
     # Quest system: AI-tracked narrative arcs (GM offers, emergent player
-    # promises, escalation of neglected arcs). Ships dark behind this flag,
-    # like world_state. Turn-based knobs are in raw turn_count units — GM mode
-    # advances turn_count by 2-3 per exchange, so 12 turns is ~4-6 exchanges.
-    quests_enabled: bool = False
+    # promises, escalation of neglected arcs). On by default after baking
+    # (TODO §1 follow-up), like world_state. Turn-based knobs are in raw
+    # turn_count units — GM mode advances turn_count by 2-3 per exchange, so
+    # 12 turns is ~4-6 exchanges.
+    quests_enabled: bool = True
     quest_max_active: int = 5  # cap of non-terminal quests tracked/injected
     quest_max_stages: int = 8  # per-quest stage cap
     quest_extraction_interval: int = 1  # run the post-turn judge every N turns
