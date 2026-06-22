@@ -256,7 +256,12 @@ class OrchestratorService:
     async def _persist_dice_roll(
         self, db: AsyncSession, session: ChatSession, roll: DiceRollResult, turn_id: str | None
     ) -> None:
-        """Persist a resolved roll for audit + transcript re-render. Best-effort."""
+        """Persist a resolved roll for audit + transcript re-render. Best-effort.
+
+        Commits its own write (like the other post-turn services): the turns were
+        already committed by ``persist_gm_turns``, and ``get_db`` never commits on
+        its own — a bare flush here would be discarded when the request session
+        closes. ``expire_on_commit=False`` keeps ``session`` usable afterward."""
         try:
             db.add(
                 DiceRoll(
@@ -269,9 +274,10 @@ class OrchestratorService:
                     outcome=roll.outcome,
                 )
             )
-            await db.flush()
+            await db.commit()
         except SQLAlchemyError:
             logger.exception("dice roll persist failed for session=%s", session.id)
+            await db.rollback()
 
     async def gm_chat(
         self,

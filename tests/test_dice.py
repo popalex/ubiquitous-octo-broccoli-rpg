@@ -4,7 +4,7 @@ resolution, and orchestrator integration (GM stream + non-stream)."""
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import select
@@ -241,6 +241,27 @@ async def test_standard_chat_never_rolls(mock_provider: MockProvider, db_session
 
     rows = (await db_session.scalars(select(DiceRoll).where(DiceRoll.session_id == session.id))).all()
     assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_persist_dice_roll_commits(mock_provider: MockProvider) -> None:
+    # Regression: the row must be COMMITTED, not just flushed. get_db never
+    # commits on its own, and the turns were already committed upstream, so a
+    # bare flush here is discarded when the request session closes. (The
+    # savepoint-based db_session fixture can't tell flush from commit apart, so
+    # this guards it directly.)
+    from app.schemas import DiceRollResult
+
+    orchestrator = _dice_orchestrator(mock_provider)
+    db = MagicMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    roll = DiceRollResult(skill_label="Stealth", dc=12, die=7, outcome="failure", rationale=None)
+
+    await orchestrator._persist_dice_roll(db, SessionFactory.build(), roll, "01ABCDEF01ABCDEF01ABCDEF01")
+
+    db.add.assert_called_once()
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
