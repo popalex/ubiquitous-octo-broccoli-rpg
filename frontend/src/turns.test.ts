@@ -29,4 +29,20 @@ describe("turnsToMessages", () => {
     ]);
     expect(messages.map((m) => m.id)).toEqual(["5", "6"]);
   });
+
+  it("re-renders a roll chip just before the turn it resolved", () => {
+    const messages = turnsToMessages([
+      {
+        turn_index: 7,
+        role: "assistant",
+        content: "You slip past.",
+        turn_type: "chat",
+        roll: { skill_label: "Stealth", dc: 15, die: 4, outcome: "failure", rationale: "alert guard" },
+      },
+    ]);
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({ id: "roll-7", role: "narrator", messageType: "roll" });
+    expect(messages[0].roll).toMatchObject({ skill_label: "Stealth", outcome: "failure" });
+    expect(messages[1]).toMatchObject({ id: "7", content: "You slip past." });
+  });
 });

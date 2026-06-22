@@ -44,6 +44,27 @@ def roll_check(dc: int, *, rng: random.Random | None = None) -> tuple[int, str]:
     return die, outcome
 
 
+def message_may_need_check(message: str) -> bool:
+    """Cheap, no-LLM pre-filter for whether a player message is worth sending to
+    the (costly) per-turn ``assess_action`` call.
+
+    Deliberately conservative — it only skips when we're confident no check is
+    needed, so it never swallows a real action; ``assess_action`` still makes the
+    final decision on everything that passes. Skips empty input and a single,
+    self-contained question (asking the GM something is not attempting an action).
+    A message with more than one sentence, or not phrased as a question, passes.
+    """
+    text = message.strip()
+    if not text:
+        return False
+    # "?" with no other sentence terminator ≈ one bare question, e.g.
+    # "what do the blue lanterns mean?". "I sneak in. Is it locked?" keeps its
+    # "." and so still gets assessed.
+    if text.endswith("?") and "." not in text and "!" not in text:
+        return False
+    return True
+
+
 def roll_directive(skill_label: str, dc: int, die: int, outcome: str) -> str:
     """Prompt fragment injected into narration/actor context so the generated
     prose respects the roll instead of inventing its own outcome."""

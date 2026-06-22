@@ -18,6 +18,7 @@ from app.services.dice import (
     FAILURE,
     SUCCESS,
     clamp_dc,
+    message_may_need_check,
     roll_check,
     roll_directive,
 )
@@ -69,6 +70,23 @@ def test_roll_check_never_returns_critical_failure() -> None:
 @pytest.mark.parametrize(("raw", "expected"), [(0, 2), (1, 2), (12, 12), (20, 20), (99, 20)])
 def test_clamp_dc(raw: int, expected: int) -> None:
     assert clamp_dc(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("", False),
+        ("   ", False),
+        ("What do the blue lanterns mean tonight?", False),  # pure question -> skip
+        ("Who are you?", False),
+        ("I try to slip past the harbor guards.", True),  # action statement
+        ("I attack the goblin!", True),
+        ("I sneak in. Is the vault open?", True),  # has a "." -> not a bare question
+        ("I climb the wall", True),
+    ],
+)
+def test_message_may_need_check(message: str, expected: bool) -> None:
+    assert message_may_need_check(message) is expected
 
 
 def test_roll_directive_mentions_skill_dc_and_verdict() -> None:
@@ -222,6 +240,22 @@ async def test_gm_stream_no_roll_when_action_needs_no_check(
     await db_session.flush()
 
     events = await _collect(orchestrator.gm_chat_stream(db_session, session.id, "I glance at the sky."))
+
+    assert not any(e.get("type") == "roll" for e in events)
+    rows = (await db_session.scalars(select(DiceRoll).where(DiceRoll.session_id == session.id))).all()
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_gm_stream_skips_assessment_for_question(mock_provider: MockProvider, db_session: AsyncSession) -> None:
+    # Even with dice ON and an assessment queued, a pure question is gated out
+    # before the assess_action call — so no roll despite _ASSESSMENT being set.
+    orchestrator = _dice_orchestrator(mock_provider)
+    mock_provider.set_json_response(_ASSESSMENT)
+    session = SessionFactory(gm_enabled=True, turn_count=1)
+    await db_session.flush()
+
+    events = await _collect(orchestrator.gm_chat_stream(db_session, session.id, "What do the lanterns mean?"))
 
     assert not any(e.get("type") == "roll" for e in events)
     rows = (await db_session.scalars(select(DiceRoll).where(DiceRoll.session_id == session.id))).all()

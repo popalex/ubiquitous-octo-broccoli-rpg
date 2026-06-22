@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.models import (
     CharacterCard,
+    DiceRoll,
     EpisodeSummary,
     MemoryFact,
     Quest,
@@ -30,6 +31,7 @@ from app.schemas import (
     CharacterLoadResponse,
     ChatRequest,
     ChatResponse,
+    DiceRollResult,
     EpisodeSummaryResponse,
     GMChatRequest,
     GMChatResponse,
@@ -232,7 +234,18 @@ async def get_session_turns(session_id: str, db: AsyncSession = Depends(get_db))
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
     turns = (await db.scalars(select(Turn).where(Turn.session_id == session_id).order_by(Turn.turn_index.asc()))).all()
-    return [TurnResponse.model_validate(t) for t in turns]
+    # Attach any persisted skill-check rolls so the chronicle re-renders the chips
+    # on reload (§4c). Rolls link to the assistant turn they resolved.
+    rolls = (await db.scalars(select(DiceRoll).where(DiceRoll.session_id == session_id))).all()
+    rolls_by_turn = {r.turn_id: r for r in rolls if r.turn_id is not None}
+    responses = []
+    for t in turns:
+        tr = TurnResponse.model_validate(t)
+        roll = rolls_by_turn.get(t.id)
+        if roll is not None:
+            tr.roll = DiceRollResult.model_validate(roll)
+        responses.append(tr)
+    return responses
 
 
 @app.get("/session/{session_id}/suggestions", response_model=SuggestionsResponse)

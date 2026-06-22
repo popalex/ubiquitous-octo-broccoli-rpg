@@ -33,7 +33,7 @@ from app.services.context_packet import (
     recent_turns_text,
 )
 from app.services.continuity import ContinuityResult, ContinuityService
-from app.services.dice import roll_check, roll_directive
+from app.services.dice import message_may_need_check, roll_check, roll_directive
 from app.services.features import dice_on, quests_on, world_state_on
 from app.services.game_master import GameMasterService
 from app.services.memory import MemoryService
@@ -234,6 +234,11 @@ class OrchestratorService:
         the roll. GM-mode only, gated by ``dice_on``. Best-effort — any failure
         yields no roll and never breaks the turn (repo convention)."""
         if not dice_on(session, self.settings):
+            return None, ""
+        # Skip the per-turn assessment LLM call on messages that plainly can't
+        # need a check (questions / non-actions) — assess_action is the costly
+        # part of the feature, so this keeps dialogue turns cheap.
+        if not message_may_need_check(user_message):
             return None, ""
         try:
             assessment = await self.game_master.assess_action(db, session, user_message)

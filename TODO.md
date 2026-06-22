@@ -188,9 +188,26 @@ prose respects the result, and persists a `DiceRoll` row. Gated behind
 column + `dice_on` resolver). `rpg.dice.rolls` metric + Grafana panel; frontend
 `DiceRollChip`, a creation-flow toggle (seeded from the `/health` global default,
 like quests/suggestions) + a Dice on/off badge in the chronicle summary bar.
-**Follow-up:** re-render persisted rolls on chronicle reload + carry them across
-forks (rolls render live + are stored for audit, but aren't yet re-attached to
-reloaded turns).
+
+**"Maybe dice roll" pipeline** (`_maybe_roll_skill_check`, once per GM turn — each
+gate can short-circuit to no roll, and the whole thing is best-effort so it never
+breaks a turn): (1) `dice_on(session)`? → (2) `message_may_need_check` — a cheap,
+no-LLM pre-filter that skips empty input and bare questions ("what do the lanterns
+mean?"), so dialogue turns don't pay for an assessment → (3) `assess_action` (one
+GM JSON call) decides `requires_check` + skill + DC + rationale → (4) `roll_check`
+rolls a server-side d20. The DC encodes competence (no stat block); the directive
+is injected only into the outcome reply (not the scene). The roll frame is emitted
+*after* the scene narration so it reads scene → roll → outcome.
+
+**Reload/fork persistence:** the `/session/{id}/turns` endpoint attaches each
+turn's roll (by `turn_id`) so reloading a chronicle re-renders the chip just
+before its turn; `ForkService` copies dice rolls on kept turns (remapped
+`turn_id`) so forks keep their rolls.
+
+**Follow-ups:** the per-turn `assess_action` is still a full LLM call on every
+action-shaped message (cost scales with the model — the §2-style "fold into an
+existing call" idea could help); and the heuristic pre-filter is deliberately
+conservative (only skips bare questions), so most statements still get assessed.
 
 ### 4d. Chronicle export
 Turns + episode summaries → clean Markdown (chapters from summaries, dialogue

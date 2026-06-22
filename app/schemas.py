@@ -136,11 +136,25 @@ class SessionMemoryResponse(BaseModel):
     relationships: list[RelationshipStateResponse]
 
 
+class DiceRollResult(BaseModel):
+    """A resolved d20 skill check (§4c). ``rationale`` records *why* the GM set
+    that DC — surfaced in the UI/logs so DC-encoded competence is visible."""
+
+    skill_label: str
+    dc: int
+    die: int  # raw d20, 1-20
+    outcome: str  # success | failure | critical_success
+    rationale: str | None = None
+
+
 class TurnResponse(ORMModel):
     turn_index: int
     role: str
     content: str
     turn_type: str
+    # The skill check this turn resolved, if any (§4c) — so reloading a chronicle
+    # re-renders the roll chip. Attached by the route, not an ORM column.
+    roll: DiceRollResult | None = None
 
 
 class SessionListItem(BaseModel):
@@ -310,17 +324,6 @@ class GMEventGenerateResponse(BaseModel):
     urgency: str
     description: str
     npcs_involved: list[str] = Field(default_factory=list)
-
-
-class DiceRollResult(BaseModel):
-    """A resolved d20 skill check (§4c). ``rationale`` records *why* the GM set
-    that DC — surfaced in the UI/logs so DC-encoded competence is visible."""
-
-    skill_label: str
-    dc: int
-    die: int  # raw d20, 1-20
-    outcome: str  # success | failure | critical_success
-    rationale: str | None = None
 
 
 class GMSceneTransitionRequest(BaseModel):

@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import telemetry
 from app.models import (
+    DiceRoll,
     EpisodeSummary,
     MemoryFact,
     Quest,
@@ -206,6 +207,23 @@ class ForkService:
                         last_escalation_turn=q.last_escalation_turn,
                         resolved_turn=q.resolved_turn,
                         source_turn_id=id_map.get(q.source_turn_id) if q.source_turn_id else None,
+                    )
+                )
+
+            # --- dice rolls resolved on kept turns (remap turn_id) ---
+            dice_rolls = (await db.scalars(select(DiceRoll).where(DiceRoll.session_id == parent.id))).all()
+            for roll in dice_rolls:
+                if roll.turn_id is None or roll.turn_id not in kept_turn_ids:
+                    continue  # resolved on a turn after the fork point
+                db.add(
+                    DiceRoll(
+                        session_id=fork.id,
+                        turn_id=id_map.get(roll.turn_id),
+                        skill_label=roll.skill_label,
+                        dc=roll.dc,
+                        rationale=roll.rationale,
+                        die=roll.die,
+                        outcome=roll.outcome,
                     )
                 )
 

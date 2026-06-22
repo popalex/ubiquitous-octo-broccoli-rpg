@@ -61,6 +61,8 @@ export type TurnRecord = {
   role: string;
   content: string;
   turn_type: string;
+  // The skill check this turn resolved, if any (§4c) — re-rendered as a chip.
+  roll?: DiceRoll | null;
 };
 
 export type CharacterLoadPayload = {
