@@ -233,30 +233,42 @@ class OrchestratorService:
         ``directive`` is injected into the GM/actor context so the prose respects
         the roll. GM-mode only, gated by ``dice_on``. Best-effort — any failure
         yields no roll and never breaks the turn (repo convention)."""
-        if not dice_on(session, self.settings):
-            return None, ""
-        # Skip the per-turn assessment LLM call on messages that plainly can't
-        # need a check (questions / non-actions) — assess_action is the costly
-        # part of the feature, so this keeps dialogue turns cheap.
-        if not message_may_need_check(user_message):
-            return None, ""
-        try:
-            assessment = await self.game_master.assess_action(db, session, user_message)
-        except Exception:
-            logger.exception("skill-check assessment failed for session=%s", session.id)
-            return None, ""
-        if not assessment.requires_check:
-            return None, ""
-        die, outcome = roll_check(assessment.dc)
-        dice_rolls.add(1, {"outcome": outcome})
-        result = DiceRollResult(
-            skill_label=assessment.skill_label,
-            dc=assessment.dc,
-            die=die,
-            outcome=outcome,
-            rationale=assessment.rationale or None,
-        )
-        return result, roll_directive(assessment.skill_label, assessment.dc, die, outcome)
+        with tracer.start_as_current_span("orchestrator.skill_check") as span:
+            span.set_attribute("rpg.session_id", str(session.id))
+            enabled = dice_on(session, self.settings)
+            span.set_attribute("rpg.dice.enabled", enabled)
+            if not enabled:
+                return None, ""
+            # Skip the per-turn assessment LLM call on messages that plainly can't
+            # need a check (questions / non-actions) — assess_action is the costly
+            # part of the feature, so this keeps dialogue turns cheap.
+            may_need = message_may_need_check(user_message)
+            span.set_attribute("rpg.dice.prefiltered", not may_need)
+            if not may_need:
+                return None, ""
+            try:
+                assessment = await self.game_master.assess_action(db, session, user_message)
+            except Exception:
+                logger.exception("skill-check assessment failed for session=%s", session.id)
+                span.set_attribute("rpg.dice.assess_failed", True)
+                return None, ""
+            span.set_attribute("rpg.dice.requires_check", assessment.requires_check)
+            if not assessment.requires_check:
+                return None, ""
+            die, outcome = roll_check(assessment.dc)
+            dice_rolls.add(1, {"outcome": outcome})
+            span.set_attribute("rpg.dice.skill_label", assessment.skill_label)
+            span.set_attribute("rpg.dice.dc", assessment.dc)
+            span.set_attribute("rpg.dice.die", die)
+            span.set_attribute("rpg.dice.outcome", outcome)
+            result = DiceRollResult(
+                skill_label=assessment.skill_label,
+                dc=assessment.dc,
+                die=die,
+                outcome=outcome,
+                rationale=assessment.rationale or None,
+            )
+            return result, roll_directive(assessment.skill_label, assessment.dc, die, outcome)
 
     async def _persist_dice_roll(
         self, db: AsyncSession, session: ChatSession, roll: DiceRollResult, turn_id: str | None
