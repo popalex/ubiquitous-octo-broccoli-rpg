@@ -273,6 +273,17 @@ the yardstick for what §2 saves.
   `SQLAlchemyError`). The post-turn guards stay deliberately broad — the
   never-fail-the-turn convention — and are commented as such.
 
+### 5d. Trace the continuity outcome — TODO
+The continuity check's LLM call is already traced (provider `llm.*` span), but
+its *result* — whether the draft reply was revised and which issues fired — only
+lands in a log line + the `rpg.continuity.revisions` metric, never on a span. So
+you can't tell from a single trace whether continuity rewrote that turn. Add a
+wrapper span (`orchestrator.continuity`) or attributes on the existing flow:
+`rpg.continuity.{applied, issue_count}`. Small, mirrors the §4c
+`orchestrator.skill_check` span. (Phase-wrapper spans for actor / pre-narration /
+event-gen were considered and skipped as YAGNI — those calls are already visible
+via `llm.*`.)
+
 ---
 
 ## Suggested sequencing
