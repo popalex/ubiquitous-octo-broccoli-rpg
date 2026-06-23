@@ -11,6 +11,7 @@ const ERROR_HEALTH: Health = {
   suggestions_enabled: false,
   world_state_enabled: false,
   quests_enabled: false,
+  dice_enabled: false,
 };
 
 /**

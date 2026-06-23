@@ -55,10 +55,14 @@ export function CodexSetup({ onStarted }: Props) {
   const [questsChoice, setQuestsChoice] = useState<boolean | null>(() =>
     readStoredToggle(storageKeys.questsEnabled),
   );
+  const [diceChoice, setDiceChoice] = useState<boolean | null>(() =>
+    readStoredToggle(storageKeys.diceEnabled),
+  );
   const gmEnabled = gmChoice ?? health?.gm_enabled ?? false;
   const suggestionsEnabled = suggestionsChoice ?? health?.suggestions_enabled ?? false;
   const worldStateEnabled = worldStateChoice ?? health?.world_state_enabled ?? false;
   const questsEnabled = questsChoice ?? health?.quests_enabled ?? false;
+  const diceEnabled = diceChoice ?? health?.dice_enabled ?? false;
   const [timeOfDay, setTimeOfDay] = useState("morning");
   const [ids, setIds] = useState(() => ({
     characterCardId: localStorage.getItem(storageKeys.characterCardId) || "",
@@ -92,6 +96,11 @@ export function CodexSetup({ onStarted }: Props) {
     localStorage.setItem(storageKeys.questsEnabled, String(value));
   }
 
+  function handleSetDiceEnabled(value: boolean) {
+    setDiceChoice(value);
+    localStorage.setItem(storageKeys.diceEnabled, String(value));
+  }
+
   return (
     <CodexForm
       key={selectedTemplate.id}
@@ -107,11 +116,14 @@ export function CodexSetup({ onStarted }: Props) {
       setWorldStateEnabled={handleSetWorldStateEnabled}
       questsEnabled={questsEnabled}
       setQuestsEnabled={handleSetQuestsEnabled}
+      diceEnabled={diceEnabled}
+      setDiceEnabled={handleSetDiceEnabled}
       toggleChoices={{
         gm: gmChoice,
         suggestions: suggestionsChoice,
         worldState: worldStateChoice,
         quests: questsChoice,
+        dice: diceChoice,
       }}
       timeOfDay={timeOfDay}
       setTimeOfDay={setTimeOfDay}
@@ -135,12 +147,15 @@ type CodexFormProps = {
   setWorldStateEnabled: (v: boolean) => void;
   questsEnabled: boolean;
   setQuestsEnabled: (v: boolean) => void;
+  diceEnabled: boolean;
+  setDiceEnabled: (v: boolean) => void;
   /** Raw toggle choices: null = user never touched it (inherit the global). */
   toggleChoices: {
     gm: boolean | null;
     suggestions: boolean | null;
     worldState: boolean | null;
     quests: boolean | null;
+    dice: boolean | null;
   };
   timeOfDay: string;
   setTimeOfDay: (v: string) => void;
@@ -162,6 +177,8 @@ function CodexForm({
   setWorldStateEnabled,
   questsEnabled,
   setQuestsEnabled,
+  diceEnabled,
+  setDiceEnabled,
   toggleChoices,
   timeOfDay,
   setTimeOfDay,
@@ -215,6 +232,7 @@ function CodexForm({
         suggestions_enabled: toggleChoices.suggestions,
         world_state_enabled: toggleChoices.worldState,
         quests_enabled: toggleChoices.quests,
+        dice_enabled: toggleChoices.dice,
       });
       localStorage.setItem(storageKeys.sessionTitle, sessionTitle);
       onStarted(payload.session_id, starterPrompt);
@@ -242,6 +260,8 @@ function CodexForm({
         setWorldStateEnabled={setWorldStateEnabled}
         questsEnabled={questsEnabled}
         setQuestsEnabled={setQuestsEnabled}
+        diceEnabled={diceEnabled}
+        setDiceEnabled={setDiceEnabled}
         currentLocation={currentLocation}
         setCurrentLocation={setCurrentLocation}
         timeOfDay={timeOfDay}

@@ -19,7 +19,7 @@ from app.config import Settings
 from app.models import EpisodeSummary, Turn
 from app.models import Session as ChatSession
 from app.schemas import SessionDetailResponse, SessionInitResponse, SessionListItem
-from app.services.features import quests_on, world_state_on
+from app.services.features import dice_on, quests_on, world_state_on
 
 _SUMMARY_PREVIEW_CHARS = 200
 
@@ -39,6 +39,7 @@ def session_to_init(session: ChatSession, settings: Settings) -> SessionInitResp
         time_of_day=session.time_of_day,
         world_state_enabled=world_state_on(session, settings),
         quests_enabled=quests_on(session, settings),
+        dice_enabled=dice_on(session, settings),
     )
 
 
@@ -61,6 +62,7 @@ def session_to_detail(session: ChatSession, settings: Settings) -> SessionDetail
         time_of_day=session.time_of_day,
         world_state_enabled=world_state_on(session, settings),
         quests_enabled=quests_on(session, settings),
+        dice_enabled=dice_on(session, settings),
         parent_session_id=session.parent_session_id,
         forked_at_turn=session.forked_at_turn,
     )
@@ -85,6 +87,7 @@ def session_to_list_item(session: ChatSession, settings: Settings, summary: str 
         summary=summary,
         world_state_enabled=world_state_on(session, settings),
         quests_enabled=quests_on(session, settings),
+        dice_enabled=dice_on(session, settings),
         parent_session_id=session.parent_session_id,
         forked_at_turn=session.forked_at_turn,
     )

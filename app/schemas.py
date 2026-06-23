@@ -41,6 +41,7 @@ class SessionInitRequest(BaseModel):
     # Per-session feature overrides; None inherits the global setting.
     world_state_enabled: bool | None = None
     quests_enabled: bool | None = None
+    dice_enabled: bool | None = None
 
 
 class SessionInitResponse(ORMModel):
@@ -56,6 +57,7 @@ class SessionInitResponse(ORMModel):
     # Resolved (override → global), not the raw nullable override.
     world_state_enabled: bool
     quests_enabled: bool
+    dice_enabled: bool
 
 
 class ChatRequest(BaseModel):
@@ -134,11 +136,28 @@ class SessionMemoryResponse(BaseModel):
     relationships: list[RelationshipStateResponse]
 
 
+class DiceRollResult(ORMModel):
+    """A resolved d20 skill check (§4c). ``rationale`` records *why* the GM set
+    that DC — surfaced in the UI/logs so DC-encoded competence is visible.
+
+    Inherits ``ORMModel`` (``from_attributes=True``) so the chronicle-reload route
+    can ``model_validate`` a persisted ``DiceRoll`` ORM row directly."""
+
+    skill_label: str
+    dc: int
+    die: int  # raw d20, 1-20
+    outcome: str  # success | failure | critical_success
+    rationale: str | None = None
+
+
 class TurnResponse(ORMModel):
     turn_index: int
     role: str
     content: str
     turn_type: str
+    # The skill check this turn resolved, if any (§4c) — so reloading a chronicle
+    # re-renders the roll chip. Attached by the route, not an ORM column.
+    roll: DiceRollResult | None = None
 
 
 class SessionListItem(BaseModel):
@@ -158,6 +177,7 @@ class SessionListItem(BaseModel):
     # Resolved (override → global), not the raw nullable override.
     world_state_enabled: bool
     quests_enabled: bool
+    dice_enabled: bool
     # Fork lineage (§4a): NULL parent = an original chronicle.
     parent_session_id: str | None = None
     forked_at_turn: int | None = None
@@ -191,6 +211,7 @@ class SessionDetailResponse(BaseModel):
     # Resolved (override → global), not the raw nullable override.
     world_state_enabled: bool
     quests_enabled: bool
+    dice_enabled: bool
     # Fork lineage (§4a): NULL parent = an original chronicle.
     parent_session_id: str | None = None
     forked_at_turn: int | None = None
@@ -247,6 +268,7 @@ class HealthResponse(BaseModel):
     suggestions_enabled: bool
     world_state_enabled: bool
     quests_enabled: bool
+    dice_enabled: bool
 
 
 # =============================================================================
@@ -370,6 +392,7 @@ class GMChatResponse(BaseModel):
     character_reply: str
     post_narration: str | None = None
     event: GMEventGenerateResponse | None = None
+    roll: DiceRollResult | None = None
     continuity_applied: bool
     continuity_issues: list[str]
     retrieved_memories: list[RetrievedMemoryItem]

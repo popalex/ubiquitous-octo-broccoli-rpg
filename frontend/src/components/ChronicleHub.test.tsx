@@ -25,6 +25,7 @@ function makeChronicle(overrides: Partial<ChronicleListItem> = {}): ChronicleLis
     suggestions_enabled: false,
     world_state_enabled: false,
     quests_enabled: false,
+    dice_enabled: false,
     parent_session_id: null,
     forked_at_turn: null,
     ...overrides,

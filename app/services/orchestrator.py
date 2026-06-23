@@ -13,12 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.config import Settings, get_settings
+from app.models import DiceRoll, Turn
 from app.models import Session as ChatSession
-from app.models import Turn
 from app.prompts import ACTOR_SYSTEM_PROMPT
 from app.providers.base import ProviderError, ProviderMessage, build_provider
 from app.schemas import (
     ChatResponse,
+    DiceRollResult,
     GMChatResponse,
     GMEventGenerateResponse,
     QuestUpdateNotification,
@@ -32,7 +33,8 @@ from app.services.context_packet import (
     recent_turns_text,
 )
 from app.services.continuity import ContinuityResult, ContinuityService
-from app.services.features import quests_on, world_state_on
+from app.services.dice import message_may_need_check, roll_check, roll_directive
+from app.services.features import dice_on, quests_on, world_state_on
 from app.services.game_master import GameMasterService
 from app.services.memory import MemoryService
 from app.services.post_turn_judge import PostTurnJudgeService
@@ -41,7 +43,7 @@ from app.services.quests import QuestChange, QuestService
 from app.services.retrieval import RetrievalService
 from app.services.turn_persister import TurnPersister
 from app.services.world_state import WorldStateService
-from app.telemetry import chat_turns, continuity_revisions, retrieval_selected, tracer
+from app.telemetry import chat_turns, continuity_revisions, dice_rolls, retrieval_selected, tracer
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +79,10 @@ def sse_pre_narration_error(error: str) -> str:
 
 def sse_event(event: object) -> str:
     return _sse({"type": "event", "event": event})
+
+
+def sse_roll(roll: dict) -> str:
+    return _sse({"type": "roll", "roll": roll})
 
 
 def sse_quest_update(quest: dict) -> str:
@@ -219,6 +225,77 @@ class OrchestratorService:
             ],
         )
 
+    async def _maybe_roll_skill_check(
+        self, db: AsyncSession, session: ChatSession, user_message: str
+    ) -> tuple[DiceRollResult | None, str]:
+        """Assess the player's action and, if its outcome is uncertain, roll a
+        d20 server-side (§4c). Returns ``(roll_result_or_None, directive)`` where
+        ``directive`` is injected into the GM/actor context so the prose respects
+        the roll. GM-mode only, gated by ``dice_on``. Best-effort — any failure
+        yields no roll and never breaks the turn (repo convention)."""
+        with tracer.start_as_current_span("orchestrator.skill_check") as span:
+            span.set_attribute("rpg.session_id", str(session.id))
+            enabled = dice_on(session, self.settings)
+            span.set_attribute("rpg.dice.enabled", enabled)
+            if not enabled:
+                return None, ""
+            # Skip the per-turn assessment LLM call on messages that plainly can't
+            # need a check (questions / non-actions) — assess_action is the costly
+            # part of the feature, so this keeps dialogue turns cheap.
+            may_need = message_may_need_check(user_message)
+            span.set_attribute("rpg.dice.prefiltered", not may_need)
+            if not may_need:
+                return None, ""
+            try:
+                assessment = await self.game_master.assess_action(db, session, user_message)
+            except Exception:
+                logger.exception("skill-check assessment failed for session=%s", session.id)
+                span.set_attribute("rpg.dice.assess_failed", True)
+                return None, ""
+            span.set_attribute("rpg.dice.requires_check", assessment.requires_check)
+            if not assessment.requires_check:
+                return None, ""
+            die, outcome = roll_check(assessment.dc)
+            dice_rolls.add(1, {"outcome": outcome})
+            span.set_attribute("rpg.dice.skill_label", assessment.skill_label)
+            span.set_attribute("rpg.dice.dc", assessment.dc)
+            span.set_attribute("rpg.dice.die", die)
+            span.set_attribute("rpg.dice.outcome", outcome)
+            result = DiceRollResult(
+                skill_label=assessment.skill_label,
+                dc=assessment.dc,
+                die=die,
+                outcome=outcome,
+                rationale=assessment.rationale or None,
+            )
+            return result, roll_directive(assessment.skill_label, assessment.dc, die, outcome)
+
+    async def _persist_dice_roll(
+        self, db: AsyncSession, session: ChatSession, roll: DiceRollResult, turn_id: str | None
+    ) -> None:
+        """Persist a resolved roll for audit + transcript re-render. Best-effort.
+
+        Commits its own write (like the other post-turn services): the turns were
+        already committed by ``persist_gm_turns``, and ``get_db`` never commits on
+        its own — a bare flush here would be discarded when the request session
+        closes. ``expire_on_commit=False`` keeps ``session`` usable afterward."""
+        try:
+            db.add(
+                DiceRoll(
+                    session_id=session.id,
+                    turn_id=turn_id,
+                    skill_label=roll.skill_label,
+                    dc=roll.dc,
+                    rationale=roll.rationale,
+                    die=roll.die,
+                    outcome=roll.outcome,
+                )
+            )
+            await db.commit()
+        except SQLAlchemyError:
+            logger.exception("dice roll persist failed for session=%s", session.id)
+            await db.rollback()
+
     async def gm_chat(
         self,
         db: AsyncSession,
@@ -272,6 +349,11 @@ class OrchestratorService:
             quest_pressure=QuestService.render_pressure(pressure_quests),
         )
 
+        # Dice / skill check (§4c): roll so the result can steer the character
+        # reply. The scene is set before the action resolves, so it does NOT get
+        # the roll directive — only the outcome reply (context_packet) does.
+        dice_result, roll_directive_text = await self._maybe_roll_skill_check(db, session, user_message)
+
         # Generate pre-narration (scene setting)
         pre_narration = None
         try:
@@ -292,6 +374,8 @@ class OrchestratorService:
         # Include GM narration in context if available
         if pre_narration:
             context_packet = f"[Scene Narration]\n{pre_narration}\n\n{context_packet}"
+        if roll_directive_text:
+            context_packet = f"{roll_directive_text}\n\n{context_packet}"
 
         system_prompt = ACTOR_SYSTEM_PROMPT.format(
             character_name=session.character_card.name,
@@ -357,6 +441,9 @@ class OrchestratorService:
             continuity_notes="\n".join(continuity.issues) if continuity.issues else None,
         )
 
+        if dice_result is not None:
+            await self._persist_dice_roll(db, session, dice_result, assistant_turn.id)
+
         await self.post_turn.refresh_memory(db, session)
         # Plot-hook offers + escalation run first so the post-turn judge sees
         # any freshly-offered quests in its open-quest context (matches the
@@ -391,6 +478,7 @@ class OrchestratorService:
             character_reply=continuity.final_reply,
             post_narration=post_narration,
             event=event_response,
+            roll=dice_result,
             continuity_applied=continuity.applied,
             continuity_issues=continuity.issues,
             quest_updates=self._quest_change_notifications(quest_changes),
@@ -487,6 +575,13 @@ class OrchestratorService:
             event_check.should_trigger,
         )
 
+        # Dice / skill check (§4c): compute the roll now so its result can steer
+        # the character reply, but emit the frame AFTER the scene narration (see
+        # below) so the chip lands in narrative order: scene -> roll -> outcome.
+        # The scene is set before the action resolves, so it does NOT get the
+        # roll directive — only the outcome reply does.
+        dice_result, roll_directive_text = await self._maybe_roll_skill_check(db, session, user_message)
+
         # Stream pre-narration
         pre_narration_parts: list[str] = []
         pre_narration_failed = False
@@ -517,12 +612,18 @@ class OrchestratorService:
             len(pre_narration or ""),
         )
 
+        # Now that the scene has landed, surface the roll — before the outcome reply.
+        if dice_result is not None:
+            yield sse_roll(dice_result.model_dump())
+
         # Build context for character response
         world_state_block = await self._world_state_block(db, session)
         quest_block = await self._quest_block(db, session)
         context_packet = self.context.build(session, recent_turns, retrieved, world_state_block, quest_block)
         if pre_narration:
             context_packet = f"[Scene Narration]\n{pre_narration}\n\n{context_packet}"
+        if roll_directive_text:
+            context_packet = f"{roll_directive_text}\n\n{context_packet}"
 
         system_prompt = ACTOR_SYSTEM_PROMPT.format(
             character_name=session.character_card.name,
@@ -607,6 +708,9 @@ class OrchestratorService:
             pre_narration=pre_narration,
             post_narration=post_narration,
         )
+
+        if dice_result is not None:
+            await self._persist_dice_roll(db, session, dice_result, assistant_turn.id)
 
         # Post-stream continuity check → retcon note (reply already shown)
         await self._post_stream_continuity(

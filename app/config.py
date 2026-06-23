@@ -104,6 +104,18 @@ class Settings(BaseSettings):
     quest_extract_max_tokens: int = 700
     quest_temperature: float = 0.2
 
+    # Dice / skill checks (§4c): in GM mode, when the player attempts something
+    # with an uncertain outcome, the GM assesses a skill + difficulty (DC) and
+    # the *server* rolls a d20 (auditable, persisted), then narration respects
+    # the result. There is no character stat block — competence lives entirely
+    # in the GM-chosen DC, surfaced to the player via the roll's rationale.
+    # Outcomes are success / failure / critical_success (nat 20); there is no
+    # critical-failure tier by design (a nat 1 is just a failure). Ships dark
+    # behind this flag (bake-first, like world_state/quests did); GM-mode only.
+    dice_enabled: bool = False
+    dice_assess_max_tokens: int = 200  # cap on the GM action-assessment JSON call
+    dice_assess_temperature: float = 0.2
+
     # Unified post-turn judge (§2): the per-turn world-state and quest extractions
     # are folded into ONE LLM call (PostTurnJudgeService) instead of two. Memory
     # (facts + episode summary) stays on its own cadence.

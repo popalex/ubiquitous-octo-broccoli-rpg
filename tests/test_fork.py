@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    DiceRoll,
     EpisodeSummary,
     MemoryFact,
     Quest,
@@ -137,6 +138,29 @@ async def test_fork_remaps_turn_references(db_session: AsyncSession) -> None:
     rels = {r.target_entity: r for r in rel_rows}
     assert rels["maren"].last_observed_turn_id in fork_turn_ids
     assert rels["villain"].last_observed_turn_id is None
+
+
+@pytest.mark.asyncio
+async def test_fork_copies_dice_rolls_on_kept_turns(db_session: AsyncSession) -> None:
+    parent = SessionFactory(turn_count=4)
+    turns = {i: TurnFactory(session=parent, turn_index=i, content=f"turn {i}") for i in range(1, 5)}
+    await db_session.flush()
+    # one roll on a kept turn (≤2), one on a dropped turn (>2)
+    db_session.add(
+        DiceRoll(session_id=parent.id, turn_id=turns[1].id, skill_label="Stealth", dc=12, die=8, outcome="failure")
+    )
+    db_session.add(
+        DiceRoll(session_id=parent.id, turn_id=turns[4].id, skill_label="Athletics", dc=15, die=18, outcome="success")
+    )
+    await db_session.flush()
+
+    fork = await ForkService.fork_session(db_session, parent, at_turn=2)
+
+    fork_turn_ids = {t.id for t in (await db_session.scalars(select(Turn).where(Turn.session_id == fork.id))).all()}
+    rolls = (await db_session.scalars(select(DiceRoll).where(DiceRoll.session_id == fork.id))).all()
+    assert len(rolls) == 1  # only the kept-turn roll
+    assert rolls[0].skill_label == "Stealth"
+    assert rolls[0].turn_id in fork_turn_ids  # remapped to a fork turn
 
 
 @pytest.mark.asyncio

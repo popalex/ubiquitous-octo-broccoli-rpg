@@ -77,6 +77,7 @@ post_turn_suggestions = _meter.create_counter(
     "rpg.post_turn.suggestions", description="Suggested player-response chips offered (summed across turns)"
 )
 session_forks = _meter.create_counter("rpg.session.forks", description="Chronicle forks created (rewind & fork)")
+dice_rolls = _meter.create_counter("rpg.dice.rolls", description="d20 skill checks rolled in GM mode, by outcome")
 
 
 def messages_to_json(messages: Sequence) -> str:

@@ -15,8 +15,12 @@ Shipped on `feature/roadmap-quick-wins`: nullable `Session` overrides +
 migration, `app/services/features.py` resolution (override → global), flags
 accepted by `/session/init` and returned resolved in init/list/detail, UI
 toggles in chronicle creation, per-session state in the summary bar, hub-card
-badges. Per the bake-first decision the globals still ship `false` —
-**flipping the defaults after real-session baking remains a follow-up.**
+badges. Per the bake-first decision the globals initially shipped `false`.
+Follow-up shipped 2026-06-22 (PR #64, `feature/feature-flags-default-on`):
+after baking, the four globals (`gm_enabled`, `world_state_enabled`,
+`quests_enabled`, `suggestions_enabled`) now **default `true`** in
+`app/config.py`, the prod `docker-compose.yml`, and `.env.sample`; per-session
+overrides still win. The test baseline pins them off in `make_test_settings`.
 Follow-up shipped 2026-06-12: the UI toggles (incl. a new global GM default,
 `GM_ENABLED`) now seed from the compose-provided globals via `/health`;
 an explicit user choice in localStorage still wins.
@@ -162,12 +166,64 @@ live. With §1's toggles users can now actually enable it. Added
 endpoint" idea was a *maybe* and is skipped until the full payload proves
 heavy.
 
-### 4c. Dice / skill checks
+### 4c. Dice / skill checks — ✅ DONE (2026-06-22, `feature/dice-skill-checks`)
 Lightweight d20 texture for GM mode, not a combat engine.
 - Server rolls (auditable, persisted on the turn) when the GM model requests a
   check; new SSE event `type: roll`; UI renders an animated roll chip.
 - GM prompt addition: when an action's outcome is uncertain, emit a check
   request (skill, DC) instead of narrating success.
+
+Shipped: **DC-only** model — there is no character stat block, so competence is
+encoded entirely in the GM-chosen DC and surfaced via a `rationale` string (UI
+chip subtitle + INFO log). A dedicated `GameMasterService.assess_action` JSON
+call (NOT folded into the event-check, whose interval/probability gating would
+fire it only ~⅓ of turns) decides if the action is uncertain; `app/services/dice.py`
+`roll_check` rolls server-side. Outcomes are `success` / `failure` /
+`critical_success` (nat 20) — **no critical-failure tier** (a nat 1 is just a
+failure; matches 5e RAW for ability checks and avoids punishing competent
+characters). Wired into `gm_chat` + `gm_chat_stream`: the roll fires before the
+outcome is narrated, emits a `type: roll` SSE frame, injects a directive so the
+prose respects the result, and persists a `DiceRoll` row. Gated behind
+`DICE_ENABLED` (ships dark in prod, on in the dev override, per-session override
+column + `dice_on` resolver). `rpg.dice.rolls` metric + Grafana panel; frontend
+`DiceRollChip`, a creation-flow toggle (seeded from the `/health` global default,
+like quests/suggestions) + a Dice on/off badge in the chronicle summary bar.
+
+**"Maybe dice roll" pipeline** (`_maybe_roll_skill_check`, once per GM turn — each
+gate can short-circuit to no roll, and the whole thing is best-effort so it never
+breaks a turn): (1) `dice_on(session)`? → (2) `message_may_need_check` — a cheap,
+no-LLM pre-filter that skips empty input and bare questions ("what do the lanterns
+mean?"), so dialogue turns don't pay for an assessment → (3) `assess_action` (one
+GM JSON call) decides `requires_check` + skill + DC + rationale → (4) `roll_check`
+rolls a server-side d20. The DC encodes competence (no stat block); the directive
+is injected only into the outcome reply (not the scene). The roll frame is emitted
+*after* the scene narration so it reads scene → roll → outcome.
+
+**Reload/fork persistence:** the `/session/{id}/turns` endpoint attaches each
+turn's roll (by `turn_id`) so reloading a chronicle re-renders the chip just
+before its turn; `ForkService` copies dice rolls on kept turns (remapped
+`turn_id`) so forks keep their rolls.
+
+**Follow-ups:**
+- **Cost — fold `assess_action` into pre-narration.** It's still a full,
+  separate LLM round-trip on every action-shaped message, on the critical path
+  *before* prose (the roll directive feeds the narration, so it can't move to the
+  post-turn judge or be fully parallelized). Pre-narration already runs an LLM
+  before the actor in GM mode — have it emit the assessment (`requires_check` /
+  `skill_label` / `dc` / `rationale`) as structured JSON alongside the
+  scene-setting, collapsing two serial round-trips into one. More feasible now on
+  qwen2.5:3b (steadier JSON). Needs a combined-output test.
+- **Bug — assessment echoes the previous turn.** Observed in chronicle
+  `01KVTVBRKY23W87A10WABH8511`: a perception message ("Notice any other unusual
+  signs around you") got a **Stealth** check with a *byte-identical* `rationale`
+  to the prior real stealth action. `assess_action` feeds the last 6 turns as
+  `recent_transcript`, and the small model parrots the previous roll instead of
+  judging the new message. Fix: tighten `GM_ACTION_CHECK_PROMPT` to assess *only*
+  `player_action` (transcript is context, never to be reused), and/or trim the
+  transcript fed to the assessment.
+- **Pre-filter is conservative** (only skips bare questions), so most statements
+  still get assessed — fine, but related to the echo bug above (imperatives like
+  "Notice…" pass through to `assess_action`).
 
 ### 4d. Chronicle export
 Turns + episode summaries → clean Markdown (chapters from summaries, dialogue
@@ -216,6 +272,17 @@ the yardstick for what §2 saves.
   queries → `SQLAlchemyError`; backfill → `RuntimeError`/`ProviderError`/
   `SQLAlchemyError`). The post-turn guards stay deliberately broad — the
   never-fail-the-turn convention — and are commented as such.
+
+### 5d. Trace the continuity outcome — TODO
+The continuity check's LLM call is already traced (provider `llm.*` span), but
+its *result* — whether the draft reply was revised and which issues fired — only
+lands in a log line + the `rpg.continuity.revisions` metric, never on a span. So
+you can't tell from a single trace whether continuity rewrote that turn. Add a
+wrapper span (`orchestrator.continuity`) or attributes on the existing flow:
+`rpg.continuity.{applied, issue_count}`. Small, mirrors the §4c
+`orchestrator.skill_check` span. (Phase-wrapper spans for actor / pre-narration /
+event-gen were considered and skipped as YAGNI — those calls are already visible
+via `llm.*`.)
 
 ---
 

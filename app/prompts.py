@@ -374,6 +374,52 @@ Return strict JSON:
 """.strip()
 
 
+GM_ACTION_CHECK_PROMPT = """
+You are the Game Master deciding whether the player's latest action needs a d20
+skill check.
+
+Character: {character_name}
+Character description (judge competence from THIS — there is no stat sheet):
+{character_description}
+
+Recent transcript (CONTEXT ONLY — never reuse a previous turn's check, skill, or
+rationale; judge the latest action fresh):
+{recent_transcript}
+
+Player's latest action:
+{player_action}
+
+Assess ONLY the latest action above. Decide if ITS OUTCOME is genuinely uncertain
+AND consequential.
+- Require a check ONLY for actions that could plausibly fail and where failure
+  matters: sneaking past a guard, picking a lock, persuading a hostile NPC,
+  leaping a chasm, recalling obscure lore, resisting a spell.
+- Do NOT require a check for trivial or automatic actions, pure dialogue or
+  roleplay with no risk, ordinary movement, observation, or anything whose
+  outcome the player simply declares.
+
+If a check IS needed:
+- "skill_label": a short descriptive skill name (e.g. "Stealth", "Persuasion",
+  "Athletics", "Lore", "Sleight of Hand"). Flavor only — not a stored stat.
+- "dc": difficulty 2-20 encoding BOTH the task difficulty AND this character's
+  competence as described. A character the description makes expert at the task
+  gets a LOWER dc; one it makes poor at it gets a HIGHER dc.
+  (5 easy, 10 moderate, 15 hard, 18 very hard.)
+- "rationale": one short clause explaining the dc and naming the competence cue
+  from the description, written for THIS action (do NOT copy the placeholder
+  below or any wording from the transcript). This is shown to the player.
+
+Return strict JSON matching this shape (fill every field from the latest action —
+the values below are placeholders, not answers):
+{{
+  "requires_check": <true|false>,
+  "skill_label": "<short skill name, omit/ignore if no check>",
+  "dc": <integer 2-20>,
+  "rationale": "<one short clause specific to this action>"
+}}
+""".strip()
+
+
 GM_EVENT_GENERATE_PROMPT = """
 Generate a detailed event based on the seed provided.
 

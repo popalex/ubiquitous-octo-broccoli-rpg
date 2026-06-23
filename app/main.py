@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.models import (
     CharacterCard,
+    DiceRoll,
     EpisodeSummary,
     MemoryFact,
     Quest,
@@ -30,6 +31,7 @@ from app.schemas import (
     CharacterLoadResponse,
     ChatRequest,
     ChatResponse,
+    DiceRollResult,
     EpisodeSummaryResponse,
     GMChatRequest,
     GMChatResponse,
@@ -79,22 +81,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     if settings.dev_mode:
         logger.info(
-            "+ DEV MODE ENABLED - model: %s, timeout: %.0fs, world_state: %s, quests: %s, suggestions: %s",
+            "+ DEV MODE ENABLED - model: %s, timeout: %.0fs, world_state: %s, quests: %s, suggestions: %s, dice: %s",
             settings.dev_model_name,
             settings.request_timeout_seconds,
             "on" if settings.world_state_enabled else "off",
             "on" if settings.quests_enabled else "off",
             "on" if settings.suggestions_enabled else "off",
+            "on" if settings.dice_enabled else "off",
         )
     else:
         logger.info(
-            "+ Production mode - Actor: %s, Memory: %s, GM: %s, world_state: %s, quests: %s, suggestions: %s",
+            "+ Production mode - Actor: %s, Memory: %s, GM: %s, world_state: %s, quests: %s, suggestions: %s, dice: %s",
             settings.actor_model_name,
             settings.memory_model_name,
             settings.gm_model_name,
             "on" if settings.world_state_enabled else "off",
             "on" if settings.quests_enabled else "off",
             "on" if settings.suggestions_enabled else "off",
+            "on" if settings.dice_enabled else "off",
         )
 
     yield
@@ -123,6 +127,7 @@ async def health(db: AsyncSession = Depends(get_db)) -> HealthResponse:
             suggestions_enabled=settings.suggestions_enabled,
             world_state_enabled=settings.world_state_enabled,
             quests_enabled=settings.quests_enabled,
+            dice_enabled=settings.dice_enabled,
         )
     except Exception as exc:  # pragma: no cover
         logger.exception("healthcheck failed")
@@ -196,6 +201,7 @@ async def init_session(payload: SessionInitRequest, db: AsyncSession = Depends(g
         time_of_day=payload.time_of_day,
         world_state_enabled=payload.world_state_enabled,
         quests_enabled=payload.quests_enabled,
+        dice_enabled=payload.dice_enabled,
     )
     db.add(session)
     await db.commit()
@@ -228,7 +234,18 @@ async def get_session_turns(session_id: str, db: AsyncSession = Depends(get_db))
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
     turns = (await db.scalars(select(Turn).where(Turn.session_id == session_id).order_by(Turn.turn_index.asc()))).all()
-    return [TurnResponse.model_validate(t) for t in turns]
+    # Attach any persisted skill-check rolls so the chronicle re-renders the chips
+    # on reload (§4c). Rolls link to the assistant turn they resolved.
+    rolls = (await db.scalars(select(DiceRoll).where(DiceRoll.session_id == session_id))).all()
+    rolls_by_turn = {r.turn_id: r for r in rolls if r.turn_id is not None}
+    responses = []
+    for t in turns:
+        tr = TurnResponse.model_validate(t)
+        roll = rolls_by_turn.get(t.id)
+        if roll is not None:
+            tr.roll = DiceRollResult.model_validate(roll)
+        responses.append(tr)
+    return responses
 
 
 @app.get("/session/{session_id}/suggestions", response_model=SuggestionsResponse)
