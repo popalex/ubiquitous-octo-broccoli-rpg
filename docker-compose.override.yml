@@ -11,11 +11,24 @@ services:
     environment:
       # Dev: single small model to save RAM (base compose defaults DEV_MODE off).
       DEV_MODE: ${DEV_MODE:-true}
+      # Dev model: qwen2.5:3b is steadier on the JSON judge (assess_action /
+      # post-turn judge) than llama3.2:3b. Old model kept as a backup below —
+      # swap the two comments to revert.
+      # DEV_MODEL_NAME: ${DEV_MODEL_NAME:-llama3.2:3b}   # backup
+      DEV_MODEL_NAME: ${DEV_MODEL_NAME:-qwen2.5:3b}
       GM_ENABLED: ${GM_ENABLED:-true}
       WORLD_STATE_ENABLED: ${WORLD_STATE_ENABLED:-true}
       QUESTS_ENABLED: ${QUESTS_ENABLED:-true}
       SUGGESTIONS_ENABLED: ${SUGGESTIONS_ENABLED:-true}
       DICE_ENABLED: ${DICE_ENABLED:-true}
+
+  # ollama-init lives in the base compose; override its dev model here so the
+  # model it pulls matches the api's DEV_MODEL_NAME above (keep them in lock-step).
+  ollama-init:
+    environment:
+      DEV_MODE: ${DEV_MODE:-true}
+      # DEV_MODEL_NAME: ${DEV_MODEL_NAME:-llama3.2:3b}   # backup
+      DEV_MODEL_NAME: ${DEV_MODEL_NAME:-qwen2.5:3b}
 
   frontend:
     # ── dev (Vite HMR) ──────────────────────────────────────
