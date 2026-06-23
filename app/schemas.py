@@ -136,9 +136,12 @@ class SessionMemoryResponse(BaseModel):
     relationships: list[RelationshipStateResponse]
 
 
-class DiceRollResult(BaseModel):
+class DiceRollResult(ORMModel):
     """A resolved d20 skill check (§4c). ``rationale`` records *why* the GM set
-    that DC — surfaced in the UI/logs so DC-encoded competence is visible."""
+    that DC — surfaced in the UI/logs so DC-encoded competence is visible.
+
+    Inherits ``ORMModel`` (``from_attributes=True``) so the chronicle-reload route
+    can ``model_validate`` a persisted ``DiceRoll`` ORM row directly."""
 
     skill_label: str
     dc: int

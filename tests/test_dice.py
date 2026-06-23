@@ -26,7 +26,7 @@ from app.services.features import dice_on
 from app.services.game_master import GameMasterService
 from app.services.orchestrator import OrchestratorService
 from tests.conftest import MockProvider, make_test_settings
-from tests.factories import SessionFactory
+from tests.factories import SessionFactory, TurnFactory
 
 
 class _FixedRng:
@@ -328,3 +328,40 @@ async def test_gm_chat_returns_roll(mock_provider: MockProvider, db_session: Asy
 
     rows = (await db_session.scalars(select(DiceRoll).where(DiceRoll.session_id == session.id))).all()
     assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_turns_route_attaches_persisted_roll(async_client, db_session: AsyncSession) -> None:
+    """Regression: GET /session/{id}/turns must re-attach a persisted DiceRoll on
+    reload. DiceRollResult is plain pydantic, so the route's model_validate on a
+    DiceRoll ORM row crashed with a 500 until DiceRollResult became ORM-aware."""
+    session = SessionFactory()
+    await db_session.flush()
+    TurnFactory(session=session, turn_index=1, role="user", content="I slip past the guards.")
+    reply = TurnFactory(session=session, turn_index=2, role="assistant", content="You melt into shadow.")
+    await db_session.flush()
+    db_session.add(
+        DiceRoll(
+            session_id=session.id,
+            turn_id=reply.id,
+            skill_label="Stealth",
+            dc=12,
+            die=15,
+            outcome="success",
+            rationale="nimble rogue -> easy",
+        )
+    )
+    await db_session.flush()
+
+    response = await async_client.get(f"/session/{session.id}/turns")
+    assert response.status_code == 200
+    turns = response.json()
+    by_index = {t["turn_index"]: t for t in turns}
+    # roll attached to the assistant turn it resolved, and only that turn
+    assert by_index[1]["roll"] is None
+    roll = by_index[2]["roll"]
+    assert roll is not None
+    assert roll["skill_label"] == "Stealth"
+    assert roll["dc"] == 12
+    assert roll["die"] == 15
+    assert roll["outcome"] == "success"
