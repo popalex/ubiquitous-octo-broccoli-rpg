@@ -382,13 +382,15 @@ Character: {character_name}
 Character description (judge competence from THIS — there is no stat sheet):
 {character_description}
 
-Recent transcript:
+Recent transcript (CONTEXT ONLY — never reuse a previous turn's check, skill, or
+rationale; judge the latest action fresh):
 {recent_transcript}
 
 Player's latest action:
 {player_action}
 
-Decide if the OUTCOME of this action is genuinely uncertain AND consequential.
+Assess ONLY the latest action above. Decide if ITS OUTCOME is genuinely uncertain
+AND consequential.
 - Require a check ONLY for actions that could plausibly fail and where failure
   matters: sneaking past a guard, picking a lock, persuading a hostile NPC,
   leaping a chasm, recalling obscure lore, resisting a spell.
@@ -404,15 +406,16 @@ If a check IS needed:
   gets a LOWER dc; one it makes poor at it gets a HIGHER dc.
   (5 easy, 10 moderate, 15 hard, 18 very hard.)
 - "rationale": one short clause explaining the dc and naming the competence cue
-  from the description (e.g. "nimble cutpurse, alert guard -> moderate"). This
-  is shown to the player.
+  from the description, written for THIS action (do NOT copy the placeholder
+  below or any wording from the transcript). This is shown to the player.
 
-Return strict JSON:
+Return strict JSON matching this shape (fill every field from the latest action —
+the values below are placeholders, not answers):
 {{
-  "requires_check": true/false,
-  "skill_label": "Stealth",
-  "dc": 12,
-  "rationale": "nimble cutpurse, but the guard is alert -> moderate"
+  "requires_check": <true|false>,
+  "skill_label": "<short skill name, omit/ignore if no check>",
+  "dc": <integer 2-20>,
+  "rationale": "<one short clause specific to this action>"
 }}
 """.strip()
 

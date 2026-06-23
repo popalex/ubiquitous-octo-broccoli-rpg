@@ -204,10 +204,26 @@ turn's roll (by `turn_id`) so reloading a chronicle re-renders the chip just
 before its turn; `ForkService` copies dice rolls on kept turns (remapped
 `turn_id`) so forks keep their rolls.
 
-**Follow-ups:** the per-turn `assess_action` is still a full LLM call on every
-action-shaped message (cost scales with the model — the §2-style "fold into an
-existing call" idea could help); and the heuristic pre-filter is deliberately
-conservative (only skips bare questions), so most statements still get assessed.
+**Follow-ups:**
+- **Cost — fold `assess_action` into pre-narration.** It's still a full,
+  separate LLM round-trip on every action-shaped message, on the critical path
+  *before* prose (the roll directive feeds the narration, so it can't move to the
+  post-turn judge or be fully parallelized). Pre-narration already runs an LLM
+  before the actor in GM mode — have it emit the assessment (`requires_check` /
+  `skill_label` / `dc` / `rationale`) as structured JSON alongside the
+  scene-setting, collapsing two serial round-trips into one. More feasible now on
+  qwen2.5:3b (steadier JSON). Needs a combined-output test.
+- **Bug — assessment echoes the previous turn.** Observed in chronicle
+  `01KVTVBRKY23W87A10WABH8511`: a perception message ("Notice any other unusual
+  signs around you") got a **Stealth** check with a *byte-identical* `rationale`
+  to the prior real stealth action. `assess_action` feeds the last 6 turns as
+  `recent_transcript`, and the small model parrots the previous roll instead of
+  judging the new message. Fix: tighten `GM_ACTION_CHECK_PROMPT` to assess *only*
+  `player_action` (transcript is context, never to be reused), and/or trim the
+  transcript fed to the assessment.
+- **Pre-filter is conservative** (only skips bare questions), so most statements
+  still get assessed — fine, but related to the echo bug above (imperatives like
+  "Notice…" pass through to `assess_action`).
 
 ### 4d. Chronicle export
 Turns + episode summaries → clean Markdown (chapters from summaries, dialogue

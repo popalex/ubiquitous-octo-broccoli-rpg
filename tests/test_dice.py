@@ -143,6 +143,19 @@ async def test_assess_action_provider_failure_is_no_check(
     assert assessment.requires_check is False
 
 
+def test_assess_prompt_has_no_copyable_example() -> None:
+    """Regression: the prompt once shipped a fully-formed example rationale
+    ("nimble cutpurse, ... -> moderate") that small models copied verbatim,
+    producing a Stealth check for an unrelated perception message (chronicle
+    01KVTVBRKY23W87A10WABH8511). The example must stay non-literal and the
+    transcript must be flagged context-only."""
+    from app.prompts import GM_ACTION_CHECK_PROMPT
+
+    assert "nimble cutpurse" not in GM_ACTION_CHECK_PROMPT
+    assert "CONTEXT ONLY" in GM_ACTION_CHECK_PROMPT
+    assert "Assess ONLY the latest action" in GM_ACTION_CHECK_PROMPT
+
+
 # ---------------------------------------------------------------------------
 # Feature resolution (session override → global)
 # ---------------------------------------------------------------------------
