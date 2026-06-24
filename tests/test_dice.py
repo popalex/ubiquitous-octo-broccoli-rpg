@@ -78,9 +78,7 @@ def test_roll_check_never_returns_critical_failure() -> None:
         (9, 0, 10, 9, FAILURE),  # modifier 0 == legacy behavior
     ],
 )
-def test_roll_check_applies_modifier(
-    die: int, modifier: int, dc: int, expected_total: int, expected: str
-) -> None:
+def test_roll_check_applies_modifier(die: int, modifier: int, dc: int, expected_total: int, expected: str) -> None:
     rolled, total, outcome = roll_check(dc, modifier, rng=_FixedRng(die))
     assert rolled == die
     assert total == expected_total

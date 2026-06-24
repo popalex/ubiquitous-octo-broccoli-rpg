@@ -412,9 +412,7 @@ class GameMasterService:
             attribute,
             rationale,
         )
-        return ActionAssessment(
-            requires_check=True, skill_label=skill, dc=dc, rationale=rationale, attribute=attribute
-        )
+        return ActionAssessment(requires_check=True, skill_label=skill, dc=dc, rationale=rationale, attribute=attribute)
 
     async def generate_event(
         self,

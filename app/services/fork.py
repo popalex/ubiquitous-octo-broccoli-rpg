@@ -233,9 +233,7 @@ class ForkService:
 
             # --- character sheet (progression is per-chronicle; the fork inherits
             # where the parent stood — current attributes/level/xp) ---
-            parent_sheet = await db.scalar(
-                select(CharacterSheet).where(CharacterSheet.session_id == parent.id)
-            )
+            parent_sheet = await db.scalar(select(CharacterSheet).where(CharacterSheet.session_id == parent.id))
             if parent_sheet is not None:
                 db.add(
                     CharacterSheet(
