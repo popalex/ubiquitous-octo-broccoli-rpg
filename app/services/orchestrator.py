@@ -206,7 +206,7 @@ class OrchestratorService:
             response_text=continuity.final_reply,
             turn_id=assistant_turn.id,
         )
-        advancement = await self._apply_progression(db, session, None, quest_changes)
+        advancement = await self._apply_progression(db, session, None, quest_changes, assistant_turn)
         logger.info(
             "chat session=%s turn_count=%s continuity_applied=%s", session.id, session.turn_count, continuity.applied
         )
@@ -326,16 +326,18 @@ class OrchestratorService:
         session: ChatSession,
         roll: DiceRollResult | None,
         quest_changes: list[QuestChange],
+        assistant_turn: Turn,
     ) -> list[str]:
         """Grant XP from this turn's check + quest completions and apply any
-        level-ups (todo-rpg Phase 2). Returns 'you leveled / improved X' beats for
-        the response. Best-effort — sheet feature off or any failure yields []."""
+        level-ups (todo-rpg Phase 2). Returns 'you leveled / improved X' beats and
+        persists them on ``assistant_turn`` so a chronicle reload re-renders them
+        (mirrors how a resolved roll is persisted + re-attached on /turns).
+
+        ``grant_xp`` loads the sheet itself (under a row lock), so there is no
+        pre-load here. Best-effort — sheet feature off or any failure yields []."""
         if not character_sheet_on(session, self.settings):
             return []
         try:
-            sheet = await self.character_sheet.load_for_session(db, session.id)
-            if sheet is None:
-                return []
             advancement: list[str] = []
             # Successful checks: XP tagged with the attribute used, so a resulting
             # level-up trains that attribute.
@@ -346,7 +348,7 @@ class OrchestratorService:
                     else self.settings.xp_per_success
                 )
                 level_up = await self.character_sheet.grant_xp(
-                    db, sheet, amount, attribute_key=roll.attribute, reason="check"
+                    db, session.id, amount, attribute_key=roll.attribute, reason="check"
                 )
                 if level_up is not None:
                     advancement.extend(level_up.notifications())
@@ -354,10 +356,13 @@ class OrchestratorService:
             completed = sum(1 for c in quest_changes if c.change == "completed")
             if completed:
                 level_up = await self.character_sheet.grant_xp(
-                    db, sheet, self.settings.xp_per_quest_complete * completed, reason="quest"
+                    db, session.id, self.settings.xp_per_quest_complete * completed, reason="quest"
                 )
                 if level_up is not None:
                     advancement.extend(level_up.notifications())
+            if advancement:
+                assistant_turn.advancement_json = advancement
+                await db.commit()
             return advancement
         except Exception:
             logger.exception("progression apply failed for session=%s", session.id)
@@ -531,7 +536,7 @@ class OrchestratorService:
             turn_id=assistant_turn.id,
         )
         quest_changes += extra_changes
-        advancement = await self._apply_progression(db, session, dice_result, quest_changes)
+        advancement = await self._apply_progression(db, session, dice_result, quest_changes, assistant_turn)
 
         logger.info(
             "gm_chat session=%s turn_count=%s event_triggered=%s",
@@ -815,7 +820,7 @@ class OrchestratorService:
             turn_id=assistant_turn.id,
         )
         quest_changes += extra_changes
-        advancement = await self._apply_progression(db, session, dice_result, quest_changes)
+        advancement = await self._apply_progression(db, session, dice_result, quest_changes, assistant_turn)
         for frame in self._stream_post_turn_results(quest_changes, suggestions, advancement):
             yield frame
 
@@ -923,7 +928,7 @@ class OrchestratorService:
             response_text=full_reply,
             turn_id=assistant_turn.id,
         )
-        advancement = await self._apply_progression(db, session, None, quest_changes)
+        advancement = await self._apply_progression(db, session, None, quest_changes, assistant_turn)
         for frame in self._stream_post_turn_results(quest_changes, suggestions, advancement):
             yield frame
 

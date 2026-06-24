@@ -54,4 +54,20 @@ describe("turnsToMessages", () => {
     expect(messages[0].roll).toMatchObject({ skill_label: "Stealth", outcome: "failure" });
     expect(messages[1]).toMatchObject({ id: "7", content: "You slip past." });
   });
+
+  it("re-renders a level-up beat as a card just after the turn it resolved", () => {
+    const messages = turnsToMessages([
+      {
+        turn_index: 8,
+        role: "assistant",
+        content: "The lock yields.",
+        turn_type: "chat",
+        advancement: ["You reached level 2.", "FINESSE increased to +4."],
+      },
+    ]);
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({ id: "8", content: "The lock yields." });
+    expect(messages[1]).toMatchObject({ id: "advancement-8", role: "narrator", messageType: "advancement" });
+    expect(messages[1].content).toContain("You reached level 2.");
+  });
 });

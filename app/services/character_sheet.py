@@ -122,22 +122,38 @@ class CharacterSheetService:
     async def grant_xp(
         self,
         db: AsyncSession,
-        sheet: CharacterSheet,
+        session_id: str,
         amount: int,
         *,
         attribute_key: str | None = None,
         reason: str = "",
     ) -> LevelUpResult | None:
-        """Add ``amount`` XP and apply any resulting level-ups (each bumps one
-        attribute). Returns a :class:`LevelUpResult` when at least one level was
-        gained, else ``None``. Commits its own write; best-effort — any failure is
-        logged and swallowed so it never breaks the turn (repo convention)."""
+        """Add ``amount`` XP to the session's sheet and apply any resulting
+        level-ups (each bumps one attribute). Returns a :class:`LevelUpResult`
+        when at least one level was gained, else ``None`` (also ``None`` when the
+        session has no sheet). Commits its own write; best-effort — any failure is
+        logged and swallowed so it never breaks the turn (repo convention).
+
+        The sheet is re-read **under a row lock** (``FOR UPDATE``) rather than
+        trusting a caller-supplied instance: the sheet has no version column like
+        the world-state ledger, so without the lock two overlapping turns on the
+        same chronicle would read-modify-write and lose an XP grant. ``populate_existing``
+        forces a fresh read even if this session already cached the row (e.g. the
+        pre-roll modifier load in the orchestrator)."""
         if amount <= 0:
             return None
         with tracer.start_as_current_span("character_sheet.grant_xp") as span:
-            span.set_attribute("rpg.session_id", str(sheet.session_id))
+            span.set_attribute("rpg.session_id", str(session_id))
             span.set_attribute("rpg.sheet.xp_amount", amount)
             span.set_attribute("rpg.sheet.reason", reason)
+            sheet = await db.scalar(
+                select(CharacterSheet)
+                .where(CharacterSheet.session_id == session_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if sheet is None:
+                return None
             old_level = sheet.level
             sheet.xp += amount
             target_level = self.level_for_xp(sheet.xp)
@@ -151,10 +167,9 @@ class CharacterSheetService:
                     bumps.append((attr, new_value))
                     attribute_bumps.add(1, {"attribute": attr})
             try:
-                db.add(sheet)
                 await db.commit()
             except SQLAlchemyError:
-                logger.exception("character-sheet xp grant failed for session=%s", sheet.session_id)
+                logger.exception("character-sheet xp grant failed for session=%s", session_id)
                 await db.rollback()
                 return None
             xp_granted.add(amount, {"reason": reason or "unspecified"})

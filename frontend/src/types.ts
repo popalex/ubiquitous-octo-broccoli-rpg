@@ -79,6 +79,8 @@ export type TurnRecord = {
   turn_type: string;
   // The skill check this turn resolved, if any (§4c) — re-rendered as a chip.
   roll?: DiceRoll | null;
+  // Level-up beats this turn produced (todo-rpg Phase 2) — re-rendered as a card.
+  advancement?: string[] | null;
 };
 
 export type CharacterLoadPayload = {

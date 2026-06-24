@@ -17,19 +17,30 @@ export function turnsToMessages(turns: TurnRecord[]): ChatMessage[] {
           ? "event"
           : "chat") as ChatMessage["messageType"],
     };
+    const messages: ChatMessage[] = [];
     // A resolved skill check re-renders as a chip just before the turn it
     // resolved (matching the live order: scene → roll → outcome).
     if (t.roll) {
       const verdict = t.roll.outcome.replace("_", " ");
-      const rollMessage: ChatMessage = {
+      messages.push({
         id: `roll-${t.turn_index}`,
         role: "narrator",
         content: `Skill check — ${t.roll.skill_label} vs DC ${t.roll.dc}: rolled ${t.roll.die} (${verdict})`,
         messageType: "roll",
         roll: t.roll,
-      };
-      return [rollMessage, message];
+      });
     }
-    return [message];
+    messages.push(message);
+    // Level-up beats this turn produced re-render as a card just after the reply
+    // (matching the live order: reply → advancement).
+    if (t.advancement && t.advancement.length > 0) {
+      messages.push({
+        id: `advancement-${t.turn_index}`,
+        role: "narrator",
+        content: `**${t.advancement.join(" ")}**`,
+        messageType: "advancement",
+      });
+    }
+    return messages;
   });
 }

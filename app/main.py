@@ -273,6 +273,7 @@ async def get_session_turns(session_id: str, db: AsyncSession = Depends(get_db))
         roll = rolls_by_turn.get(t.id)
         if roll is not None:
             tr.roll = DiceRollResult.model_validate(roll)
+        tr.advancement = t.advancement_json or None
         responses.append(tr)
     return responses
 

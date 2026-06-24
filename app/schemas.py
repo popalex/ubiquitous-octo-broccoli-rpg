@@ -183,6 +183,9 @@ class TurnResponse(ORMModel):
     # The skill check this turn resolved, if any (§4c) — so reloading a chronicle
     # re-renders the roll chip. Attached by the route, not an ORM column.
     roll: DiceRollResult | None = None
+    # Level-up beats this turn produced (todo-rpg Phase 2) — re-rendered on reload.
+    # Read from the ORM ``advancement_json`` column by the route.
+    advancement: list[str] | None = None
 
 
 class SessionListItem(BaseModel):

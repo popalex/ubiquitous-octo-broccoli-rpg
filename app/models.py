@@ -171,6 +171,10 @@ class Turn(TimestampMixin, Base):
 
     # GM mode field: 'chat', 'gm_narration', 'gm_event'
     turn_type: Mapped[str] = mapped_column(String(32), default="chat", nullable=False)
+    # Level-up beats ("You reached level 2." / "FINESSE increased to +3.") produced
+    # by this turn (todo-rpg Phase 2). Persisted so a chronicle reload re-renders
+    # them, mirroring how a resolved DiceRoll re-attaches on /turns. NULL = none.
+    advancement_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     session: Mapped[Session] = relationship(back_populates="turns")
 

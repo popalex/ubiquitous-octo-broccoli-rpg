@@ -25,6 +25,9 @@ def upgrade() -> None:
     # sessions keep behavior).
     op.add_column('sessions', sa.Column('character_sheet_enabled', sa.Boolean(), nullable=True))
 
+    # Level-up beats produced by a turn, persisted so a reload re-renders them.
+    op.add_column('turns', sa.Column('advancement_json', sa.JSON(), nullable=True))
+
     # Character-sheet competence on existing skill checks. modifier defaults to 0;
     # total backfills to the raw die (no sheet was in play when these rolled).
     op.add_column('dice_rolls', sa.Column('attribute', sa.String(length=20), nullable=True))
@@ -62,4 +65,5 @@ def downgrade() -> None:
     op.drop_column('dice_rolls', 'total')
     op.drop_column('dice_rolls', 'modifier')
     op.drop_column('dice_rolls', 'attribute')
+    op.drop_column('turns', 'advancement_json')
     op.drop_column('sessions', 'character_sheet_enabled')

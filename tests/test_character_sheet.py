@@ -20,7 +20,7 @@ from app.services.fork import ForkService
 from app.services.orchestrator import OrchestratorService
 from app.services.quests import QuestChange
 from tests.conftest import MockProvider, make_test_settings
-from tests.factories import CharacterCardFactory, CharacterSheetFactory, QuestFactory, SessionFactory
+from tests.factories import CharacterCardFactory, CharacterSheetFactory, QuestFactory, SessionFactory, TurnFactory
 
 # ---------------------------------------------------------------------------
 # Curve (pure)
@@ -64,7 +64,7 @@ async def test_grant_xp_single_level_bumps_triggering_attribute(db_session: Asyn
     sheet = CharacterSheetFactory(might=1, finesse=1, wits=1, presence=1, level=1, xp=0)
     await db_session.flush()
 
-    result = await svc.grant_xp(db_session, sheet, 100, attribute_key="finesse", reason="check")
+    result = await svc.grant_xp(db_session, sheet.session_id, 100, attribute_key="finesse", reason="check")
 
     assert result is not None
     assert (result.old_level, result.new_level) == (1, 2)
@@ -79,7 +79,7 @@ async def test_grant_xp_multi_level_jump(db_session: AsyncSession) -> None:
     sheet = CharacterSheetFactory(might=1, level=1, xp=0)
     await db_session.flush()
 
-    result = await svc.grant_xp(db_session, sheet, 250, attribute_key="might")
+    result = await svc.grant_xp(db_session, sheet.session_id, 250, attribute_key="might")
 
     assert result is not None and result.new_level == 3  # 250 XP -> level 3
     assert sheet.might == 3  # two bumps from level 1->3
@@ -93,7 +93,7 @@ async def test_grant_xp_falls_back_to_lowest_attribute(db_session: AsyncSession)
     sheet = CharacterSheetFactory(might=1, finesse=2, wits=3, presence=4, level=1, xp=0)
     await db_session.flush()
 
-    result = await svc.grant_xp(db_session, sheet, 100)
+    result = await svc.grant_xp(db_session, sheet.session_id, 100)
 
     assert result is not None and result.bumps == [("might", 2)]
 
@@ -104,7 +104,7 @@ async def test_grant_xp_clamps_at_max(db_session: AsyncSession) -> None:
     sheet = CharacterSheetFactory(might=6, finesse=6, wits=6, presence=6, level=1, xp=0)
     await db_session.flush()
 
-    result = await svc.grant_xp(db_session, sheet, 100, attribute_key="might")
+    result = await svc.grant_xp(db_session, sheet.session_id, 100, attribute_key="might")
 
     assert result is not None and result.new_level == 2
     assert result.bumps == []  # everything capped, level still rises
@@ -117,9 +117,9 @@ async def test_grant_xp_no_level_returns_none(db_session: AsyncSession) -> None:
     sheet = CharacterSheetFactory(level=1, xp=0)
     await db_session.flush()
 
-    assert await svc.grant_xp(db_session, sheet, 40) is None  # below the threshold
+    assert await svc.grant_xp(db_session, sheet.session_id, 40) is None  # below the threshold
     assert sheet.xp == 40
-    assert await svc.grant_xp(db_session, sheet, 0) is None  # no-op
+    assert await svc.grant_xp(db_session, sheet.session_id, 0) is None  # no-op
 
 
 # ---------------------------------------------------------------------------
@@ -320,14 +320,40 @@ async def test_quest_completion_grants_xp(mock_provider: MockProvider, db_sessio
     orchestrator = _sheet_orchestrator(mock_provider, sheet_xp_curve_base=100, xp_per_quest_complete=100)
     session = SessionFactory(gm_enabled=True, turn_count=1)
     sheet = CharacterSheetFactory(session=session, might=1, finesse=2, wits=3, presence=4, level=1, xp=0)
+    assistant_turn = TurnFactory(session=session, turn_index=2, role="assistant", content="The deed is done.")
     await db_session.flush()
 
     # _apply_progression only reads `.change`; a transient quest avoids attaching
     # to the persisted session (which triggers a cascade SAWarning).
     completed = QuestChange(quest=QuestFactory.build(), change="completed")
-    advancement = await orchestrator._apply_progression(db_session, session, None, [completed])
+    advancement = await orchestrator._apply_progression(db_session, session, None, [completed], assistant_turn)
 
     assert any("level 2" in line for line in advancement)
     await db_session.refresh(sheet)
     assert sheet.xp == 100
     assert sheet.might == 2  # lowest attribute bumped (no check attribute to credit)
+    # Persisted on the turn so a chronicle reload re-renders the beat.
+    assert assistant_turn.advancement_json == advancement
+
+
+@pytest.mark.asyncio
+async def test_turns_route_attaches_persisted_advancement(async_client: AsyncClient, db_session: AsyncSession) -> None:
+    """Regression: GET /session/{id}/turns must re-attach persisted level-up beats
+    so a chronicle reload re-renders them (mirrors the dice-roll re-attach)."""
+    session = SessionFactory()
+    await db_session.flush()
+    TurnFactory(session=session, turn_index=1, role="user", content="I force the lock.")
+    TurnFactory(
+        session=session,
+        turn_index=2,
+        role="assistant",
+        content="The lock yields.",
+        advancement_json=["You reached level 2.", "FINESSE increased to +4."],
+    )
+    await db_session.flush()
+
+    response = await async_client.get(f"/session/{session.id}/turns")
+    assert response.status_code == 200
+    by_index = {t["turn_index"]: t for t in response.json()}
+    assert by_index[1]["advancement"] is None
+    assert by_index[2]["advancement"] == ["You reached level 2.", "FINESSE increased to +4."]
