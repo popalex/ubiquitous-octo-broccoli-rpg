@@ -31,21 +31,34 @@ export function Masthead({ phase, health, onHome }: Props) {
             : "Your story unfolds — speak and the world responds."}
         </p>
       </div>
-      <div className="status-strip" role="status" aria-live="polite">
-        <div className={`pill ${health?.status === "ok" ? "ok" : "warn"}`}>
-          <span className="sr-only">{health?.status === "ok" ? "Connected" : "Disconnected"}</span>
-          Realm {health?.status || "..."}
+      <div className="masthead-status">
+        <div className="status-strip" role="status" aria-live="polite">
+          <div className={`pill ${health?.status === "ok" ? "ok" : "warn"}`}>
+            <span className="sr-only">{health?.status === "ok" ? "Connected" : "Disconnected"}</span>
+            Realm {health?.status || "..."}
+          </div>
+          <div className={`pill ${health?.database === "ok" ? "ok" : "warn"}`}>
+            <span className="sr-only">{health?.database === "ok" ? "Connected" : "Disconnected"}</span>
+            Archive {health?.database || "..."}
+          </div>
+          <div className={`pill ${health?.mode === "DEV" ? "warn" : "ok"}`}>
+            <span className="sr-only">{health?.mode === "DEV" ? "Development mode" : "Production mode"}</span>
+            {health?.mode || "..."}
+          </div>
         </div>
-        <div className={`pill ${health?.database === "ok" ? "ok" : "warn"}`}>
-          <span className="sr-only">{health?.database === "ok" ? "Connected" : "Disconnected"}</span>
-          Archive {health?.database || "..."}
-        </div>
-        <div className={`pill ${health?.mode === "DEV" ? "warn" : "ok"}`}>
-          <span className="sr-only">{health?.mode === "DEV" ? "Development mode" : "Production mode"}</span>
-          {health?.mode || "..."}
-        </div>
-        <div className="pill neutral">Local Models</div>
-        <div className="pill neutral">Ollama</div>
+        {health && (
+          <div className="status-strip models-strip" aria-label="Active models">
+            <div className="pill neutral" title="In-character actor model">
+              Actor · {health.actor_model}
+            </div>
+            <div className="pill neutral" title="Game Master model">
+              GM · {health.gm_model}
+            </div>
+            <div className="pill neutral" title="Memory / world-state / quests model">
+              Memory · {health.memory_model}
+            </div>
+          </div>
+        )}
       </div>
     </header>
   );
