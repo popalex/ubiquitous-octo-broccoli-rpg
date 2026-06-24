@@ -5,6 +5,7 @@ from factory.alchemy import SQLAlchemyModelFactory
 
 from app.models import (
     CharacterCard,
+    CharacterSheet,
     EpisodeSummary,
     MemoryFact,
     Quest,
@@ -118,3 +119,18 @@ class QuestFactory(SQLAlchemyModelFactory):
     accepted_turn = 0
     last_progress_turn = 0
     last_escalation_turn = 0
+
+
+class CharacterSheetFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = CharacterSheet
+        sqlalchemy_session = None
+        sqlalchemy_session_persistence = None
+
+    session = factory.SubFactory(SessionFactory)
+    might = 1
+    finesse = 1
+    wits = 1
+    presence = 1
+    level = 1
+    xp = 0

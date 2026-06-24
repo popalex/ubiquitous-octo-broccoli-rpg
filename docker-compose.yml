@@ -140,6 +140,10 @@ services:
       WORLD_STATE_ENABLED: ${WORLD_STATE_ENABLED:-true}
       QUESTS_ENABLED: ${QUESTS_ENABLED:-true}
       SUGGESTIONS_ENABLED: ${SUGGESTIONS_ENABLED:-true}
+      # Character sheet + progression (todo-rpg Phases 1+2) — on by default for new
+      # chronicles like quests/suggestions. Pairs with dice: the sheet's attribute
+      # modifier only shows up on skill checks.
+      CHARACTER_SHEET_ENABLED: ${CHARACTER_SHEET_ENABLED:-true}
       # Dice / skill checks (§4c) ship dark in prod, on in the dev override.
       DICE_ENABLED: ${DICE_ENABLED:-false}
     depends_on:

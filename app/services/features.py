@@ -27,3 +27,9 @@ def dice_on(session: ChatSession, settings: Settings) -> bool:
     if session.dice_enabled is not None:
         return session.dice_enabled
     return settings.dice_enabled
+
+
+def character_sheet_on(session: ChatSession, settings: Settings) -> bool:
+    if session.character_sheet_enabled is not None:
+        return session.character_sheet_enabled
+    return settings.character_sheet_enabled

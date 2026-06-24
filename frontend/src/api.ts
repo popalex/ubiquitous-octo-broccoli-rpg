@@ -8,6 +8,7 @@ export const storageKeys = {
   worldStateEnabled: "small-rpg:world-state-enabled",
   questsEnabled: "small-rpg:quests-enabled",
   diceEnabled: "small-rpg:dice-enabled",
+  characterSheetEnabled: "small-rpg:character-sheet-enabled",
   worldStateId: "small-rpg:world-state-id",
   sessionId: "small-rpg:session-id",
   sessionTitle: "small-rpg:session-title",

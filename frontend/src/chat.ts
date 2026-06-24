@@ -42,6 +42,29 @@ function handleQuestUpdate(
   ]);
 }
 
+// Level-up beats (todo-rpg Phase 2): render the "you reached level N / X
+// increased" strings as a narrator card. The sheet panel refreshes separately
+// when `done` invalidates the sheet query.
+function handleAdvancement(
+  advancement: unknown,
+  setChatMessages: Dispatch<SetStateAction<ChatMessage[]>>,
+  setStatusText: (v: string) => void,
+): void {
+  if (!Array.isArray(advancement) || advancement.length === 0) return;
+  const lines = advancement.filter((l): l is string => typeof l === "string" && l.trim().length > 0);
+  if (lines.length === 0) return;
+  setStatusText(lines[0]);
+  setChatMessages((current) => [
+    ...current,
+    {
+      id: crypto.randomUUID(),
+      role: "narrator",
+      content: `**${lines.join(" ")}**`,
+      messageType: "advancement",
+    },
+  ]);
+}
+
 // Attach suggested next-action chips from a live SSE frame to the most recent
 // assistant/narrator message. Targeting lives in the shared helper so the
 // chronicle-reload path attaches chips identically.
@@ -193,6 +216,7 @@ function commonStreamHandlers({
     quest_update: (event) =>
       handleQuestUpdate(event.quest as QuestUpdateNotification, setChatMessages, setStatusText),
     suggestions: (event) => attachSuggestions(event.suggestions as string[], setChatMessages),
+    advancement: (event) => handleAdvancement(event.advancement as string[], setChatMessages, setStatusText),
     error: (event) => {
       throw new Error((event.error as string) || "Stream failed.");
     },

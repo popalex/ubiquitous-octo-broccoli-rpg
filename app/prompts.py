@@ -420,6 +420,63 @@ the values below are placeholders, not answers):
 """.strip()
 
 
+# Sheet-aware variant (todo-rpg Phase 1): the character now has a stat sheet, so
+# the DC encodes TASK DIFFICULTY ONLY and the GM names the governing attribute —
+# the engine adds that attribute's modifier to the d20. Competence no longer
+# lives in the DC.
+GM_ACTION_CHECK_PROMPT_SHEET = """
+You are the Game Master deciding whether the player's latest action needs a d20
+skill check.
+
+Character: {character_name}
+Character description (flavor/context only — competence is on the sheet below):
+{character_description}
+
+Character sheet — four attributes, each a flat modifier added to the d20:
+- MIGHT (raw force, athletics, endurance): +{might}
+- FINESSE (agility, stealth, sleight, aim): +{finesse}
+- WITS (reason, lore, perception, cunning): +{wits}
+- PRESENCE (persuasion, deception, willpower, charm): +{presence}
+
+Recent transcript (CONTEXT ONLY — never reuse a previous turn's check, skill, or
+rationale; judge the latest action fresh):
+{recent_transcript}
+
+Player's latest action:
+{player_action}
+
+Assess ONLY the latest action above. Decide if ITS OUTCOME is genuinely uncertain
+AND consequential.
+- Require a check ONLY for actions that could plausibly fail and where failure
+  matters: sneaking past a guard, picking a lock, persuading a hostile NPC,
+  leaping a chasm, recalling obscure lore, resisting a spell.
+- Do NOT require a check for trivial or automatic actions, pure dialogue or
+  roleplay with no risk, ordinary movement, observation, or anything whose
+  outcome the player simply declares.
+
+If a check IS needed:
+- "skill_label": a short descriptive skill name (e.g. "Stealth", "Persuasion",
+  "Athletics", "Lore", "Sleight of Hand"). Flavor only.
+- "attribute": which sheet attribute governs this action — EXACTLY one of
+  "might", "finesse", "wits", "presence". The engine adds its modifier to the roll.
+- "dc": TASK DIFFICULTY ONLY (2-20), independent of how good this character is —
+  the sheet handles competence. (5 easy, 10 moderate, 15 hard, 18 very hard.)
+- "rationale": one short clause explaining the task difficulty, written for THIS
+  action (do NOT copy the placeholder below or any wording from the transcript).
+  This is shown to the player.
+
+Return strict JSON matching this shape (fill every field from the latest action —
+the values below are placeholders, not answers):
+{{
+  "requires_check": <true|false>,
+  "skill_label": "<short skill name, omit/ignore if no check>",
+  "attribute": "<might|finesse|wits|presence>",
+  "dc": <integer 2-20>,
+  "rationale": "<one short clause on task difficulty, specific to this action>"
+}}
+""".strip()
+
+
 GM_EVENT_GENERATE_PROMPT = """
 Generate a detailed event based on the seed provided.
 

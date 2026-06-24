@@ -29,6 +29,7 @@ describe("useStartSession", () => {
       world_state_enabled: null,
       quests_enabled: null,
       dice_enabled: null,
+      character_sheet_enabled: null,
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));

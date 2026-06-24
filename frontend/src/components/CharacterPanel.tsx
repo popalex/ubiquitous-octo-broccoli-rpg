@@ -26,6 +26,8 @@ type Props = {
   setQuestsEnabled: (v: boolean) => void;
   diceEnabled: boolean;
   setDiceEnabled: (v: boolean) => void;
+  characterSheetEnabled: boolean;
+  setCharacterSheetEnabled: (v: boolean) => void;
   currentLocation: string;
   setCurrentLocation: (v: string) => void;
   timeOfDay: string;
@@ -67,6 +69,8 @@ export function CharacterPanel({
   setQuestsEnabled,
   diceEnabled,
   setDiceEnabled,
+  characterSheetEnabled,
+  setCharacterSheetEnabled,
   currentLocation,
   setCurrentLocation,
   timeOfDay,
@@ -291,6 +295,22 @@ export function CharacterPanel({
             </span>
             <span className="toggle-hint">
               {diceEnabled ? "GM rolls a d20 on uncertain actions" : "No dice rolls"}
+            </span>
+          </label>
+
+          <label className="gm-toggle">
+            <input
+              type="checkbox"
+              checked={characterSheetEnabled}
+              onChange={(e) => setCharacterSheetEnabled(e.target.checked)}
+            />
+            <span className="toggle-label">
+              <Swords className="inline-icon" /> Character Sheet
+            </span>
+            <span className="toggle-hint">
+              {characterSheetEnabled
+                ? "Attributes + XP; dice add a stat modifier and grow"
+                : "No stats or progression"}
             </span>
           </label>
 

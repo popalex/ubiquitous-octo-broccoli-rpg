@@ -153,6 +153,7 @@ def _wire_factory_session(db_session: AsyncSession) -> None:
     """Keep factory-boy in sync with the per-test database session."""
     from tests.factories import (
         CharacterCardFactory,
+        CharacterSheetFactory,
         EpisodeSummaryFactory,
         MemoryFactFactory,
         QuestFactory,
@@ -169,6 +170,7 @@ def _wire_factory_session(db_session: AsyncSession) -> None:
         MemoryFactFactory,
         EpisodeSummaryFactory,
         QuestFactory,
+        CharacterSheetFactory,
     ):
         klass._meta.sqlalchemy_session = db_session  # type: ignore[attr-defined]
 

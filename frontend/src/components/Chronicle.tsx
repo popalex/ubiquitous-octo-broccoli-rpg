@@ -8,6 +8,7 @@ import {
   useSessionDetail,
   useSessionMemory,
   useSessionQuests,
+  useSessionSheet,
   useSessionSuggestions,
   useSessionTurns,
   useWorldState,
@@ -16,6 +17,7 @@ import { useForkSession } from "../hooks/useSessionMutations";
 import { turnsToMessages } from "../turns";
 import type { ChatMessage, GMEvent, RetrievedMemory, SessionDetail, TurnRecord } from "../types";
 import { ChatPanel } from "./ChatPanel";
+import { CharacterSheetPanel } from "./CharacterSheetPanel";
 import { CodexPanel } from "./CodexPanel";
 import { MemoryPanel } from "./MemoryPanel";
 import { QuestJournal } from "./QuestJournal";
@@ -80,6 +82,7 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
   const memory = useSessionMemory(sessionId);
   const worldState = useWorldState(sessionId);
   const quests = useSessionQuests(sessionId);
+  const sheet = useSessionSheet(sessionId, detail.character_sheet_enabled);
   const suggestions = useSessionSuggestions(sessionId, detail.suggestions_enabled);
   const refreshMemory = useRefreshMemory();
   const forkSession = useForkSession();
@@ -214,6 +217,10 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
           <span className="meta-label">Dice</span>
           <strong>{detail.dice_enabled ? "On" : "Off"}</strong>
         </div>
+        <div className="summary-item">
+          <span className="meta-label">Sheet</span>
+          <strong>{detail.character_sheet_enabled ? "On" : "Off"}</strong>
+        </div>
       </div>
       <main className="dashboard dashboard-chronicle">
         <ChatPanel
@@ -229,6 +236,7 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
           forkingTurn={forkingTurn}
         />
         <div className="panel-stack">
+          {detail.character_sheet_enabled && <CharacterSheetPanel sheet={sheet.data ?? detail.sheet ?? null} />}
           <CodexPanel worldState={worldState.data ?? null} />
           <QuestJournal sessionId={sessionId} quests={quests.data ?? null} />
           <MemoryPanel

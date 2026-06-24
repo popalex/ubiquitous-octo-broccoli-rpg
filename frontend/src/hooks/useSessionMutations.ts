@@ -37,6 +37,7 @@ export type SessionInitInput = {
   world_state_enabled: boolean | null;
   quests_enabled: boolean | null;
   dice_enabled: boolean | null;
+  character_sheet_enabled: boolean | null;
 };
 
 /** POST /character/load — upserts the character + world templates. */

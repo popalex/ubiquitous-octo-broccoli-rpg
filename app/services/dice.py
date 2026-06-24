@@ -28,20 +28,25 @@ def clamp_dc(dc: int) -> int:
     return max(DC_MIN, min(DC_MAX, dc))
 
 
-def roll_check(dc: int, *, rng: random.Random | None = None) -> tuple[int, str]:
-    """Roll a d20 against ``dc``; return ``(die, outcome)``.
+def roll_check(dc: int, modifier: int = 0, *, rng: random.Random | None = None) -> tuple[int, int, str]:
+    """Roll ``d20 + modifier`` against ``dc``; return ``(die, total, outcome)``.
 
-    ``rng`` is injectable for deterministic tests; defaults to the module RNG.
+    ``modifier`` is the character sheet's attribute modifier (todo-rpg Phase 1) —
+    0 when no sheet is in play, which leaves ``total == die`` and reproduces the
+    original bare-d20 behavior. A natural 20 is always a critical success
+    regardless of the modifier; otherwise ``total >= dc`` succeeds. ``rng`` is
+    injectable for deterministic tests; defaults to the module RNG.
     """
     r = rng or random
     die = r.randint(1, DIE_SIDES)
+    total = die + modifier
     if die == DIE_SIDES:
         outcome = CRITICAL_SUCCESS
-    elif die >= dc:
+    elif total >= dc:
         outcome = SUCCESS
     else:
         outcome = FAILURE
-    return die, outcome
+    return die, total, outcome
 
 
 def message_may_need_check(message: str) -> bool:
@@ -65,7 +70,7 @@ def message_may_need_check(message: str) -> bool:
     return True
 
 
-def roll_directive(skill_label: str, dc: int, die: int, outcome: str) -> str:
+def roll_directive(skill_label: str, dc: int, die: int, outcome: str, modifier: int = 0) -> str:
     """Prompt fragment injected into narration/actor context so the generated
     prose respects the roll instead of inventing its own outcome."""
     verdict = {
@@ -73,8 +78,13 @@ def roll_directive(skill_label: str, dc: int, die: int, outcome: str) -> str:
         SUCCESS: "a SUCCESS",
         FAILURE: "a FAILURE",
     }[outcome]
+    # Show the arithmetic only when a sheet modifier is in play, so no-sheet
+    # chronicles keep the original "rolled N" phrasing.
+    roll_text = f"{die} on a d20"
+    if modifier:
+        roll_text = f"{die} on a d20 {modifier:+d} = {die + modifier}"
     return (
         f"[Skill check] The player attempted a {skill_label} check (DC {dc}). "
-        f"They rolled {die} on a d20 — {verdict}. "
+        f"They rolled {roll_text} — {verdict}. "
         "Narrate the outcome consistent with this result; do not contradict the roll."
     )

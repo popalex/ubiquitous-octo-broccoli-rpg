@@ -29,6 +29,7 @@ from app.providers.base import ProviderError
 from app.schemas import (
     CharacterLoadRequest,
     CharacterLoadResponse,
+    CharacterSheetResponse,
     ChatRequest,
     ChatResponse,
     DiceRollResult,
@@ -61,6 +62,8 @@ from app.schemas import (
     TurnResponse,
     WorldStateResponse,
 )
+from app.services.character_sheet import CharacterSheetService
+from app.services.features import character_sheet_on
 from app.services.fork import ForkService
 from app.services.orchestrator import get_orchestrator
 from app.services.quests import TERMINAL_STATUSES, QuestService
@@ -68,6 +71,7 @@ from app.services.session_view import (
     list_sessions_with_summaries,
     session_to_detail,
     session_to_init,
+    sheet_to_response,
 )
 from app.telemetry import setup_telemetry
 
@@ -128,6 +132,7 @@ async def health(db: AsyncSession = Depends(get_db)) -> HealthResponse:
             world_state_enabled=settings.world_state_enabled,
             quests_enabled=settings.quests_enabled,
             dice_enabled=settings.dice_enabled,
+            character_sheet_enabled=settings.character_sheet_enabled,
         )
     except Exception as exc:  # pragma: no cover
         logger.exception("healthcheck failed")
@@ -202,12 +207,21 @@ async def init_session(payload: SessionInitRequest, db: AsyncSession = Depends(g
         world_state_enabled=payload.world_state_enabled,
         quests_enabled=payload.quests_enabled,
         dice_enabled=payload.dice_enabled,
+        character_sheet_enabled=payload.character_sheet_enabled,
     )
     db.add(session)
+    await db.flush()
+
+    # Seed the per-chronicle character sheet when the feature is on, so the d20
+    # check has competence to roll against from turn one (todo-rpg Phase 1).
+    sheet = None
+    if character_sheet_on(session, settings):
+        sheet = await CharacterSheetService(settings).ensure_for_session(db, session)
+
     await db.commit()
     await db.refresh(session)
 
-    return session_to_init(session, settings)
+    return session_to_init(session, settings, sheet)
 
 
 @app.get("/sessions", response_model=SessionListResponse)
@@ -218,6 +232,7 @@ async def list_sessions(db: AsyncSession = Depends(get_db)) -> SessionListRespon
 
 @app.get("/session/{session_id}", response_model=SessionDetailResponse)
 async def get_session(session_id: str, db: AsyncSession = Depends(get_db)) -> SessionDetailResponse:
+    settings = get_settings()
     session = await db.scalar(
         select(ChatSession)
         .where(ChatSession.id == session_id)
@@ -225,7 +240,21 @@ async def get_session(session_id: str, db: AsyncSession = Depends(get_db)) -> Se
     )
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
-    return session_to_detail(session, get_settings())
+    sheet = await CharacterSheetService(settings).load_for_session(db, session_id)
+    return session_to_detail(session, settings, sheet)
+
+
+@app.get("/session/{session_id}/sheet", response_model=CharacterSheetResponse)
+async def get_session_sheet(session_id: str, db: AsyncSession = Depends(get_db)) -> CharacterSheetResponse:
+    """The chronicle's character sheet (todo-rpg Phase 1). The frontend refetches
+    this after a level-up to refresh the sheet panel."""
+    settings = get_settings()
+    sheet = await CharacterSheetService(settings).load_for_session(db, session_id)
+    if sheet is None:
+        raise HTTPException(status_code=404, detail="No character sheet for this session.")
+    response = sheet_to_response(sheet, settings)
+    assert response is not None  # sheet is non-None here; for the type checker
+    return response
 
 
 @app.get("/session/{session_id}/turns", response_model=list[TurnResponse])
@@ -244,6 +273,7 @@ async def get_session_turns(session_id: str, db: AsyncSession = Depends(get_db))
         roll = rolls_by_turn.get(t.id)
         if roll is not None:
             tr.roll = DiceRollResult.model_validate(roll)
+        tr.advancement = t.advancement_json or None
         responses.append(tr)
     return responses
 
@@ -321,7 +351,9 @@ async def fork_session(
     )
     if fork is None:  # just-committed row; defensive for the type checker
         raise HTTPException(status_code=500, detail="Fork created but could not be reloaded.")
-    return session_to_detail(fork, get_settings())
+    settings = get_settings()
+    sheet = await CharacterSheetService(settings).load_for_session(db, fork.id)
+    return session_to_detail(fork, settings, sheet)
 
 
 @app.post("/chat", response_model=ChatResponse)

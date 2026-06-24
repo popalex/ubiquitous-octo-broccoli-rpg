@@ -19,7 +19,7 @@
   "timezone": "browser",
   "title": "RPG \u00b7 Metrics (LLM & HTTP)",
   "uid": "rpg-metrics",
-  "version": 1,
+  "version": 4,
   "templating": {
     "list": []
   },
@@ -905,7 +905,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "title": "Skill-check rolls/min (by outcome)",
+      "title": "Skill-check rolls \u2014 cumulative by outcome",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -917,11 +917,9 @@
       "fieldConfig": {
         "defaults": {
           "custom": {
-            "drawStyle": "bars",
-            "fillOpacity": 60,
-            "stacking": {
-              "mode": "normal"
-            }
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "stepAfter"
           },
           "unit": "short"
         },
@@ -943,10 +941,256 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (outcome) (rate(rpg_dice_rolls_total[$__rate_interval])) * 60",
+          "expr": "sum by (outcome) (rpg_dice_rolls_total)",
           "legendFormat": "{{outcome}}",
           "range": true,
           "refId": "A"
+        }
+      ],
+      "description": "Cumulative count since the backend started \u2014 readable for sparse single-player events (the old per-minute rate dropped too-new/flat series like a lone success)."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "title": "Character XP granted \u2014 cumulative by reason",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 72
+      },
+      "id": 20,
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "stepAfter"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (reason) (rpg_sheet_xp_granted_total)",
+          "legendFormat": "{{reason}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "description": "Cumulative count since the backend started \u2014 readable for sparse single-player events (the old per-minute rate dropped too-new/flat series like a lone success)."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "title": "Level-ups \u2014 cumulative",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 72
+      },
+      "id": 21,
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "stepAfter"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rpg_sheet_level_ups_total)",
+          "legendFormat": "level-ups",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "description": "Cumulative count since the backend started \u2014 readable for sparse single-player events (the old per-minute rate dropped too-new/flat series like a lone success)."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "title": "Attribute bumps \u2014 cumulative by attribute",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 80
+      },
+      "id": 22,
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "stepAfter"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (attribute) (rpg_sheet_attribute_bumps_total)",
+          "legendFormat": "{{attribute}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "description": "Cumulative count since the backend started \u2014 readable for sparse single-player events (the old per-minute rate dropped too-new/flat series like a lone success)."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "title": "Character progression totals (dice / XP / level-ups)",
+      "description": "Cumulative counts since the backend last started \u2014 readable for sparse single-player events, where the per-minute rate panels read ~0. Resets on api restart.",
+      "type": "stat",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 88
+      },
+      "id": 23,
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (outcome) (rpg_dice_rolls_total)",
+          "legendFormat": "Checks: {{outcome}}",
+          "instant": true,
+          "range": false,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rpg_sheet_xp_granted_total) or vector(0)",
+          "legendFormat": "XP granted",
+          "instant": true,
+          "range": false,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rpg_sheet_level_ups_total) or vector(0)",
+          "legendFormat": "Level-ups",
+          "instant": true,
+          "range": false,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (attribute) (rpg_sheet_attribute_bumps_total)",
+          "legendFormat": "Bump: {{attribute}}",
+          "instant": true,
+          "range": false,
+          "refId": "D"
         }
       ]
     }

@@ -2,7 +2,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import { api } from "../api";
-import type { SessionDetail, SessionMemory, SessionQuests, TurnRecord, WorldStateLedger } from "../types";
+import type {
+  CharacterSheet,
+  SessionDetail,
+  SessionMemory,
+  SessionQuests,
+  TurnRecord,
+  WorldStateLedger,
+} from "../types";
 
 export const sessionKeys = {
   detail: (id: string) => ["session", id, "detail"] as const,
@@ -11,6 +18,7 @@ export const sessionKeys = {
   worldState: (id: string) => ["session", id, "world-state"] as const,
   quests: (id: string) => ["session", id, "quests"] as const,
   suggestions: (id: string) => ["session", id, "suggestions"] as const,
+  sheet: (id: string) => ["session", id, "sheet"] as const,
 };
 
 /** Session detail + turns — the data needed to render a resumed chronicle. */
@@ -77,6 +85,20 @@ export function useSessionQuests(sessionId: string) {
 }
 
 /**
+ * Character sheet (todo-rpg Phase 1) — gated on `enabled` (the resolved
+ * character-sheet flag). 404s when the feature is off for the chronicle, so the
+ * call is skipped entirely in that case and never retried.
+ */
+export function useSessionSheet(sessionId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: sessionKeys.sheet(sessionId),
+    queryFn: () => api<CharacterSheet>(`/session/${sessionId}/sheet`),
+    enabled: !!sessionId && enabled,
+    retry: false,
+  });
+}
+
+/**
  * Returns a callback that refetches the post-turn-mutated reads (memory +
  * world-state + quests) for a session. Passed to the SSE chat flow as
  * `refreshMemory`.
@@ -89,6 +111,7 @@ export function useRefreshMemory(): (sessionId: string) => Promise<void> {
         queryClient.invalidateQueries({ queryKey: sessionKeys.memory(sessionId) }),
         queryClient.invalidateQueries({ queryKey: sessionKeys.worldState(sessionId) }),
         queryClient.invalidateQueries({ queryKey: sessionKeys.quests(sessionId) }),
+        queryClient.invalidateQueries({ queryKey: sessionKeys.sheet(sessionId) }),
       ]);
     },
     [queryClient],

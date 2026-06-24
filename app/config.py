@@ -121,6 +121,28 @@ class Settings(BaseSettings):
     # (facts + episode summary) stays on its own cadence.
     post_turn_judge_max_tokens: int = 1100
 
+    # Character sheet & progression (todo-rpg Phases 1+2): a per-chronicle sheet
+    # of 4 flat-modifier attributes (MIGHT / FINESSE / WITS / PRESENCE). The d20
+    # skill check rolls d20 + attribute_mod vs DC (DC = task difficulty), and
+    # successful checks / quest completions grant XP that levels the character up
+    # and bumps an attribute — deterministically (LLM proposes the attribute, the
+    # engine does the math). Ships dark behind this flag (bake-first, like
+    # world_state/quests/dice did). Requires dice_enabled to do anything visible.
+    character_sheet_enabled: bool = False
+    sheet_attribute_start: int = 1  # starting value of each attribute (a flat +N modifier)
+    sheet_attribute_min: int = 0
+    sheet_attribute_max: int = 6
+    # XP grants. A successful check is the bread-and-butter source; criticals and
+    # quest completions are worth more. A failed check still grants a sliver
+    # ("you learn from failure") — set 0 to disable.
+    xp_per_success: int = 10
+    xp_per_critical: int = 20
+    xp_per_failure: int = 1
+    xp_per_quest_complete: int = 50
+    # Level curve: level N (1-indexed) requires sheet_xp_curve_base * (N-1) cumulative
+    # XP — i.e. a flat sheet_xp_curve_base per level. Tunable; see CharacterSheetService.
+    sheet_xp_curve_base: int = 100
+
     @property
     def actor_context_budget(self) -> int:
         return max(512, self.actor_max_input_tokens - self.actor_reserved_output_tokens)
