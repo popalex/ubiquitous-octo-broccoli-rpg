@@ -133,9 +133,11 @@ class Settings(BaseSettings):
     sheet_attribute_min: int = 0
     sheet_attribute_max: int = 6
     # XP grants. A successful check is the bread-and-butter source; criticals and
-    # quest completions are worth more.
+    # quest completions are worth more. A failed check still grants a sliver
+    # ("you learn from failure") — set 0 to disable.
     xp_per_success: int = 10
     xp_per_critical: int = 20
+    xp_per_failure: int = 1
     xp_per_quest_complete: int = 50
     # Level curve: level N (1-indexed) requires sheet_xp_curve_base * (N-1) cumulative
     # XP — i.e. a flat sheet_xp_curve_base per level. Tunable; see CharacterSheetService.

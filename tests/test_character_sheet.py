@@ -276,8 +276,10 @@ async def test_successful_check_grants_xp_and_levels_up(mock_provider: MockProvi
 
 
 @pytest.mark.asyncio
-async def test_failed_check_grants_no_xp(mock_provider: MockProvider, db_session: AsyncSession) -> None:
-    orchestrator = _sheet_orchestrator(mock_provider, xp_per_success=100)
+async def test_failed_check_grants_consolation_xp(mock_provider: MockProvider, db_session: AsyncSession) -> None:
+    # A failure still grants a sliver ("you learn from failure"), tagged with the
+    # attempted attribute, but not enough to level on its own.
+    orchestrator = _sheet_orchestrator(mock_provider, xp_per_success=100, xp_per_failure=1)
     mock_provider.set_json_responses([_SHEET_ASSESSMENT, {"ok": True, "issues": [], "revised_response": ""}])
     session = SessionFactory(gm_enabled=True, turn_count=1)
     sheet = CharacterSheetFactory(session=session, finesse=3, level=1, xp=0)
@@ -286,7 +288,23 @@ async def test_failed_check_grants_no_xp(mock_provider: MockProvider, db_session
     with patch("app.services.orchestrator.roll_check", return_value=(2, 5, FAILURE)):
         result = await orchestrator.gm_chat(db_session, session.id, "I sneak past the guard.")
 
-    assert result.advancement == []
+    assert result.advancement == []  # 1 XP doesn't cross a level
+    await db_session.refresh(sheet)
+    assert sheet.xp == 1 and sheet.level == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_check_grants_nothing_when_disabled(mock_provider: MockProvider, db_session: AsyncSession) -> None:
+    # xp_per_failure=0 disables the consolation grant entirely.
+    orchestrator = _sheet_orchestrator(mock_provider, xp_per_failure=0)
+    mock_provider.set_json_responses([_SHEET_ASSESSMENT, {"ok": True, "issues": [], "revised_response": ""}])
+    session = SessionFactory(gm_enabled=True, turn_count=1)
+    sheet = CharacterSheetFactory(session=session, finesse=3, level=1, xp=0)
+    await db_session.flush()
+
+    with patch("app.services.orchestrator.roll_check", return_value=(2, 5, FAILURE)):
+        await orchestrator.gm_chat(db_session, session.id, "I sneak past the guard.")
+
     await db_session.refresh(sheet)
     assert sheet.xp == 0 and sheet.level == 1
 

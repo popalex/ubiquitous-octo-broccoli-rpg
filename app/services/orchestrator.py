@@ -339,16 +339,18 @@ class OrchestratorService:
             return []
         try:
             advancement: list[str] = []
-            # Successful checks: XP tagged with the attribute used, so a resulting
-            # level-up trains that attribute.
-            if roll is not None and roll.outcome in (SUCCESS, CRITICAL_SUCCESS):
-                amount = (
-                    self.settings.xp_per_critical
-                    if roll.outcome == CRITICAL_SUCCESS
-                    else self.settings.xp_per_success
-                )
+            # Checks grant XP tagged with the attribute used, so a resulting
+            # level-up trains that attribute. A failure still grants a sliver
+            # (xp_per_failure) — "you learn from failure"; grant_xp no-ops on 0.
+            if roll is not None:
+                if roll.outcome == CRITICAL_SUCCESS:
+                    amount, reason = self.settings.xp_per_critical, "check"
+                elif roll.outcome == SUCCESS:
+                    amount, reason = self.settings.xp_per_success, "check"
+                else:  # FAILURE
+                    amount, reason = self.settings.xp_per_failure, "check_failure"
                 level_up = await self.character_sheet.grant_xp(
-                    db, session.id, amount, attribute_key=roll.attribute, reason="check"
+                    db, session.id, amount, attribute_key=roll.attribute, reason=reason
                 )
                 if level_up is not None:
                     advancement.extend(level_up.notifications())
