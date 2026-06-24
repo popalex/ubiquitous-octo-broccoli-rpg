@@ -18,7 +18,7 @@ jobs:
       - name: Start full stack (frontend + api + postgres, no Ollama)
         run: docker compose -f docker-compose.e2e.yml up -d --build --wait
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
       - uses: actions/setup-node@v5
