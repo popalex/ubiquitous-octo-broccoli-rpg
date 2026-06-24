@@ -282,6 +282,70 @@
   opacity: 0.75;
 }
 
+.dice-roll-math {
+  font-size: 0.85em;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Character sheet panel (todo-rpg Phase 1) */
+.sheet-attributes {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-sm);
+}
+
+.sheet-attribute {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid rgba(201, 162, 39, 0.25);
+  background: rgba(201, 162, 39, 0.06);
+}
+
+.sheet-attribute-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 0.9em;
+}
+
+.sheet-attribute-value {
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-xp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.sheet-xp-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85em;
+}
+
+.sheet-xp-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(201, 162, 39, 0.12);
+  overflow: hidden;
+}
+
+.sheet-xp-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--gold);
+  transition: width 0.4s ease;
+}
+
 /* Outcome accents on the surrounding message bubble. */
 .dice-roll-critical_success .dice-roll-die,
 .dice-roll-success .dice-roll-die {

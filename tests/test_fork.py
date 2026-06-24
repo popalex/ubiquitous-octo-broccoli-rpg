@@ -147,10 +147,20 @@ async def test_fork_copies_dice_rolls_on_kept_turns(db_session: AsyncSession) ->
     await db_session.flush()
     # one roll on a kept turn (≤2), one on a dropped turn (>2)
     db_session.add(
-        DiceRoll(session_id=parent.id, turn_id=turns[1].id, skill_label="Stealth", dc=12, die=8, outcome="failure")
+        DiceRoll(
+            session_id=parent.id, turn_id=turns[1].id, skill_label="Stealth", dc=12, die=8, total=8, outcome="failure"
+        )
     )
     db_session.add(
-        DiceRoll(session_id=parent.id, turn_id=turns[4].id, skill_label="Athletics", dc=15, die=18, outcome="success")
+        DiceRoll(
+            session_id=parent.id,
+            turn_id=turns[4].id,
+            skill_label="Athletics",
+            dc=15,
+            die=18,
+            total=18,
+            outcome="success",
+        )
     )
     await db_session.flush()
 

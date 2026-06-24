@@ -201,6 +201,38 @@ describe("sendChat — standard stream", () => {
     expect(state.messages[1].suggestions).toEqual(["Search the desk", "Leave quietly"]);
   });
 
+  it("renders an advancement frame as a narrator level-up card", async () => {
+    mockFetchStream([
+      sseFrame({ type: "chunk", content: "You force the lock." }),
+      sseFrame({ type: "advancement", advancement: ["You reached level 2.", "FINESSE increased to +4."] }),
+      sseFrame({ type: "done", session_id: "sess-1" }),
+    ]);
+    const { params, state } = createHarness();
+
+    await sendChat(params);
+
+    const beat = state.messages.find((m) => m.messageType === "advancement");
+    expect(beat).toMatchObject({ role: "narrator" });
+    expect(beat?.content).toContain("You reached level 2.");
+    expect(beat?.content).toContain("FINESSE increased to +4.");
+    expect(state.statusLog).toContain("You reached level 2.");
+  });
+
+  it("ignores an empty advancement frame without killing the stream", async () => {
+    mockFetchStream([
+      sseFrame({ type: "chunk", content: "No growth yet." }),
+      sseFrame({ type: "advancement", advancement: [] }),
+      sseFrame({ type: "done", session_id: "sess-1" }),
+    ]);
+    const { params, state } = createHarness();
+
+    await sendChat(params);
+
+    expect(state.messages.some((m) => m.messageType === "advancement")).toBe(false);
+    expect(state.messages[1].content).toBe("No growth yet.");
+    expect(state.busyLog).toEqual([true, false]);
+  });
+
   it("ignores an empty/malformed suggestions frame without killing the stream", async () => {
     mockFetchStream([
       sseFrame({ type: "chunk", content: "Onward." }),

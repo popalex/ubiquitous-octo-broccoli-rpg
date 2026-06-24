@@ -42,6 +42,21 @@ class SessionInitRequest(BaseModel):
     world_state_enabled: bool | None = None
     quests_enabled: bool | None = None
     dice_enabled: bool | None = None
+    character_sheet_enabled: bool | None = None
+
+
+class CharacterSheetResponse(ORMModel):
+    """A chronicle's character sheet (todo-rpg Phase 1). Attributes are flat d20
+    modifiers; ``xp_to_next`` is derived from the level curve by the route."""
+
+    might: int
+    finesse: int
+    wits: int
+    presence: int
+    level: int
+    xp: int
+    xp_to_next: int
+    xp_for_level: int
 
 
 class SessionInitResponse(ORMModel):
@@ -58,6 +73,8 @@ class SessionInitResponse(ORMModel):
     world_state_enabled: bool
     quests_enabled: bool
     dice_enabled: bool
+    character_sheet_enabled: bool
+    sheet: CharacterSheetResponse | None = None
 
 
 class ChatRequest(BaseModel):
@@ -94,6 +111,8 @@ class ChatResponse(BaseModel):
     retrieved_memories: list[RetrievedMemoryItem]
     quest_updates: list[QuestUpdateNotification] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
+    # 'You reached level 2 / FINESSE increased to +3' beats (todo-rpg Phase 2).
+    advancement: list[str] = Field(default_factory=list)
 
 
 class SuggestionsResponse(BaseModel):
@@ -146,6 +165,12 @@ class DiceRollResult(ORMModel):
     skill_label: str
     dc: int
     die: int  # raw d20, 1-20
+    # Character-sheet competence (todo-rpg Phase 1): governing attribute, its flat
+    # modifier, and the resolved total (die + modifier). With no sheet: attribute
+    # None, modifier 0, total == die.
+    attribute: str | None = None
+    modifier: int = 0
+    total: int
     outcome: str  # success | failure | critical_success
     rationale: str | None = None
 
@@ -178,6 +203,7 @@ class SessionListItem(BaseModel):
     world_state_enabled: bool
     quests_enabled: bool
     dice_enabled: bool
+    character_sheet_enabled: bool
     # Fork lineage (§4a): NULL parent = an original chronicle.
     parent_session_id: str | None = None
     forked_at_turn: int | None = None
@@ -212,6 +238,8 @@ class SessionDetailResponse(BaseModel):
     world_state_enabled: bool
     quests_enabled: bool
     dice_enabled: bool
+    character_sheet_enabled: bool
+    sheet: CharacterSheetResponse | None = None
     # Fork lineage (§4a): NULL parent = an original chronicle.
     parent_session_id: str | None = None
     forked_at_turn: int | None = None
@@ -269,6 +297,7 @@ class HealthResponse(BaseModel):
     world_state_enabled: bool
     quests_enabled: bool
     dice_enabled: bool
+    character_sheet_enabled: bool
 
 
 # =============================================================================
@@ -398,3 +427,4 @@ class GMChatResponse(BaseModel):
     retrieved_memories: list[RetrievedMemoryItem]
     quest_updates: list[QuestUpdateNotification] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
+    advancement: list[str] = Field(default_factory=list)

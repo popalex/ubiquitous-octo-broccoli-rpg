@@ -25,6 +25,7 @@ from app.schemas import (
     QuestUpdateNotification,
     RetrievedMemoryItem,
 )
+from app.services.character_sheet import CharacterSheetService
 from app.services.context_packet import (
     ContextPacketBuilder,
     continuity_canon,
@@ -33,8 +34,8 @@ from app.services.context_packet import (
     recent_turns_text,
 )
 from app.services.continuity import ContinuityResult, ContinuityService
-from app.services.dice import message_may_need_check, roll_check, roll_directive
-from app.services.features import dice_on, quests_on, world_state_on
+from app.services.dice import CRITICAL_SUCCESS, SUCCESS, message_may_need_check, roll_check, roll_directive
+from app.services.features import character_sheet_on, dice_on, quests_on, world_state_on
 from app.services.game_master import GameMasterService
 from app.services.memory import MemoryService
 from app.services.post_turn_judge import PostTurnJudgeService
@@ -93,6 +94,10 @@ def sse_suggestions(suggestions: list[str]) -> str:
     return _sse({"type": "suggestions", "suggestions": suggestions})
 
 
+def sse_advancement(advancement: list[str]) -> str:
+    return _sse({"type": "advancement", "advancement": advancement})
+
+
 def sse_done(session_id: str) -> str:
     return _sse({"type": "done", "session_id": session_id})
 
@@ -122,6 +127,7 @@ class OrchestratorService:
         self.game_master = GameMasterService(self.gm_provider, self.settings)
         self.world_state = WorldStateService(self.memory_provider, self.settings)
         self.quests = QuestService(self.memory_provider, self.settings)
+        self.character_sheet = CharacterSheetService(self.settings)
         self.post_turn_judge = PostTurnJudgeService(self.memory_provider, self.world_state, self.quests, self.settings)
         self.post_turn = PostTurnRunner(self.memory, self.post_turn_judge)
         self.turns = TurnPersister(estimate_tokens)
@@ -200,6 +206,7 @@ class OrchestratorService:
             response_text=continuity.final_reply,
             turn_id=assistant_turn.id,
         )
+        advancement = await self._apply_progression(db, session, None, quest_changes)
         logger.info(
             "chat session=%s turn_count=%s continuity_applied=%s", session.id, session.turn_count, continuity.applied
         )
@@ -211,6 +218,7 @@ class OrchestratorService:
             continuity_issues=continuity.issues,
             quest_updates=self._quest_change_notifications(quest_changes),
             suggestions=suggestions,
+            advancement=advancement,
             retrieved_memories=[
                 RetrievedMemoryItem(
                     id=item.id,
@@ -246,8 +254,14 @@ class OrchestratorService:
             span.set_attribute("rpg.dice.prefiltered", not may_need)
             if not may_need:
                 return None, ""
+            # Character sheet (todo-rpg Phase 1): when present, the GM names the
+            # governing attribute and we add its modifier; the DC becomes
+            # task-difficulty-only. No sheet → modifier 0, original behavior.
+            sheet = None
+            if character_sheet_on(session, self.settings):
+                sheet = await self.character_sheet.load_for_session(db, session.id)
             try:
-                assessment = await self.game_master.assess_action(db, session, user_message)
+                assessment = await self.game_master.assess_action(db, session, user_message, sheet=sheet)
             except Exception:
                 logger.exception("skill-check assessment failed for session=%s", session.id)
                 span.set_attribute("rpg.dice.assess_failed", True)
@@ -255,20 +269,27 @@ class OrchestratorService:
             span.set_attribute("rpg.dice.requires_check", assessment.requires_check)
             if not assessment.requires_check:
                 return None, ""
-            die, outcome = roll_check(assessment.dc)
+            modifier = self.character_sheet.attribute_mod(sheet, assessment.attribute)
+            die, total, outcome = roll_check(assessment.dc, modifier)
             dice_rolls.add(1, {"outcome": outcome})
             span.set_attribute("rpg.dice.skill_label", assessment.skill_label)
             span.set_attribute("rpg.dice.dc", assessment.dc)
             span.set_attribute("rpg.dice.die", die)
+            span.set_attribute("rpg.dice.attribute", assessment.attribute or "")
+            span.set_attribute("rpg.dice.modifier", modifier)
+            span.set_attribute("rpg.dice.total", total)
             span.set_attribute("rpg.dice.outcome", outcome)
             result = DiceRollResult(
                 skill_label=assessment.skill_label,
                 dc=assessment.dc,
                 die=die,
+                attribute=assessment.attribute,
+                modifier=modifier,
+                total=total,
                 outcome=outcome,
                 rationale=assessment.rationale or None,
             )
-            return result, roll_directive(assessment.skill_label, assessment.dc, die, outcome)
+            return result, roll_directive(assessment.skill_label, assessment.dc, die, outcome, modifier)
 
     async def _persist_dice_roll(
         self, db: AsyncSession, session: ChatSession, roll: DiceRollResult, turn_id: str | None
@@ -288,6 +309,9 @@ class OrchestratorService:
                     dc=roll.dc,
                     rationale=roll.rationale,
                     die=roll.die,
+                    attribute=roll.attribute,
+                    modifier=roll.modifier,
+                    total=roll.total,
                     outcome=roll.outcome,
                 )
             )
@@ -295,6 +319,49 @@ class OrchestratorService:
         except SQLAlchemyError:
             logger.exception("dice roll persist failed for session=%s", session.id)
             await db.rollback()
+
+    async def _apply_progression(
+        self,
+        db: AsyncSession,
+        session: ChatSession,
+        roll: DiceRollResult | None,
+        quest_changes: list[QuestChange],
+    ) -> list[str]:
+        """Grant XP from this turn's check + quest completions and apply any
+        level-ups (todo-rpg Phase 2). Returns 'you leveled / improved X' beats for
+        the response. Best-effort — sheet feature off or any failure yields []."""
+        if not character_sheet_on(session, self.settings):
+            return []
+        try:
+            sheet = await self.character_sheet.load_for_session(db, session.id)
+            if sheet is None:
+                return []
+            advancement: list[str] = []
+            # Successful checks: XP tagged with the attribute used, so a resulting
+            # level-up trains that attribute.
+            if roll is not None and roll.outcome in (SUCCESS, CRITICAL_SUCCESS):
+                amount = (
+                    self.settings.xp_per_critical
+                    if roll.outcome == CRITICAL_SUCCESS
+                    else self.settings.xp_per_success
+                )
+                level_up = await self.character_sheet.grant_xp(
+                    db, sheet, amount, attribute_key=roll.attribute, reason="check"
+                )
+                if level_up is not None:
+                    advancement.extend(level_up.notifications())
+            # Quest completions: a flat reward (no governing attribute).
+            completed = sum(1 for c in quest_changes if c.change == "completed")
+            if completed:
+                level_up = await self.character_sheet.grant_xp(
+                    db, sheet, self.settings.xp_per_quest_complete * completed, reason="quest"
+                )
+                if level_up is not None:
+                    advancement.extend(level_up.notifications())
+            return advancement
+        except Exception:
+            logger.exception("progression apply failed for session=%s", session.id)
+            return []
 
     async def gm_chat(
         self,
@@ -464,6 +531,7 @@ class OrchestratorService:
             turn_id=assistant_turn.id,
         )
         quest_changes += extra_changes
+        advancement = await self._apply_progression(db, session, dice_result, quest_changes)
 
         logger.info(
             "gm_chat session=%s turn_count=%s event_triggered=%s",
@@ -482,6 +550,7 @@ class OrchestratorService:
             continuity_applied=continuity.applied,
             continuity_issues=continuity.issues,
             quest_updates=self._quest_change_notifications(quest_changes),
+            advancement=advancement,
             suggestions=suggestions,
             retrieved_memories=[
                 RetrievedMemoryItem(
@@ -746,7 +815,8 @@ class OrchestratorService:
             turn_id=assistant_turn.id,
         )
         quest_changes += extra_changes
-        for frame in self._stream_post_turn_results(quest_changes, suggestions):
+        advancement = await self._apply_progression(db, session, dice_result, quest_changes)
+        for frame in self._stream_post_turn_results(quest_changes, suggestions, advancement):
             yield frame
 
         chat_turns.add(1, {"gm_enabled": True})
@@ -853,7 +923,8 @@ class OrchestratorService:
             response_text=full_reply,
             turn_id=assistant_turn.id,
         )
-        for frame in self._stream_post_turn_results(quest_changes, suggestions):
+        advancement = await self._apply_progression(db, session, None, quest_changes)
+        for frame in self._stream_post_turn_results(quest_changes, suggestions, advancement):
             yield frame
 
         chat_turns.add(1, {"gm_enabled": False})
@@ -922,13 +993,18 @@ class OrchestratorService:
             )
             return block
 
-    def _stream_post_turn_results(self, quest_changes: list[QuestChange], suggestions: list[str]) -> Iterator[str]:
+    def _stream_post_turn_results(
+        self, quest_changes: list[QuestChange], suggestions: list[str], advancement: list[str] | None = None
+    ) -> Iterator[str]:
         """SSE frames for the post-turn results, shared by both stream paths:
-        one quest_update per change, then a single suggestions frame (if any)."""
+        one quest_update per change, then a single suggestions frame (if any),
+        then an advancement frame for any level-up beats (if any)."""
         for change in quest_changes:
             yield sse_quest_update(self._quest_change_payload(change))
         if suggestions:
             yield sse_suggestions(suggestions)
+        if advancement:
+            yield sse_advancement(advancement)
 
     async def _quest_block(self, db: AsyncSession, session: ChatSession) -> str:
         """Load + render open quests for prompt injection.

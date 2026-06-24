@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import telemetry
 from app.models import (
+    CharacterSheet,
     DiceRoll,
     EpisodeSummary,
     MemoryFact,
@@ -223,7 +224,28 @@ class ForkService:
                         dc=roll.dc,
                         rationale=roll.rationale,
                         die=roll.die,
+                        attribute=roll.attribute,
+                        modifier=roll.modifier,
+                        total=roll.total,
                         outcome=roll.outcome,
+                    )
+                )
+
+            # --- character sheet (progression is per-chronicle; the fork inherits
+            # where the parent stood — current attributes/level/xp) ---
+            parent_sheet = await db.scalar(
+                select(CharacterSheet).where(CharacterSheet.session_id == parent.id)
+            )
+            if parent_sheet is not None:
+                db.add(
+                    CharacterSheet(
+                        session_id=fork.id,
+                        might=parent_sheet.might,
+                        finesse=parent_sheet.finesse,
+                        wits=parent_sheet.wits,
+                        presence=parent_sheet.presence,
+                        level=parent_sheet.level,
+                        xp=parent_sheet.xp,
                     )
                 )
 

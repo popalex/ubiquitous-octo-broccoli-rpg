@@ -7,6 +7,7 @@ export type Health = {
   world_state_enabled: boolean;
   quests_enabled: boolean;
   dice_enabled: boolean;
+  character_sheet_enabled: boolean;
 };
 
 export type ChronicleListItem = {
@@ -27,9 +28,21 @@ export type ChronicleListItem = {
   world_state_enabled: boolean;
   quests_enabled: boolean;
   dice_enabled: boolean;
+  character_sheet_enabled: boolean;
   // Fork lineage: null parent = an original chronicle.
   parent_session_id: string | null;
   forked_at_turn: number | null;
+};
+
+export type CharacterSheet = {
+  might: number;
+  finesse: number;
+  wits: number;
+  presence: number;
+  level: number;
+  xp: number;
+  xp_to_next: number;
+  xp_for_level: number;
 };
 
 export type SessionDetail = {
@@ -51,6 +64,9 @@ export type SessionDetail = {
   world_state_enabled: boolean;
   quests_enabled: boolean;
   dice_enabled: boolean;
+  character_sheet_enabled: boolean;
+  // Present when the character-sheet feature is on for this chronicle.
+  sheet: CharacterSheet | null;
   // Fork lineage: null parent = an original chronicle.
   parent_session_id: string | null;
   forked_at_turn: number | null;
@@ -171,7 +187,7 @@ export type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "narrator";
   content: string;
-  messageType?: "chat" | "pre_narration" | "post_narration" | "event" | "quest" | "roll";
+  messageType?: "chat" | "pre_narration" | "post_narration" | "event" | "quest" | "roll" | "advancement";
   // Set on a "roll" message — renders as a dice chip instead of prose.
   roll?: DiceRoll;
   // Suggested next-action chips offered after this reply (ephemeral; only the
@@ -183,6 +199,11 @@ export type DiceRoll = {
   skill_label: string;
   dc: number;
   die: number; // raw d20, 1-20
+  // Character-sheet competence (todo-rpg Phase 1): governing attribute, its flat
+  // modifier, and the resolved total (die + modifier). No sheet → null/0/die.
+  attribute: string | null;
+  modifier: number;
+  total: number;
   outcome: "success" | "failure" | "critical_success";
   // Why the GM set that DC — DC-encoded competence made visible.
   rationale: string | null;
@@ -205,4 +226,5 @@ export type GMChatResponse = {
   continuity_applied: boolean;
   continuity_issues: string[];
   retrieved_memories: RetrievedMemory[];
+  advancement: string[];
 };

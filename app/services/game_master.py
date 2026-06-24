@@ -18,10 +18,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
+from app.models import CharacterSheet, Turn, WorldState
 from app.models import Session as ChatSession
-from app.models import Turn, WorldState
 from app.prompts import (
     GM_ACTION_CHECK_PROMPT,
+    GM_ACTION_CHECK_PROMPT_SHEET,
     GM_EVENT_CHECK_PROMPT,
     GM_EVENT_GENERATE_PROMPT,
     GM_NARRATION_PROMPT,
@@ -31,6 +32,7 @@ from app.prompts import (
     GM_WORLD_STATE_UPDATE_PROMPT,
 )
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
+from app.services.character_sheet import ATTRIBUTE_KEYS
 from app.services.dice import clamp_dc
 
 if TYPE_CHECKING:
@@ -85,13 +87,18 @@ class EventCheckResult:
 @dataclass(slots=True)
 class ActionAssessment:
     """Whether the player's latest action needs a d20 skill check, and the
-    GM-proposed skill + DC + rationale if so (§4c). DC encodes competence —
-    there is no character stat block."""
+    GM-proposed skill + DC + rationale if so (§4c).
+
+    Without a character sheet the DC encodes competence (there is no stat block).
+    With a sheet (todo-rpg Phase 1) the DC encodes task difficulty only and
+    ``attribute`` names the governing attribute (might/finesse/wits/presence)
+    whose modifier the engine adds to the d20."""
 
     requires_check: bool
     skill_label: str = ""
     dc: int = 10
     rationale: str = ""
+    attribute: str | None = None
 
 
 @dataclass(slots=True)
@@ -336,13 +343,17 @@ class GameMasterService:
         db: AsyncSession,
         session: ChatSession,
         player_action: str,
+        *,
+        sheet: CharacterSheet | None = None,
     ) -> ActionAssessment:
         """Decide whether the player's latest action needs a d20 skill check.
 
-        One fast JSON call. Competence is encoded in the GM-chosen DC (judged
-        from the character description — there is no stat block) and explained
-        in ``rationale``. Best-effort: any provider/parse failure returns "no
-        check" so a turn is never blocked.
+        One fast JSON call. With no ``sheet``, competence is encoded in the
+        GM-chosen DC (judged from the character description) and explained in
+        ``rationale``. With a ``sheet`` (todo-rpg Phase 1) the DC encodes task
+        difficulty only and the GM names the governing ``attribute`` — competence
+        comes from the sheet's modifier. Best-effort: any provider/parse failure
+        returns "no check" so a turn is never blocked.
         """
         recent_turns = (
             await db.scalars(
@@ -351,12 +362,24 @@ class GameMasterService:
         ).all()
         recent_transcript = "\n".join(f"{turn.role.upper()}: {turn.content}" for turn in reversed(recent_turns))
 
-        prompt = GM_ACTION_CHECK_PROMPT.format(
-            character_name=session.character_card.name,
-            character_description=session.character_card.description,
-            recent_transcript=recent_transcript or "None.",
-            player_action=player_action,
-        )
+        if sheet is not None:
+            prompt = GM_ACTION_CHECK_PROMPT_SHEET.format(
+                character_name=session.character_card.name,
+                character_description=session.character_card.description,
+                might=sheet.might,
+                finesse=sheet.finesse,
+                wits=sheet.wits,
+                presence=sheet.presence,
+                recent_transcript=recent_transcript or "None.",
+                player_action=player_action,
+            )
+        else:
+            prompt = GM_ACTION_CHECK_PROMPT.format(
+                character_name=session.character_card.name,
+                character_description=session.character_card.description,
+                recent_transcript=recent_transcript or "None.",
+                player_action=player_action,
+            )
 
         try:
             result = await self.gm_provider.generate_json(
@@ -377,14 +400,21 @@ class GameMasterService:
             dc = 10
         skill = str(result.get("skill_label", "")).strip() or "Skill"
         rationale = str(result.get("rationale", "")).strip()
+        attribute = None
+        if sheet is not None:
+            raw_attr = str(result.get("attribute", "")).strip().lower()
+            attribute = raw_attr if raw_attr in ATTRIBUTE_KEYS else None
         logger.info(
-            "assess_action session=%s requires_check skill=%s dc=%s rationale=%s",
+            "assess_action session=%s requires_check skill=%s dc=%s attribute=%s rationale=%s",
             session.id,
             skill,
             dc,
+            attribute,
             rationale,
         )
-        return ActionAssessment(requires_check=True, skill_label=skill, dc=dc, rationale=rationale)
+        return ActionAssessment(
+            requires_check=True, skill_label=skill, dc=dc, rationale=rationale, attribute=attribute
+        )
 
     async def generate_event(
         self,

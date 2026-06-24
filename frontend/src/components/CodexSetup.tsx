@@ -58,11 +58,15 @@ export function CodexSetup({ onStarted }: Props) {
   const [diceChoice, setDiceChoice] = useState<boolean | null>(() =>
     readStoredToggle(storageKeys.diceEnabled),
   );
+  const [characterSheetChoice, setCharacterSheetChoice] = useState<boolean | null>(() =>
+    readStoredToggle(storageKeys.characterSheetEnabled),
+  );
   const gmEnabled = gmChoice ?? health?.gm_enabled ?? false;
   const suggestionsEnabled = suggestionsChoice ?? health?.suggestions_enabled ?? false;
   const worldStateEnabled = worldStateChoice ?? health?.world_state_enabled ?? false;
   const questsEnabled = questsChoice ?? health?.quests_enabled ?? false;
   const diceEnabled = diceChoice ?? health?.dice_enabled ?? false;
+  const characterSheetEnabled = characterSheetChoice ?? health?.character_sheet_enabled ?? false;
   const [timeOfDay, setTimeOfDay] = useState("morning");
   const [ids, setIds] = useState(() => ({
     characterCardId: localStorage.getItem(storageKeys.characterCardId) || "",
@@ -101,6 +105,11 @@ export function CodexSetup({ onStarted }: Props) {
     localStorage.setItem(storageKeys.diceEnabled, String(value));
   }
 
+  function handleSetCharacterSheetEnabled(value: boolean) {
+    setCharacterSheetChoice(value);
+    localStorage.setItem(storageKeys.characterSheetEnabled, String(value));
+  }
+
   return (
     <CodexForm
       key={selectedTemplate.id}
@@ -118,12 +127,15 @@ export function CodexSetup({ onStarted }: Props) {
       setQuestsEnabled={handleSetQuestsEnabled}
       diceEnabled={diceEnabled}
       setDiceEnabled={handleSetDiceEnabled}
+      characterSheetEnabled={characterSheetEnabled}
+      setCharacterSheetEnabled={handleSetCharacterSheetEnabled}
       toggleChoices={{
         gm: gmChoice,
         suggestions: suggestionsChoice,
         worldState: worldStateChoice,
         quests: questsChoice,
         dice: diceChoice,
+        characterSheet: characterSheetChoice,
       }}
       timeOfDay={timeOfDay}
       setTimeOfDay={setTimeOfDay}
@@ -149,6 +161,8 @@ type CodexFormProps = {
   setQuestsEnabled: (v: boolean) => void;
   diceEnabled: boolean;
   setDiceEnabled: (v: boolean) => void;
+  characterSheetEnabled: boolean;
+  setCharacterSheetEnabled: (v: boolean) => void;
   /** Raw toggle choices: null = user never touched it (inherit the global). */
   toggleChoices: {
     gm: boolean | null;
@@ -156,6 +170,7 @@ type CodexFormProps = {
     worldState: boolean | null;
     quests: boolean | null;
     dice: boolean | null;
+    characterSheet: boolean | null;
   };
   timeOfDay: string;
   setTimeOfDay: (v: string) => void;
@@ -179,6 +194,8 @@ function CodexForm({
   setQuestsEnabled,
   diceEnabled,
   setDiceEnabled,
+  characterSheetEnabled,
+  setCharacterSheetEnabled,
   toggleChoices,
   timeOfDay,
   setTimeOfDay,
@@ -233,6 +250,7 @@ function CodexForm({
         world_state_enabled: toggleChoices.worldState,
         quests_enabled: toggleChoices.quests,
         dice_enabled: toggleChoices.dice,
+        character_sheet_enabled: toggleChoices.characterSheet,
       });
       localStorage.setItem(storageKeys.sessionTitle, sessionTitle);
       onStarted(payload.session_id, starterPrompt);
@@ -262,6 +280,8 @@ function CodexForm({
         setQuestsEnabled={setQuestsEnabled}
         diceEnabled={diceEnabled}
         setDiceEnabled={setDiceEnabled}
+        characterSheetEnabled={characterSheetEnabled}
+        setCharacterSheetEnabled={setCharacterSheetEnabled}
         currentLocation={currentLocation}
         setCurrentLocation={setCurrentLocation}
         timeOfDay={timeOfDay}

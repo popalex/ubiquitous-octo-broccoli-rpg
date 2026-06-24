@@ -56,15 +56,35 @@ class _FixedRng:
     ],
 )
 def test_roll_check_outcomes(die: int, dc: int, expected: str) -> None:
-    rolled, outcome = roll_check(dc, rng=_FixedRng(die))
+    rolled, total, outcome = roll_check(dc, rng=_FixedRng(die))
     assert rolled == die
+    assert total == die  # no modifier
     assert outcome == expected
 
 
 def test_roll_check_never_returns_critical_failure() -> None:
     # Sweep every die value against a mid DC — only the three defined tiers appear.
-    outcomes = {roll_check(10, rng=_FixedRng(d))[1] for d in range(1, 21)}
+    outcomes = {roll_check(10, rng=_FixedRng(d))[2] for d in range(1, 21)}
     assert outcomes <= {CRITICAL_SUCCESS, SUCCESS, FAILURE}
+
+
+@pytest.mark.parametrize(
+    ("die", "modifier", "dc", "expected_total", "expected"),
+    [
+        (7, 2, 12, 9, FAILURE),  # 7+2=9 < 12 -> fail
+        (10, 2, 12, 12, SUCCESS),  # 10+2=12 meets DC -> success
+        (5, 5, 10, 10, SUCCESS),  # modifier carries a low die over the DC
+        (20, -5, 12, 15, CRITICAL_SUCCESS),  # nat 20 crits regardless of modifier
+        (9, 0, 10, 9, FAILURE),  # modifier 0 == legacy behavior
+    ],
+)
+def test_roll_check_applies_modifier(
+    die: int, modifier: int, dc: int, expected_total: int, expected: str
+) -> None:
+    rolled, total, outcome = roll_check(dc, modifier, rng=_FixedRng(die))
+    assert rolled == die
+    assert total == expected_total
+    assert outcome == expected
 
 
 @pytest.mark.parametrize(("raw", "expected"), [(0, 2), (1, 2), (12, 12), (20, 20), (99, 20)])
@@ -95,6 +115,15 @@ def test_roll_directive_mentions_skill_dc_and_verdict() -> None:
     assert "12" in text
     assert "7" in text
     assert "FAILURE" in text
+
+
+def test_roll_directive_shows_modifier_arithmetic() -> None:
+    # With a sheet modifier the directive spells out die + mod = total so the
+    # prose respects the resolved number, not the raw die.
+    text = roll_directive("Athletics", 12, 7, SUCCESS, modifier=3)
+    assert "7" in text and "+3" in text and "10" in text
+    # No-modifier directive keeps the original phrasing (no "= total").
+    assert "=" not in roll_directive("Athletics", 12, 7, SUCCESS)
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +332,7 @@ async def test_persist_dice_roll_commits(mock_provider: MockProvider) -> None:
     db = MagicMock()
     db.add = MagicMock()
     db.commit = AsyncMock()
-    roll = DiceRollResult(skill_label="Stealth", dc=12, die=7, outcome="failure", rationale=None)
+    roll = DiceRollResult(skill_label="Stealth", dc=12, die=7, total=7, outcome="failure", rationale=None)
 
     await orchestrator._persist_dice_roll(db, SessionFactory.build(), roll, "01ABCDEF01ABCDEF01ABCDEF01")
 
@@ -347,6 +376,7 @@ async def test_turns_route_attaches_persisted_roll(async_client, db_session: Asy
             skill_label="Stealth",
             dc=12,
             die=15,
+            total=15,
             outcome="success",
             rationale="nimble rogue -> easy",
         )

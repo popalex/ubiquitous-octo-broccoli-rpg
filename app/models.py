@@ -120,6 +120,7 @@ class Session(TimestampMixin, Base):
     world_state_enabled: Mapped[bool | None] = mapped_column(nullable=True)
     quests_enabled: Mapped[bool | None] = mapped_column(nullable=True)
     dice_enabled: Mapped[bool | None] = mapped_column(nullable=True)
+    character_sheet_enabled: Mapped[bool | None] = mapped_column(nullable=True)
 
     # Rewind & fork (§4a): set on a session created by forking another at a
     # given turn. NULL parent = an original chronicle. The parent is never
@@ -145,6 +146,9 @@ class Session(TimestampMixin, Base):
     )
     quests: Mapped[list[Quest]] = relationship(back_populates="session", cascade="all, delete-orphan")
     dice_rolls: Mapped[list[DiceRoll]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    character_sheet: Mapped[CharacterSheet | None] = relationship(
+        back_populates="session", uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class Turn(TimestampMixin, Base):
@@ -297,10 +301,49 @@ class DiceRoll(TimestampMixin, Base):
     dc: Mapped[int] = mapped_column(Integer, nullable=False)
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     die: Mapped[int] = mapped_column(Integer, nullable=False)  # raw d20, 1-20
+    # Character-sheet competence (todo-rpg Phase 1). When a CharacterSheet is in
+    # play the GM names the governing ``attribute`` and the engine adds its flat
+    # ``modifier`` to ``die`` to get ``total``, classified against ``dc``. With no
+    # sheet these default to no attribute / 0 / total == die, preserving the
+    # original DC-encodes-competence behavior.
+    attribute: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    modifier: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total: Mapped[int] = mapped_column(Integer, nullable=False)  # die + modifier
     # success | failure | critical_success
     outcome: Mapped[str] = mapped_column(String(20), nullable=False)
 
     session: Mapped[Session] = relationship(back_populates="dice_rolls")
+
+
+class CharacterSheet(TimestampMixin, Base):
+    """Persistent mechanical state for the character in one chronicle (todo-rpg
+    Phase 1 — the keystone). One row per :class:`Session`.
+
+    Light, custom system (not 5e): the four attributes are **flat modifiers** —
+    the stored integer is added directly to a d20 skill check. Competence lives
+    here; the GM-chosen DC encodes task difficulty. ``xp`` accrues from successful
+    checks and quest completions; crossing the level curve bumps ``level`` and one
+    attribute (todo-rpg Phase 2). Engine owns all the math (LLM only proposes
+    deltas). Per-chronicle by design — the reusable ``CharacterCard`` stays a
+    narrative template. Gated behind ``CHARACTER_SHEET_ENABLED``.
+    """
+
+    __tablename__ = "character_sheets"
+    __table_args__ = (
+        UniqueConstraint("session_id", name="uq_character_sheet_session"),
+        _id_check("character_sheets"),
+    )
+
+    id: Mapped[str] = mapped_column(IdType, primary_key=True, default=new_id)
+    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
+    might: Mapped[int] = mapped_column(Integer, nullable=False)
+    finesse: Mapped[int] = mapped_column(Integer, nullable=False)
+    wits: Mapped[int] = mapped_column(Integer, nullable=False)
+    presence: Mapped[int] = mapped_column(Integer, nullable=False)
+    level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    xp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    session: Mapped[Session] = relationship(back_populates="character_sheet")
 
 
 class RelationshipState(TimestampMixin, Base):

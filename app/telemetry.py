@@ -78,6 +78,11 @@ post_turn_suggestions = _meter.create_counter(
 )
 session_forks = _meter.create_counter("rpg.session.forks", description="Chronicle forks created (rewind & fork)")
 dice_rolls = _meter.create_counter("rpg.dice.rolls", description="d20 skill checks rolled in GM mode, by outcome")
+xp_granted = _meter.create_counter("rpg.sheet.xp_granted", description="Character-sheet XP granted, by reason")
+level_ups = _meter.create_counter("rpg.sheet.level_ups", description="Character-sheet levels gained")
+attribute_bumps = _meter.create_counter(
+    "rpg.sheet.attribute_bumps", description="Attribute increases on level-up, by attribute"
+)
 
 
 def messages_to_json(messages: Sequence) -> str:

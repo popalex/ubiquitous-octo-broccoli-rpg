@@ -37,7 +37,16 @@ describe("turnsToMessages", () => {
         role: "assistant",
         content: "You slip past.",
         turn_type: "chat",
-        roll: { skill_label: "Stealth", dc: 15, die: 4, outcome: "failure", rationale: "alert guard" },
+        roll: {
+          skill_label: "Stealth",
+          dc: 15,
+          die: 4,
+          attribute: null,
+          modifier: 0,
+          total: 4,
+          outcome: "failure",
+          rationale: "alert guard",
+        },
       },
     ]);
     expect(messages).toHaveLength(2);
