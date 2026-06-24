@@ -134,3 +134,5 @@ class CharacterSheetFactory(SQLAlchemyModelFactory):
     presence = 1
     level = 1
     xp = 0
+    hp = 20
+    max_hp = 20

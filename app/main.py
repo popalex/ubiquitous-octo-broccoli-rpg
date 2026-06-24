@@ -51,6 +51,7 @@ from app.schemas import (
     QuestPatchRequest,
     QuestResponse,
     RelationshipStateResponse,
+    RestResponse,
     SessionDetailResponse,
     SessionForkRequest,
     SessionInitRequest,
@@ -133,6 +134,7 @@ async def health(db: AsyncSession = Depends(get_db)) -> HealthResponse:
             quests_enabled=settings.quests_enabled,
             dice_enabled=settings.dice_enabled,
             character_sheet_enabled=settings.character_sheet_enabled,
+            permadeath_enabled=settings.permadeath_enabled,
             actor_model=settings.actor_model_name,
             gm_model=settings.gm_model_name,
             memory_model=settings.memory_model_name,
@@ -211,6 +213,7 @@ async def init_session(payload: SessionInitRequest, db: AsyncSession = Depends(g
         quests_enabled=payload.quests_enabled,
         dice_enabled=payload.dice_enabled,
         character_sheet_enabled=payload.character_sheet_enabled,
+        permadeath_enabled=payload.permadeath_enabled,
     )
     db.add(session)
     await db.flush()
@@ -258,6 +261,36 @@ async def get_session_sheet(session_id: str, db: AsyncSession = Depends(get_db))
     response = sheet_to_response(sheet, settings)
     assert response is not None  # sheet is non-None here; for the type checker
     return response
+
+
+@app.post("/session/{session_id}/rest", response_model=RestResponse)
+async def rest_session(session_id: str, db: AsyncSession = Depends(get_db)) -> RestResponse:
+    """Rest to recover HP (todo-rpg Phase 3). Heals a fraction of max HP — never a
+    free full reset — and advances the world by ``hp_rest_turn_cost`` turns, so
+    neglected quests creep toward escalation. A consequence, not a free heal."""
+    settings = get_settings()
+    session = await db.scalar(select(ChatSession).where(ChatSession.id == session_id))
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if session.status == "dead":
+        raise HTTPException(status_code=409, detail="This chronicle has ended.")
+    service = CharacterSheetService(settings)
+    sheet = await service.load_for_session(db, session_id)
+    if sheet is None:
+        raise HTTPException(status_code=404, detail="No character sheet for this session.")
+
+    # Advance the world first (its own commit), so resting at full HP still costs
+    # narrative ground even when no HP is gained.
+    session.turn_count += settings.hp_rest_turn_cost
+    await db.commit()
+    heal = await service.apply_heal(db, session_id, service.rest_heal_amount(sheet), reason="rest")
+
+    sheet = await service.load_for_session(db, session_id)
+    response = sheet_to_response(sheet, settings)
+    assert response is not None
+    beats = heal.notifications() if heal is not None else ["You rest, but you were already at full strength."]
+    beats.append(f"Time passes — the world moves on ({settings.hp_rest_turn_cost} turns).")
+    return RestResponse(session_id=session_id, sheet=response, beats=beats, turns_advanced=settings.hp_rest_turn_cost)
 
 
 @app.get("/session/{session_id}/turns", response_model=list[TurnResponse])

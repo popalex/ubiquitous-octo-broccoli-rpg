@@ -143,6 +143,25 @@ class Settings(BaseSettings):
     # XP — i.e. a flat sheet_xp_curve_base per level. Tunable; see CharacterSheetService.
     sheet_xp_curve_base: int = 100
 
+    # Resources & stakes (todo-rpg Phase 3): HP gives failure a cost. HP lives on
+    # the character sheet, so it's active whenever CHARACTER_SHEET_ENABLED is on.
+    # A failed *dangerous* check costs HP — the GM tags failure severity
+    # (none/minor/major) and the engine applies a flat, deterministic amount (no
+    # hallucinated numbers, mirroring how the DC band works). At 0 HP the character
+    # is downed (a consequence) unless permadeath is on for the chronicle, in which
+    # case the chronicle ends.
+    sheet_hp_start: int = 20  # starting and maximum HP
+    hp_damage_minor: int = 3
+    hp_damage_major: int = 8
+    # Rest heals a fraction of max HP (never a free full reset) and advances the
+    # world by hp_rest_turn_cost turns, pushing neglected quests toward escalation —
+    # so resting costs narrative ground rather than being spammable.
+    hp_rest_heal_fraction: float = 0.5
+    hp_rest_turn_cost: int = 3
+    # Permadeath: chosen per chronicle at creation (NULL inherits this global).
+    # Off → 0 HP downs the character (recoverable); on → 0 HP ends the chronicle.
+    permadeath_enabled: bool = False
+
     @property
     def actor_context_budget(self) -> int:
         return max(512, self.actor_max_input_tokens - self.actor_reserved_output_tokens)

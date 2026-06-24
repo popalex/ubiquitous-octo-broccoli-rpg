@@ -461,6 +461,11 @@ If a check IS needed:
   "might", "finesse", "wits", "presence". The engine adds its modifier to the roll.
 - "dc": TASK DIFFICULTY ONLY (2-20), independent of how good this character is —
   the sheet handles competence. (5 easy, 10 moderate, 15 hard, 18 very hard.)
+- "stakes": how much FAILING this check would physically hurt the character —
+  EXACTLY one of "none" / "minor" / "major". "none" for purely social or
+  low-risk actions (persuasion, recalling lore); "minor" for a bruising slip
+  (a short fall, a glancing blow, a trap's sting); "major" only when failure is
+  genuinely dangerous (a long fall, a real weapon strike, a sprung deathtrap).
 - "rationale": one short clause explaining the task difficulty, written for THIS
   action (do NOT copy the placeholder below or any wording from the transcript).
   This is shown to the player.
@@ -472,6 +477,7 @@ the values below are placeholders, not answers):
   "skill_label": "<short skill name, omit/ignore if no check>",
   "attribute": "<might|finesse|wits|presence>",
   "dc": <integer 2-20>,
+  "stakes": "<none|minor|major>",
   "rationale": "<one short clause on task difficulty, specific to this action>"
 }}
 """.strip()

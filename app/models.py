@@ -121,6 +121,9 @@ class Session(TimestampMixin, Base):
     quests_enabled: Mapped[bool | None] = mapped_column(nullable=True)
     dice_enabled: Mapped[bool | None] = mapped_column(nullable=True)
     character_sheet_enabled: Mapped[bool | None] = mapped_column(nullable=True)
+    # Permadeath (todo-rpg Phase 3): NULL inherits the global setting. When on,
+    # reaching 0 HP ends the chronicle (status="dead") instead of downing.
+    permadeath_enabled: Mapped[bool | None] = mapped_column(nullable=True)
 
     # Rewind & fork (§4a): set on a session created by forking another at a
     # given turn. NULL parent = an original chronicle. The parent is never
@@ -313,6 +316,9 @@ class DiceRoll(TimestampMixin, Base):
     attribute: Mapped[str | None] = mapped_column(String(20), nullable=True)
     modifier: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total: Mapped[int] = mapped_column(Integer, nullable=False)  # die + modifier
+    # HP stakes (todo-rpg Phase 3): how much failing this check hurts —
+    # none / minor / major. Drives deterministic damage on a failed roll.
+    stakes: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # success | failure | critical_success
     outcome: Mapped[str] = mapped_column(String(20), nullable=False)
 
@@ -346,6 +352,11 @@ class CharacterSheet(TimestampMixin, Base):
     presence: Mapped[int] = mapped_column(Integer, nullable=False)
     level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     xp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Resources & stakes (todo-rpg Phase 3): HP gives a failed dangerous check a
+    # cost. ``hp`` is clamped to ``[0, max_hp]``; at 0 the character is downed (or
+    # the chronicle ends if permadeath is on for the session).
+    hp: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_hp: Mapped[int] = mapped_column(Integer, nullable=False)
 
     session: Mapped[Session] = relationship(back_populates="character_sheet")
 

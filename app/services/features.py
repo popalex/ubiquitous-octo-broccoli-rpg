@@ -33,3 +33,9 @@ def character_sheet_on(session: ChatSession, settings: Settings) -> bool:
     if session.character_sheet_enabled is not None:
         return session.character_sheet_enabled
     return settings.character_sheet_enabled
+
+
+def permadeath_on(session: ChatSession, settings: Settings) -> bool:
+    if session.permadeath_enabled is not None:
+        return session.permadeath_enabled
+    return settings.permadeath_enabled

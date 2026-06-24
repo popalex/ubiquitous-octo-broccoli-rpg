@@ -44,6 +44,7 @@ describe("turnsToMessages", () => {
           attribute: null,
           modifier: 0,
           total: 4,
+          stakes: null,
           outcome: "failure",
           rationale: "alert guard",
         },

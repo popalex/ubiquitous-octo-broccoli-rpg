@@ -43,6 +43,7 @@ class SessionInitRequest(BaseModel):
     quests_enabled: bool | None = None
     dice_enabled: bool | None = None
     character_sheet_enabled: bool | None = None
+    permadeath_enabled: bool | None = None
 
 
 class CharacterSheetResponse(ORMModel):
@@ -57,6 +58,18 @@ class CharacterSheetResponse(ORMModel):
     xp: int
     xp_to_next: int
     xp_for_level: int
+    hp: int
+    max_hp: int
+
+
+class RestResponse(BaseModel):
+    """Result of a rest action (todo-rpg Phase 3): partial heal + the world
+    advances. ``beats`` are the player-facing lines to surface in chat."""
+
+    session_id: str
+    sheet: CharacterSheetResponse
+    beats: list[str] = Field(default_factory=list)
+    turns_advanced: int
 
 
 class SessionInitResponse(ORMModel):
@@ -74,6 +87,7 @@ class SessionInitResponse(ORMModel):
     quests_enabled: bool
     dice_enabled: bool
     character_sheet_enabled: bool
+    permadeath_enabled: bool
     sheet: CharacterSheetResponse | None = None
 
 
@@ -171,6 +185,8 @@ class DiceRollResult(ORMModel):
     attribute: str | None = None
     modifier: int = 0
     total: int
+    # HP stakes if this check failed (todo-rpg Phase 3): none/minor/major.
+    stakes: str | None = None
     outcome: str  # success | failure | critical_success
     rationale: str | None = None
 
@@ -207,6 +223,7 @@ class SessionListItem(BaseModel):
     quests_enabled: bool
     dice_enabled: bool
     character_sheet_enabled: bool
+    permadeath_enabled: bool
     # Fork lineage (§4a): NULL parent = an original chronicle.
     parent_session_id: str | None = None
     forked_at_turn: int | None = None
@@ -242,6 +259,7 @@ class SessionDetailResponse(BaseModel):
     quests_enabled: bool
     dice_enabled: bool
     character_sheet_enabled: bool
+    permadeath_enabled: bool
     sheet: CharacterSheetResponse | None = None
     # Fork lineage (§4a): NULL parent = an original chronicle.
     parent_session_id: str | None = None
@@ -301,6 +319,7 @@ class HealthResponse(BaseModel):
     quests_enabled: bool
     dice_enabled: bool
     character_sheet_enabled: bool
+    permadeath_enabled: bool
     # Resolved LLM model names per slot (DEV mode collapses actor/memory/gm onto
     # one). Embedding model is intentionally omitted — it's not a chat model.
     actor_model: str

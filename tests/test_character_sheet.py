@@ -375,3 +375,184 @@ async def test_turns_route_attaches_persisted_advancement(async_client: AsyncCli
     by_index = {t["turn_index"]: t for t in response.json()}
     assert by_index[1]["advancement"] is None
     assert by_index[2]["advancement"] == ["You reached level 2.", "FINESSE increased to +4."]
+
+
+# ---------------------------------------------------------------------------
+# HP / resources & stakes (todo-rpg Phase 3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("stakes", "expected"),
+    [("none", 0), ("minor", 3), ("major", 8), (None, 0), ("bogus", 0)],
+)
+def test_damage_for_stakes(stakes: str | None, expected: int) -> None:
+    svc = CharacterSheetService(make_test_settings(hp_damage_minor=3, hp_damage_major=8))
+    assert svc.damage_for_stakes(stakes) == expected
+
+
+@pytest.mark.asyncio
+async def test_apply_damage_clamps_and_downs(db_session: AsyncSession) -> None:
+    svc = CharacterSheetService(make_test_settings())
+    sheet = CharacterSheetFactory(hp=5, max_hp=20)
+    await db_session.flush()
+
+    # Overkill clamps to 0 and flags downed (not dead — permadeath off).
+    res = await svc.apply_damage(db_session, sheet.session_id, 99, permadeath=False)
+    assert res is not None and res.hp == 0 and res.downed is True and res.died is False
+    assert sheet.hp == 0
+
+
+@pytest.mark.asyncio
+async def test_apply_damage_death_only_with_permadeath(db_session: AsyncSession) -> None:
+    svc = CharacterSheetService(make_test_settings())
+    sheet = CharacterSheetFactory(hp=3, max_hp=20)
+    await db_session.flush()
+
+    res = await svc.apply_damage(db_session, sheet.session_id, 10, permadeath=True)
+    assert res is not None and res.hp == 0 and res.downed is True and res.died is True
+
+
+@pytest.mark.asyncio
+async def test_apply_heal_clamps_to_max(db_session: AsyncSession) -> None:
+    svc = CharacterSheetService(make_test_settings())
+    sheet = CharacterSheetFactory(hp=18, max_hp=20)
+    await db_session.flush()
+
+    res = await svc.apply_heal(db_session, sheet.session_id, 99)
+    assert res is not None and res.hp == 20 and res.amount == 2
+    # Already at full → no-op.
+    assert await svc.apply_heal(db_session, sheet.session_id, 5) is None
+
+
+def test_rest_heal_amount_is_a_fraction_of_max() -> None:
+    svc = CharacterSheetService(make_test_settings(hp_rest_heal_fraction=0.5))
+    assert svc.rest_heal_amount(CharacterSheetFactory.build(max_hp=20)) == 10
+
+
+_RISKY_ASSESSMENT = {
+    "requires_check": True,
+    "skill_label": "Athletics",
+    "attribute": "might",
+    "dc": 12,
+    "stakes": "major",
+    "rationale": "a long fall if you slip",
+}
+
+
+@pytest.mark.asyncio
+async def test_failed_dangerous_check_costs_hp(mock_provider: MockProvider, db_session: AsyncSession) -> None:
+    orchestrator = _sheet_orchestrator(mock_provider, hp_damage_major=8)
+    mock_provider.set_json_responses([_RISKY_ASSESSMENT, {"ok": True, "issues": [], "revised_response": ""}])
+    session = SessionFactory(gm_enabled=True, turn_count=1)
+    sheet = CharacterSheetFactory(session=session, hp=20, max_hp=20)
+    await db_session.flush()
+
+    with patch("app.services.orchestrator.roll_check", return_value=(4, 6, FAILURE)):
+        result = await orchestrator.gm_chat(db_session, session.id, "I leap the chasm.")
+
+    assert any("8 damage" in line for line in result.advancement)
+    await db_session.refresh(sheet)
+    assert sheet.hp == 12
+
+
+@pytest.mark.asyncio
+async def test_successful_dangerous_check_costs_no_hp(mock_provider: MockProvider, db_session: AsyncSession) -> None:
+    orchestrator = _sheet_orchestrator(mock_provider, hp_damage_major=8)
+    mock_provider.set_json_responses([_RISKY_ASSESSMENT, {"ok": True, "issues": [], "revised_response": ""}])
+    session = SessionFactory(gm_enabled=True, turn_count=1)
+    sheet = CharacterSheetFactory(session=session, hp=20, max_hp=20)
+    await db_session.flush()
+
+    with patch("app.services.orchestrator.roll_check", return_value=(18, 20, SUCCESS)):
+        await orchestrator.gm_chat(db_session, session.id, "I leap the chasm.")
+
+    await db_session.refresh(sheet)
+    assert sheet.hp == 20  # success → no damage
+
+
+@pytest.mark.asyncio
+async def test_permadeath_death_ends_chronicle(mock_provider: MockProvider, db_session: AsyncSession) -> None:
+    orchestrator = _sheet_orchestrator(mock_provider, hp_damage_major=8, permadeath_enabled=True)
+    mock_provider.set_json_responses([_RISKY_ASSESSMENT, {"ok": True, "issues": [], "revised_response": ""}])
+    session = SessionFactory(gm_enabled=True, turn_count=1)
+    sheet = CharacterSheetFactory(session=session, hp=5, max_hp=20)
+    await db_session.flush()
+
+    with patch("app.services.orchestrator.roll_check", return_value=(2, 4, FAILURE)):
+        result = await orchestrator.gm_chat(db_session, session.id, "I leap the chasm.")
+
+    assert any("fallen" in line.lower() for line in result.advancement)
+    await db_session.refresh(session)
+    await db_session.refresh(sheet)
+    assert session.status == "dead"
+    assert sheet.hp == 0
+
+
+@pytest.mark.asyncio
+async def test_no_permadeath_downs_not_dead(mock_provider: MockProvider, db_session: AsyncSession) -> None:
+    orchestrator = _sheet_orchestrator(mock_provider, hp_damage_major=8, permadeath_enabled=False)
+    mock_provider.set_json_responses([_RISKY_ASSESSMENT, {"ok": True, "issues": [], "revised_response": ""}])
+    session = SessionFactory(gm_enabled=True, turn_count=1)
+    CharacterSheetFactory(session=session, hp=5, max_hp=20)
+    await db_session.flush()
+
+    with patch("app.services.orchestrator.roll_check", return_value=(2, 4, FAILURE)):
+        result = await orchestrator.gm_chat(db_session, session.id, "I leap the chasm.")
+
+    assert any("downed" in line.lower() for line in result.advancement)
+    await db_session.refresh(session)
+    assert session.status != "dead"
+
+
+@pytest.mark.asyncio
+async def test_dead_chronicle_refuses_further_turns(mock_provider: MockProvider, db_session: AsyncSession) -> None:
+    orchestrator = _sheet_orchestrator(mock_provider)
+    session = SessionFactory(gm_enabled=True, turn_count=1, status="dead")
+    await db_session.flush()
+
+    result = await orchestrator.gm_chat(db_session, session.id, "I keep fighting.")
+    assert "ended" in result.character_reply.lower()
+
+
+@pytest.mark.asyncio
+async def test_rest_route_heals_and_advances(async_client: AsyncClient, db_session: AsyncSession) -> None:
+    session = SessionFactory(turn_count=5)
+    CharacterSheetFactory(session=session, hp=4, max_hp=20)
+    await db_session.flush()
+
+    response = await async_client.post(f"/session/{session.id}/rest")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sheet"]["hp"] == 14  # +10 (50% of 20)
+    assert body["turns_advanced"] == 3
+    assert any("recover" in b.lower() for b in body["beats"])
+    await db_session.refresh(session)
+    assert session.turn_count == 8  # advanced by hp_rest_turn_cost
+
+
+@pytest.mark.asyncio
+async def test_rest_route_404_without_sheet(async_client: AsyncClient, db_session: AsyncSession) -> None:
+    session = SessionFactory()
+    await db_session.flush()
+    response = await async_client.post(f"/session/{session.id}/rest")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_rest_route_409_when_dead(async_client: AsyncClient, db_session: AsyncSession) -> None:
+    session = SessionFactory(status="dead")
+    CharacterSheetFactory(session=session, hp=0, max_hp=20)
+    await db_session.flush()
+    response = await async_client.post(f"/session/{session.id}/rest")
+    assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_fork_copies_hp(db_session: AsyncSession) -> None:
+    parent = SessionFactory(turn_count=0)
+    CharacterSheetFactory(session=parent, hp=7, max_hp=25)
+    await db_session.flush()
+    fork = await ForkService.fork_session(db_session, parent, at_turn=0)
+    fork_sheet = await db_session.scalar(select(CharacterSheet).where(CharacterSheet.session_id == fork.id))
+    assert fork_sheet is not None and fork_sheet.hp == 7 and fork_sheet.max_hp == 25

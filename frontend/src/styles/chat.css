@@ -346,6 +346,68 @@
   transition: width 0.4s ease;
 }
 
+/* HP (todo-rpg Phase 3) */
+.sheet-hp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.sheet-hp-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85em;
+}
+
+.sheet-hp-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.sheet-hp-downed {
+  color: #e06c6c;
+  font-weight: 700;
+}
+
+.sheet-hp-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(224, 108, 108, 0.12);
+  overflow: hidden;
+}
+
+.sheet-hp-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #e06c6c;
+  transition: width 0.4s ease;
+}
+
+.sheet-rest-btn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: 2px;
+  padding: var(--space-xs) var(--space-sm);
+  font-size: 0.85em;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid rgba(120, 150, 220, 0.4);
+  background: rgba(120, 150, 220, 0.1);
+  color: inherit;
+  cursor: pointer;
+}
+
+.sheet-rest-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.status-dead {
+  color: #e06c6c;
+}
+
 /* Outcome accents on the surrounding message bubble. */
 .dice-roll-critical_success .dice-roll-die,
 .dice-roll-success .dice-roll-die {

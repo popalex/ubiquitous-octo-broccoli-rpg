@@ -11,6 +11,7 @@ const ROLL: DiceRoll = {
   attribute: null,
   modifier: 0,
   total: 7,
+  stakes: null,
   outcome: "failure",
   rationale: "nimble rogue, but the guard is alert -> moderate",
 };

@@ -20,7 +20,7 @@ from app.models import CharacterSheet, EpisodeSummary, Turn
 from app.models import Session as ChatSession
 from app.schemas import CharacterSheetResponse, SessionDetailResponse, SessionInitResponse, SessionListItem
 from app.services.character_sheet import CharacterSheetService
-from app.services.features import character_sheet_on, dice_on, quests_on, world_state_on
+from app.services.features import character_sheet_on, dice_on, permadeath_on, quests_on, world_state_on
 
 _SUMMARY_PREVIEW_CHARS = 200
 
@@ -39,6 +39,8 @@ def sheet_to_response(sheet: CharacterSheet | None, settings: Settings) -> Chara
         xp=sheet.xp,
         xp_to_next=service.xp_to_next(sheet.xp),
         xp_for_level=service.xp_for_level(),
+        hp=sheet.hp,
+        max_hp=sheet.max_hp,
     )
 
 
@@ -61,6 +63,7 @@ def session_to_init(
         quests_enabled=quests_on(session, settings),
         dice_enabled=dice_on(session, settings),
         character_sheet_enabled=character_sheet_on(session, settings),
+        permadeath_enabled=permadeath_on(session, settings),
         sheet=sheet_to_response(sheet, settings),
     )
 
@@ -88,6 +91,7 @@ def session_to_detail(
         quests_enabled=quests_on(session, settings),
         dice_enabled=dice_on(session, settings),
         character_sheet_enabled=character_sheet_on(session, settings),
+        permadeath_enabled=permadeath_on(session, settings),
         sheet=sheet_to_response(sheet, settings),
         parent_session_id=session.parent_session_id,
         forked_at_turn=session.forked_at_turn,
@@ -115,6 +119,7 @@ def session_to_list_item(session: ChatSession, settings: Settings, summary: str 
         quests_enabled=quests_on(session, settings),
         dice_enabled=dice_on(session, settings),
         character_sheet_enabled=character_sheet_on(session, settings),
+        permadeath_enabled=permadeath_on(session, settings),
         parent_session_id=session.parent_session_id,
         forked_at_turn=session.forked_at_turn,
     )
