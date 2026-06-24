@@ -39,7 +39,14 @@ Every phase below exists to close that loop, in dependency order.
 
 ---
 
-## Phase 1 — Character sheet (the keystone)
+## Phase 1 — Character sheet (the keystone) ✅ SHIPPED
+
+> Done (2026-06-24). `CharacterSheet` (MIGHT/FINESSE/WITS/PRESENCE flat
+> modifiers + level + xp) keyed to `Session`, seeded at chronicle creation,
+> copied on fork, behind `CHARACTER_SHEET_ENABLED` (on by default in compose,
+> like quests/suggestions). The d20 check now rolls `d20 + attribute_mod vs DC`:
+> the GM names the governing attribute and sets a task-difficulty-only DC; the
+> sheet supplies competence. Read-only sheet panel + XP bar in the UI.
 
 Persistent mechanical state for the character. Everything else depends on it.
 
@@ -57,7 +64,18 @@ Persistent mechanical state for the character. Everything else depends on it.
 **Smallest valuable version:** 4 attributes, the d20 check adds the relevant
 modifier, sheet rendered read-only in the UI.
 
-## Phase 2 — Progression / XP / leveling (makes it a game)
+## Phase 2 — Progression / XP / leveling (makes it a game) ✅ SHIPPED
+
+> Done (2026-06-24). XP from successful checks (+10), criticals (+20), a sliver
+> on failures (+1, tunable), and quest completion (+50); flat 100-XP/level curve.
+> Level-up bumps one attribute (the one the check used, else the lowest) and
+> emits a "You reached level 2 / FINESSE increased to +6" beat — surfaced live
+> (SSE) and persisted on the turn so it re-renders on reload. **Deviation from
+> the plan below:** XP is granted **deterministically in the engine**
+> (`_apply_progression` → `CharacterSheetService.grant_xp`, row-locked) rather
+> than as a post-turn-judge delta — the engine already knows the check outcome,
+> so no extra LLM call and no hallucinated math. The judge-delta path is still
+> the right approach for *narrative-milestone* XP if that's added later.
 
 Closes the loop: rolls → XP → better rolls.
 
@@ -105,7 +123,11 @@ The consequence flavor of RPG depth.
 
 ---
 
-## Recommended first vertical slice (start here)
+## Recommended first vertical slice (start here) ✅ SHIPPED 2026-06-24
+
+> All four steps below are done — the loop is closed end-to-end and verified
+> live (a successful FINESSE check leveled a chronicle up, with the attribute
+> bump + beat). **Next up: Phase 3 (resources & stakes / HP).**
 
 Don't build a phase at a time top-to-bottom — build a **thin vertical slice**
 through Phases 1→2 first, so you get a playable "character who gets better" ASAP:
