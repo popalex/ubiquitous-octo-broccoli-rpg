@@ -61,12 +61,16 @@ export function CodexSetup({ onStarted }: Props) {
   const [characterSheetChoice, setCharacterSheetChoice] = useState<boolean | null>(() =>
     readStoredToggle(storageKeys.characterSheetEnabled),
   );
+  const [permadeathChoice, setPermadeathChoice] = useState<boolean | null>(() =>
+    readStoredToggle(storageKeys.permadeathEnabled),
+  );
   const gmEnabled = gmChoice ?? health?.gm_enabled ?? false;
   const suggestionsEnabled = suggestionsChoice ?? health?.suggestions_enabled ?? false;
   const worldStateEnabled = worldStateChoice ?? health?.world_state_enabled ?? false;
   const questsEnabled = questsChoice ?? health?.quests_enabled ?? false;
   const diceEnabled = diceChoice ?? health?.dice_enabled ?? false;
   const characterSheetEnabled = characterSheetChoice ?? health?.character_sheet_enabled ?? false;
+  const permadeathEnabled = permadeathChoice ?? health?.permadeath_enabled ?? false;
   const [timeOfDay, setTimeOfDay] = useState("morning");
   const [ids, setIds] = useState(() => ({
     characterCardId: localStorage.getItem(storageKeys.characterCardId) || "",
@@ -110,6 +114,11 @@ export function CodexSetup({ onStarted }: Props) {
     localStorage.setItem(storageKeys.characterSheetEnabled, String(value));
   }
 
+  function handleSetPermadeathEnabled(value: boolean) {
+    setPermadeathChoice(value);
+    localStorage.setItem(storageKeys.permadeathEnabled, String(value));
+  }
+
   return (
     <CodexForm
       key={selectedTemplate.id}
@@ -129,6 +138,8 @@ export function CodexSetup({ onStarted }: Props) {
       setDiceEnabled={handleSetDiceEnabled}
       characterSheetEnabled={characterSheetEnabled}
       setCharacterSheetEnabled={handleSetCharacterSheetEnabled}
+      permadeathEnabled={permadeathEnabled}
+      setPermadeathEnabled={handleSetPermadeathEnabled}
       toggleChoices={{
         gm: gmChoice,
         suggestions: suggestionsChoice,
@@ -136,6 +147,7 @@ export function CodexSetup({ onStarted }: Props) {
         quests: questsChoice,
         dice: diceChoice,
         characterSheet: characterSheetChoice,
+        permadeath: permadeathChoice,
       }}
       timeOfDay={timeOfDay}
       setTimeOfDay={setTimeOfDay}
@@ -163,6 +175,8 @@ type CodexFormProps = {
   setDiceEnabled: (v: boolean) => void;
   characterSheetEnabled: boolean;
   setCharacterSheetEnabled: (v: boolean) => void;
+  permadeathEnabled: boolean;
+  setPermadeathEnabled: (v: boolean) => void;
   /** Raw toggle choices: null = user never touched it (inherit the global). */
   toggleChoices: {
     gm: boolean | null;
@@ -171,6 +185,7 @@ type CodexFormProps = {
     quests: boolean | null;
     dice: boolean | null;
     characterSheet: boolean | null;
+    permadeath: boolean | null;
   };
   timeOfDay: string;
   setTimeOfDay: (v: string) => void;
@@ -196,6 +211,8 @@ function CodexForm({
   setDiceEnabled,
   characterSheetEnabled,
   setCharacterSheetEnabled,
+  permadeathEnabled,
+  setPermadeathEnabled,
   toggleChoices,
   timeOfDay,
   setTimeOfDay,
@@ -251,6 +268,7 @@ function CodexForm({
         quests_enabled: toggleChoices.quests,
         dice_enabled: toggleChoices.dice,
         character_sheet_enabled: toggleChoices.characterSheet,
+        permadeath_enabled: toggleChoices.permadeath,
       });
       localStorage.setItem(storageKeys.sessionTitle, sessionTitle);
       onStarted(payload.session_id, starterPrompt);
@@ -282,6 +300,8 @@ function CodexForm({
         setDiceEnabled={setDiceEnabled}
         characterSheetEnabled={characterSheetEnabled}
         setCharacterSheetEnabled={setCharacterSheetEnabled}
+        permadeathEnabled={permadeathEnabled}
+        setPermadeathEnabled={setPermadeathEnabled}
         currentLocation={currentLocation}
         setCurrentLocation={setCurrentLocation}
         timeOfDay={timeOfDay}

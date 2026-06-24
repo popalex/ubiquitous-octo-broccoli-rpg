@@ -34,8 +34,8 @@ from app.services.context_packet import (
     recent_turns_text,
 )
 from app.services.continuity import ContinuityResult, ContinuityService
-from app.services.dice import CRITICAL_SUCCESS, SUCCESS, message_may_need_check, roll_check, roll_directive
-from app.services.features import character_sheet_on, dice_on, quests_on, world_state_on
+from app.services.dice import CRITICAL_SUCCESS, FAILURE, SUCCESS, message_may_need_check, roll_check, roll_directive
+from app.services.features import character_sheet_on, dice_on, permadeath_on, quests_on, world_state_on
 from app.services.game_master import GameMasterService
 from app.services.memory import MemoryService
 from app.services.post_turn_judge import PostTurnJudgeService
@@ -106,6 +106,13 @@ def sse_error(error: str) -> str:
     return _sse({"type": "error", "error": error})
 
 
+# Shown when a permadeath chronicle has ended (status="dead") and the player
+# tries to act again. Forking from an earlier turn is the way to continue.
+_DEAD_CHRONICLE_MSG = (
+    "This chronicle has ended — your hero has fallen. Fork from an earlier turn to continue their story."
+)
+
+
 class OrchestratorService:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
@@ -151,6 +158,14 @@ class OrchestratorService:
         )
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found.")
+        if session.status == "dead":
+            return ChatResponse(
+                session_id=session.id,
+                reply=_DEAD_CHRONICLE_MSG,
+                continuity_applied=False,
+                continuity_issues=[],
+                retrieved_memories=[],
+            )
 
         retrieved = await self.retrieval.retrieve(db, session, user_message)
         recent_turns = (
@@ -278,6 +293,7 @@ class OrchestratorService:
             span.set_attribute("rpg.dice.attribute", assessment.attribute or "")
             span.set_attribute("rpg.dice.modifier", modifier)
             span.set_attribute("rpg.dice.total", total)
+            span.set_attribute("rpg.dice.stakes", assessment.stakes or "")
             span.set_attribute("rpg.dice.outcome", outcome)
             result = DiceRollResult(
                 skill_label=assessment.skill_label,
@@ -286,6 +302,7 @@ class OrchestratorService:
                 attribute=assessment.attribute,
                 modifier=modifier,
                 total=total,
+                stakes=assessment.stakes,
                 outcome=outcome,
                 rationale=assessment.rationale or None,
             )
@@ -312,6 +329,7 @@ class OrchestratorService:
                     attribute=roll.attribute,
                     modifier=roll.modifier,
                     total=roll.total,
+                    stakes=roll.stakes,
                     outcome=roll.outcome,
                 )
             )
@@ -362,6 +380,19 @@ class OrchestratorService:
                 )
                 if level_up is not None:
                     advancement.extend(level_up.notifications())
+            # Stakes (todo-rpg Phase 3): a failed *dangerous* check costs HP. The GM
+            # tagged severity; the engine owns the number. At 0 HP the character is
+            # downed, or the chronicle ends when permadeath is on.
+            if roll is not None and roll.outcome == FAILURE:
+                dmg = self.character_sheet.damage_for_stakes(roll.stakes)
+                if dmg > 0:
+                    hit = await self.character_sheet.apply_damage(
+                        db, session.id, dmg, permadeath=permadeath_on(session, self.settings), reason="check"
+                    )
+                    if hit is not None:
+                        advancement.extend(hit.notifications())
+                        if hit.died:
+                            session.status = "dead"
             if advancement:
                 assistant_turn.advancement_json = advancement
                 await db.commit()
@@ -395,6 +426,14 @@ class OrchestratorService:
         )
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found.")
+        if session.status == "dead":
+            return GMChatResponse(
+                session_id=session.id,
+                character_reply=_DEAD_CHRONICLE_MSG,
+                continuity_applied=False,
+                continuity_issues=[],
+                retrieved_memories=[],
+            )
 
         # Retrieve memories and recent turns for context
         retrieved = await self.retrieval.retrieve(db, session, user_message)
@@ -598,6 +637,11 @@ class OrchestratorService:
         if session is None:
             logger.warning("gm_chat_stream session=%s NOT FOUND", session_id)
             yield sse_error("Session not found")
+            return
+        if session.status == "dead":
+            yield sse_phase("character_reply")  # makes the frontend mount the reply bubble
+            yield sse_chunk(_DEAD_CHRONICLE_MSG)
+            yield sse_done(session.id)
             return
 
         # Retrieve memories and recent turns
@@ -849,6 +893,12 @@ class OrchestratorService:
         )
         if session is None:
             yield sse_error("Session not found")
+            return
+        if session.status == "dead":
+            # The standard-stream frontend mounts the assistant bubble up front, so
+            # a chunk lands directly.
+            yield sse_chunk(_DEAD_CHRONICLE_MSG)
+            yield sse_done(session.id)
             return
 
         with tracer.start_as_current_span("orchestrator.retrieve") as _span:

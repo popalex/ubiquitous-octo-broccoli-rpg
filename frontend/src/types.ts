@@ -8,6 +8,7 @@ export type Health = {
   quests_enabled: boolean;
   dice_enabled: boolean;
   character_sheet_enabled: boolean;
+  permadeath_enabled: boolean;
 };
 
 export type ChronicleListItem = {
@@ -29,6 +30,7 @@ export type ChronicleListItem = {
   quests_enabled: boolean;
   dice_enabled: boolean;
   character_sheet_enabled: boolean;
+  permadeath_enabled: boolean;
   // Fork lineage: null parent = an original chronicle.
   parent_session_id: string | null;
   forked_at_turn: number | null;
@@ -43,6 +45,15 @@ export type CharacterSheet = {
   xp: number;
   xp_to_next: number;
   xp_for_level: number;
+  hp: number;
+  max_hp: number;
+};
+
+export type RestResult = {
+  session_id: string;
+  sheet: CharacterSheet;
+  beats: string[];
+  turns_advanced: number;
 };
 
 export type SessionDetail = {
@@ -65,6 +76,7 @@ export type SessionDetail = {
   quests_enabled: boolean;
   dice_enabled: boolean;
   character_sheet_enabled: boolean;
+  permadeath_enabled: boolean;
   // Present when the character-sheet feature is on for this chronicle.
   sheet: CharacterSheet | null;
   // Fork lineage: null parent = an original chronicle.
@@ -206,6 +218,8 @@ export type DiceRoll = {
   attribute: string | null;
   modifier: number;
   total: number;
+  // HP stakes if this check failed (todo-rpg Phase 3): none/minor/major.
+  stakes: string | null;
   outcome: "success" | "failure" | "critical_success";
   // Why the GM set that DC — DC-encoded competence made visible.
   rationale: string | null;

@@ -83,6 +83,11 @@ level_ups = _meter.create_counter("rpg.sheet.level_ups", description="Character-
 attribute_bumps = _meter.create_counter(
     "rpg.sheet.attribute_bumps", description="Attribute increases on level-up, by attribute"
 )
+hp_damage = _meter.create_counter("rpg.sheet.hp_damage", description="HP lost to failed checks, by reason")
+hp_healed = _meter.create_counter("rpg.sheet.hp_healed", description="HP restored (rest/heal), by reason")
+sheet_downs = _meter.create_counter(
+    "rpg.sheet.downs", description="Times a character hit 0 HP (downed/died), by permadeath"
+)
 
 
 def messages_to_json(messages: Sequence) -> str:

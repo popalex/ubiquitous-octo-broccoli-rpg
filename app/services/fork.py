@@ -73,6 +73,8 @@ class ForkService:
                 world_state_enabled=parent.world_state_enabled,
                 quests_enabled=parent.quests_enabled,
                 dice_enabled=parent.dice_enabled,
+                character_sheet_enabled=parent.character_sheet_enabled,
+                permadeath_enabled=parent.permadeath_enabled,
                 parent_session_id=parent.id,
                 forked_at_turn=at_turn,
             )
@@ -227,6 +229,7 @@ class ForkService:
                         attribute=roll.attribute,
                         modifier=roll.modifier,
                         total=roll.total,
+                        stakes=roll.stakes,
                         outcome=roll.outcome,
                     )
                 )
@@ -244,6 +247,8 @@ class ForkService:
                         presence=parent_sheet.presence,
                         level=parent_sheet.level,
                         xp=parent_sheet.xp,
+                        hp=parent_sheet.hp,
+                        max_hp=parent_sheet.max_hp,
                     )
                 )
 

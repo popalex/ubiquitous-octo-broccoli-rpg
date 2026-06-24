@@ -85,7 +85,19 @@ Closes the loop: rolls → XP → better rolls.
   world/quest deltas already produced — no new LLM call.
 - UI: XP bar, level-up moment, "you improved X" beat.
 
-## Phase 3 — Resources & stakes (HP, etc.)
+## Phase 3 — Resources & stakes (HP, etc.) ✅ SHIPPED
+
+> Done (2026-06-24). HP lives on the `CharacterSheet` (seeded `sheet_hp_start`,
+> copied on fork). A failed *dangerous* check costs HP: the GM tags failure
+> `stakes` (none/minor/major) on the assessment and the engine applies a flat,
+> deterministic amount (no hallucinated numbers, like the DC band). At 0 HP the
+> character is **downed** (recoverable), or the chronicle **ends** (status="dead",
+> further turns refused) when **permadeath** is on — a per-chronicle choice at
+> creation (`PERMADEATH_ENABLED`). **Rest** (`POST /session/{id}/rest`) heals a
+> fraction of max HP and advances the world `hp_rest_turn_cost` turns, so it's a
+> tradeoff, not a free reset. UI: HP bar + Rest button on the sheet panel,
+> "Downed"/"Fallen" states, permadeath toggle. Stamina/mana deferred to the magic
+> system. **Next: Phase 4 (first-class items).**
 
 Failure needs a cost or rolls carry no tension.
 

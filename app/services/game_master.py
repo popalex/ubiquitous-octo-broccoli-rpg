@@ -32,7 +32,7 @@ from app.prompts import (
     GM_WORLD_STATE_UPDATE_PROMPT,
 )
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
-from app.services.character_sheet import ATTRIBUTE_KEYS
+from app.services.character_sheet import ATTRIBUTE_KEYS, STAKES_KEYS
 from app.services.dice import clamp_dc
 
 if TYPE_CHECKING:
@@ -99,6 +99,8 @@ class ActionAssessment:
     dc: int = 10
     rationale: str = ""
     attribute: str | None = None
+    # HP stakes if this check fails (todo-rpg Phase 3): none / minor / major.
+    stakes: str | None = None
 
 
 @dataclass(slots=True)
@@ -401,18 +403,24 @@ class GameMasterService:
         skill = str(result.get("skill_label", "")).strip() or "Skill"
         rationale = str(result.get("rationale", "")).strip()
         attribute = None
+        stakes = None
         if sheet is not None:
             raw_attr = str(result.get("attribute", "")).strip().lower()
             attribute = raw_attr if raw_attr in ATTRIBUTE_KEYS else None
+            raw_stakes = str(result.get("stakes", "")).strip().lower()
+            stakes = raw_stakes if raw_stakes in STAKES_KEYS else None
         logger.info(
-            "assess_action session=%s requires_check skill=%s dc=%s attribute=%s rationale=%s",
+            "assess_action session=%s requires_check skill=%s dc=%s attribute=%s stakes=%s rationale=%s",
             session.id,
             skill,
             dc,
             attribute,
+            stakes,
             rationale,
         )
-        return ActionAssessment(requires_check=True, skill_label=skill, dc=dc, rationale=rationale, attribute=attribute)
+        return ActionAssessment(
+            requires_check=True, skill_label=skill, dc=dc, rationale=rationale, attribute=attribute, stakes=stakes
+        )
 
     async def generate_event(
         self,

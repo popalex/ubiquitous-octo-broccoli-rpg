@@ -2,7 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 
 import { api } from "../api";
 import { withUiSpan } from "../telemetry";
-import type { CharacterLoadPayload, SessionDetail } from "../types";
+import type { CharacterLoadPayload, RestResult, SessionDetail } from "../types";
 
 type CharacterLoadResult = {
   character_card_id: string;
@@ -38,6 +38,7 @@ export type SessionInitInput = {
   quests_enabled: boolean | null;
   dice_enabled: boolean | null;
   character_sheet_enabled: boolean | null;
+  permadeath_enabled: boolean | null;
 };
 
 /** POST /character/load — upserts the character + world templates. */
@@ -86,6 +87,19 @@ export function useForkSession() {
             method: "POST",
             body: JSON.stringify({ at_turn: atTurn ?? null, title: title ?? null }),
           }),
+      ),
+  });
+}
+
+/**
+ * POST /session/{id}/rest — recover HP (todo-rpg Phase 3). Heals a fraction of
+ * max HP and advances the world; returns the updated sheet + narration beats.
+ */
+export function useRestSession() {
+  return useMutation({
+    mutationFn: (sessionId: string) =>
+      withUiSpan("ui.rest", { "rpg.session_id": sessionId }, () =>
+        api<RestResult>(`/session/${sessionId}/rest`, { method: "POST" }),
       ),
   });
 }

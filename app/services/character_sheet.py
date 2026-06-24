@@ -20,13 +20,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings, get_settings
 from app.models import CharacterSheet
 from app.models import Session as ChatSession
-from app.telemetry import attribute_bumps, level_ups, tracer, xp_granted
+from app.telemetry import attribute_bumps, hp_damage, hp_healed, level_ups, sheet_downs, tracer, xp_granted
 
 logger = logging.getLogger(__name__)
 
 # The four light-system attributes (flat d20 modifiers). The skill check's
 # governing attribute is one of these keys; unknown/missing keys yield 0.
 ATTRIBUTE_KEYS: tuple[str, ...] = ("might", "finesse", "wits", "presence")
+
+# HP stakes a failed check can carry, in ascending severity. "none" → no damage.
+STAKES_KEYS: tuple[str, ...] = ("none", "minor", "major")
 
 
 @dataclass
@@ -44,6 +47,30 @@ class LevelUpResult:
         for attr, value in self.bumps:
             msgs.append(f"{attr.upper()} increased to +{value}.")
         return msgs
+
+
+@dataclass
+class HpChangeResult:
+    """Outcome of an HP change (damage or heal). ``downed`` is set the moment HP
+    hits 0; ``died`` only when the chronicle has permadeath on."""
+
+    amount: int  # signed: negative for damage, positive for heal
+    hp: int
+    max_hp: int
+    downed: bool = False
+    died: bool = False
+
+    def notifications(self) -> list[str]:
+        """Player-facing HP beats surfaced in chat."""
+        if self.died:
+            return [f"You have fallen. ({self.hp}/{self.max_hp} HP) — this chronicle ends."]
+        if self.downed:
+            return [f"You are downed! ({self.hp}/{self.max_hp} HP) — you need to recover."]
+        if self.amount < 0:
+            return [f"You take {-self.amount} damage. ({self.hp}/{self.max_hp} HP)"]
+        if self.amount > 0:
+            return [f"You recover {self.amount} HP. ({self.hp}/{self.max_hp} HP)"]
+        return []
 
 
 class CharacterSheetService:
@@ -90,6 +117,7 @@ class CharacterSheetService:
         if existing is not None:
             return existing
         start = self.settings.sheet_attribute_start
+        hp = self.settings.sheet_hp_start
         sheet = CharacterSheet(
             session_id=session.id,
             might=start,
@@ -98,6 +126,8 @@ class CharacterSheetService:
             presence=start,
             level=1,
             xp=0,
+            hp=hp,
+            max_hp=hp,
         )
         db.add(sheet)
         await db.flush()
@@ -178,3 +208,84 @@ class CharacterSheetService:
                 span.set_attribute("rpg.sheet.new_level", sheet.level)
                 return LevelUpResult(old_level=old_level, new_level=sheet.level, bumps=bumps)
             return None
+
+    # --- HP / resources (todo-rpg Phase 3) -------------------------------
+    def damage_for_stakes(self, stakes: str | None) -> int:
+        """Flat, deterministic HP cost for a failed check's severity tag. The GM
+        proposes the band (minor/major); the engine owns the number — no
+        hallucinated damage, mirroring how the DC band works for the roll."""
+        key = (stakes or "").strip().lower()
+        if key == "major":
+            return self.settings.hp_damage_major
+        if key == "minor":
+            return self.settings.hp_damage_minor
+        return 0
+
+    async def _change_hp(
+        self,
+        db: AsyncSession,
+        session_id: str,
+        delta: int,
+        *,
+        permadeath: bool,
+        reason: str,
+    ) -> HpChangeResult | None:
+        """Apply a signed HP ``delta`` (clamped to ``[0, max_hp]``) under a row
+        lock, returning the outcome. ``None`` when there's no sheet or no change.
+        Best-effort: commits its own write, swallows failures (repo convention)."""
+        if delta == 0:
+            return None
+        with tracer.start_as_current_span("character_sheet.change_hp") as span:
+            span.set_attribute("rpg.session_id", str(session_id))
+            span.set_attribute("rpg.sheet.hp_delta", delta)
+            span.set_attribute("rpg.sheet.reason", reason)
+            sheet = await db.scalar(
+                select(CharacterSheet)
+                .where(CharacterSheet.session_id == session_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if sheet is None:
+                return None
+            new_hp = max(0, min(sheet.max_hp, sheet.hp + delta))
+            applied = new_hp - sheet.hp
+            if applied == 0:  # already at the clamp (full HP heal / downed taking more)
+                return None
+            sheet.hp = new_hp
+            downed = new_hp == 0
+            died = downed and permadeath
+            try:
+                await db.commit()
+            except SQLAlchemyError:
+                logger.exception("character-sheet hp change failed for session=%s", session_id)
+                await db.rollback()
+                return None
+            if applied < 0:
+                hp_damage.add(-applied, {"reason": reason or "unspecified"})
+            else:
+                hp_healed.add(applied, {"reason": reason or "unspecified"})
+            if downed:
+                sheet_downs.add(1, {"permadeath": str(died).lower()})
+                span.set_attribute("rpg.sheet.downed", True)
+            return HpChangeResult(amount=applied, hp=new_hp, max_hp=sheet.max_hp, downed=downed, died=died)
+
+    async def apply_damage(
+        self, db: AsyncSession, session_id: str, amount: int, *, permadeath: bool, reason: str = "check"
+    ) -> HpChangeResult | None:
+        """Subtract ``amount`` HP (no-op for amount <= 0)."""
+        if amount <= 0:
+            return None
+        return await self._change_hp(db, session_id, -amount, permadeath=permadeath, reason=reason)
+
+    async def apply_heal(
+        self, db: AsyncSession, session_id: str, amount: int, *, reason: str = "rest"
+    ) -> HpChangeResult | None:
+        """Add ``amount`` HP, clamped to max (no-op for amount <= 0). Healing never
+        triggers death, so permadeath is irrelevant here."""
+        if amount <= 0:
+            return None
+        return await self._change_hp(db, session_id, amount, permadeath=False, reason=reason)
+
+    def rest_heal_amount(self, sheet: CharacterSheet) -> int:
+        """HP a rest restores: a fraction of max (never a free full reset)."""
+        return max(1, round(sheet.max_hp * self.settings.hp_rest_heal_fraction))

@@ -1,4 +1,4 @@
-import { BookOpen, Dices, Lightbulb, Sparkle, Sparkles, Swords, Target, Zap } from "lucide-react";
+import { BookOpen, Dices, Lightbulb, Skull, Sparkle, Sparkles, Swords, Target, Zap } from "lucide-react";
 import type { FormEvent } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
@@ -28,6 +28,8 @@ type Props = {
   setDiceEnabled: (v: boolean) => void;
   characterSheetEnabled: boolean;
   setCharacterSheetEnabled: (v: boolean) => void;
+  permadeathEnabled: boolean;
+  setPermadeathEnabled: (v: boolean) => void;
   currentLocation: string;
   setCurrentLocation: (v: string) => void;
   timeOfDay: string;
@@ -71,6 +73,8 @@ export function CharacterPanel({
   setDiceEnabled,
   characterSheetEnabled,
   setCharacterSheetEnabled,
+  permadeathEnabled,
+  setPermadeathEnabled,
   currentLocation,
   setCurrentLocation,
   timeOfDay,
@@ -313,6 +317,24 @@ export function CharacterPanel({
                 : "No stats or progression"}
             </span>
           </label>
+
+          {characterSheetEnabled && (
+            <label className="gm-toggle">
+              <input
+                type="checkbox"
+                checked={permadeathEnabled}
+                onChange={(e) => setPermadeathEnabled(e.target.checked)}
+              />
+              <span className="toggle-label">
+                <Skull className="inline-icon" /> Permadeath
+              </span>
+              <span className="toggle-hint">
+                {permadeathEnabled
+                  ? "0 HP ends the chronicle — fork to continue"
+                  : "0 HP downs you (recoverable), no game over"}
+              </span>
+            </label>
+          )}
 
           {gmEnabled && (
             <div className="gm-settings">

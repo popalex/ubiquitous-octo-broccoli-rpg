@@ -13,7 +13,7 @@ import {
   useSessionTurns,
   useWorldState,
 } from "../hooks/useSession";
-import { useForkSession } from "../hooks/useSessionMutations";
+import { useForkSession, useRestSession } from "../hooks/useSessionMutations";
 import { turnsToMessages } from "../turns";
 import type { ChatMessage, GMEvent, RetrievedMemory, SessionDetail, TurnRecord } from "../types";
 import { ChatPanel } from "./ChatPanel";
@@ -86,7 +86,13 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
   const suggestions = useSessionSuggestions(sessionId, detail.suggestions_enabled);
   const refreshMemory = useRefreshMemory();
   const forkSession = useForkSession();
+  const restSession = useRestSession();
   const [forkingTurn, setForkingTurn] = useState<number | null>(null);
+
+  // A permadeath chronicle whose hero hit 0 HP is over — the server refuses
+  // further turns; reflect that in the UI.
+  const currentSheet = sheet.data ?? detail.sheet ?? null;
+  const dead = detail.status === "dead" || (detail.permadeath_enabled && !!currentSheet && currentSheet.hp <= 0);
 
   const gmEnabled = detail.gm_enabled;
   const currentLocation = detail.current_location || "";
@@ -168,6 +174,27 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
     });
   }
 
+  function handleRest() {
+    if (restSession.isPending) return;
+    restSession.mutate(sessionId, {
+      onSuccess: (res) => {
+        setChatMessages((current) => [
+          ...current,
+          {
+            id: crypto.randomUUID(),
+            role: "narrator",
+            content: `**${res.beats.join(" ")}**`,
+            messageType: "advancement",
+          },
+        ]);
+        setStatusText(res.beats[0] ?? "You rest.");
+        // refreshMemory invalidates the sheet query (HP) + world/quests.
+        void refreshMemory(sessionId).catch(() => {});
+      },
+      onError: (err) => setStatusText(err instanceof Error ? err.message : "Rest failed."),
+    });
+  }
+
   return (
     <>
       <div className="chronicle-summary-bar">
@@ -221,6 +248,12 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
           <span className="meta-label">Sheet</span>
           <strong>{detail.character_sheet_enabled ? "On" : "Off"}</strong>
         </div>
+        {dead && (
+          <div className="summary-item">
+            <span className="meta-label">Status</span>
+            <strong className="status-dead">Fallen</strong>
+          </div>
+        )}
       </div>
       <main className="dashboard dashboard-chronicle">
         <ChatPanel
@@ -236,7 +269,14 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
           forkingTurn={forkingTurn}
         />
         <div className="panel-stack">
-          {detail.character_sheet_enabled && <CharacterSheetPanel sheet={sheet.data ?? detail.sheet ?? null} />}
+          {detail.character_sheet_enabled && (
+            <CharacterSheetPanel
+              sheet={currentSheet}
+              dead={dead}
+              onRest={handleRest}
+              resting={restSession.isPending}
+            />
+          )}
           <CodexPanel worldState={worldState.data ?? null} />
           <QuestJournal sessionId={sessionId} quests={quests.data ?? null} />
           <MemoryPanel

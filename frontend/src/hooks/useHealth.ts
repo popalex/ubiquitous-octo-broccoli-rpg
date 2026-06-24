@@ -13,6 +13,7 @@ const ERROR_HEALTH: Health = {
   quests_enabled: false,
   dice_enabled: false,
   character_sheet_enabled: false,
+  permadeath_enabled: false,
 };
 
 /**
