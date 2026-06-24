@@ -408,6 +408,13 @@
   color: #e06c6c;
 }
 
+.status-permadeath {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: #e06c6c;
+}
+
 /* Outcome accents on the surrounding message bubble. */
 .dice-roll-critical_success .dice-roll-die,
 .dice-roll-success .dice-roll-die {
