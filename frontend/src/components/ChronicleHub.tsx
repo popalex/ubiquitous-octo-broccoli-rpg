@@ -4,6 +4,7 @@ import {
   GitFork,
   Globe,
   Scroll,
+  Skull,
   Sparkles,
   Swords,
   Target,
@@ -127,6 +128,11 @@ export function ChronicleHub() {
                     {c.quests_enabled && (
                       <span className="badge badge-gm">
                         <Target className="inline-icon" /> Quests
+                      </span>
+                    )}
+                    {c.permadeath_enabled && (
+                      <span className="badge badge-permadeath" title="Permadeath — 0 HP ends this chronicle">
+                        <Skull className="inline-icon" /> Permadeath
                       </span>
                     )}
                     {c.parent_session_id && (

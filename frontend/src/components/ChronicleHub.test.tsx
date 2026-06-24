@@ -55,6 +55,20 @@ function mockSessions(sessions: ChronicleListItem[]) {
   server.use(http.get("/api/sessions", () => HttpResponse.json({ sessions })));
 }
 
+describe("ChronicleHub permadeath badge", () => {
+  it("shows a permadeath badge only on permadeath chronicles", async () => {
+    mockSessions([
+      makeChronicle({ id: "mortal-1", title: "Mortal Tale", permadeath_enabled: true }),
+      makeChronicle({ id: "safe-1", title: "Safe Tale", permadeath_enabled: false }),
+    ]);
+
+    const { container } = renderHub();
+
+    expect(await screen.findByText("Permadeath")).toBeInTheDocument();
+    expect(container.querySelectorAll(".badge-permadeath")).toHaveLength(1);
+  });
+});
+
 describe("ChronicleHub fork lineage", () => {
   it("shows a fork badge on forked chronicles and not on originals", async () => {
     server.use(
