@@ -13,6 +13,9 @@ const ERROR_HEALTH: Health = {
   quests_enabled: false,
   dice_enabled: false,
   character_sheet_enabled: false,
+  actor_model: "unknown",
+  gm_model: "unknown",
+  memory_model: "unknown",
 };
 
 /**

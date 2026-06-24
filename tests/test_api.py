@@ -200,6 +200,11 @@ async def test_health_exposes_toggle_defaults(async_client: AsyncClient) -> None
     assert data["gm_enabled"] is settings.gm_enabled
     assert data["world_state_enabled"] is settings.world_state_enabled
     assert data["quests_enabled"] is settings.quests_enabled
+    # LLM models per slot (embedding intentionally omitted).
+    assert data["actor_model"] == settings.actor_model_name
+    assert data["gm_model"] == settings.gm_model_name
+    assert data["memory_model"] == settings.memory_model_name
+    assert "embedding_model" not in data
 
 
 @pytest.mark.asyncio

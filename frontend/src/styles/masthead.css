@@ -91,10 +91,29 @@
    STATUS PILLS
    ═══════════════════════════════════════════════════════════════════════════ */
 
+.masthead-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+
 .status-strip {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
+}
+
+/* Second row: the active LLM models. Lighter than the status pills, and model
+   names keep their original casing (uppercasing mangles e.g. "llama3.2:8b"). */
+.models-strip {
+  align-items: center;
+}
+
+.models-strip .pill {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.66rem;
+  text-transform: none;
 }
 
 .pill {

@@ -8,6 +8,10 @@ export type Health = {
   quests_enabled: boolean;
   dice_enabled: boolean;
   character_sheet_enabled: boolean;
+  // Resolved LLM model per slot (embedding omitted — not a chat model).
+  actor_model: string;
+  gm_model: string;
+  memory_model: string;
 };
 
 export type ChronicleListItem = {
