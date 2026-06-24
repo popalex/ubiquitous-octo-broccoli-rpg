@@ -197,6 +197,12 @@
   background: rgba(255, 255, 255, 0.03);
 }
 
+.badge-permadeath {
+  color: #e06c6c;
+  border-color: rgba(224, 108, 108, 0.5);
+  background: rgba(224, 108, 108, 0.12);
+}
+
 .badge-fork {
   color: var(--azure);
   border-color: rgba(74, 124, 155, 0.4);

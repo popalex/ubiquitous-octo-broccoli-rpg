@@ -1,4 +1,4 @@
-import { Sparkle } from "lucide-react";
+import { Skull, Sparkle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -248,6 +248,14 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
           <span className="meta-label">Sheet</span>
           <strong>{detail.character_sheet_enabled ? "On" : "Off"}</strong>
         </div>
+        {detail.permadeath_enabled && (
+          <div className="summary-item">
+            <span className="meta-label">Permadeath</span>
+            <strong className="status-permadeath" title="0 HP ends this chronicle">
+              <Skull className="inline-icon" /> On
+            </strong>
+          </div>
+        )}
         {dead && (
           <div className="summary-item">
             <span className="meta-label">Status</span>
