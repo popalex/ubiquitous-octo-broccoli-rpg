@@ -320,6 +320,11 @@ class HealthResponse(BaseModel):
     dice_enabled: bool
     character_sheet_enabled: bool
     permadeath_enabled: bool
+    # Resolved LLM model names per slot (DEV mode collapses actor/memory/gm onto
+    # one). Embedding model is intentionally omitted — it's not a chat model.
+    actor_model: str
+    gm_model: str
+    memory_model: str
 
 
 # =============================================================================

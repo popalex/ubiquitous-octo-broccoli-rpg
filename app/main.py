@@ -135,6 +135,9 @@ async def health(db: AsyncSession = Depends(get_db)) -> HealthResponse:
             dice_enabled=settings.dice_enabled,
             character_sheet_enabled=settings.character_sheet_enabled,
             permadeath_enabled=settings.permadeath_enabled,
+            actor_model=settings.actor_model_name,
+            gm_model=settings.gm_model_name,
+            memory_model=settings.memory_model_name,
         )
     except Exception as exc:  # pragma: no cover
         logger.exception("healthcheck failed")
