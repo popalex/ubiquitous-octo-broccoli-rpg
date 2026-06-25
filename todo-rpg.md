@@ -107,7 +107,18 @@ Failure needs a cost or rolls carry no tension.
 - Stakes wire into the dice outcomes you already classify
   (success / failure / critical).
 
-## Phase 4 — First-class items
+## Phase 4 — First-class items ✅ SHIPPED (first slice)
+
+> Done (2026-06-25). Structured per-`Session` `Item` table (coexists with the
+> ledger's narrative inventory). Effects plug into the shipped systems: an
+> **equipped `check_bonus`** item adds to the d20 roll (Phase 1) — clamped to
+> `item_check_bonus_max`, attribute-scoped or general; a **`heal` consumable**
+> restores HP on **Use** (Phase 3). Items are acquired via the **post-turn judge
+> `item_delta`** (LLM proposes gains/losses → engine validates effect + clamps +
+> applies) and via player **Equip/Use** routes; gains surface as advancement
+> beats. Inventory panel + creation toggle; `ITEMS_ENABLED` flag; `items_gained`/
+> `items_used` metrics + panels. **Deferred to a 4b:** armor/defense (reduces
+> incoming HP damage). Stamina/mana still wait on the magic system.
 
 Promote ledger inventory from strings to structured items with effects.
 

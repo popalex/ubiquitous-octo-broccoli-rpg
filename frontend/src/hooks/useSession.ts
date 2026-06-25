@@ -5,6 +5,7 @@ import { api } from "../api";
 import type {
   CharacterSheet,
   SessionDetail,
+  SessionItems,
   SessionMemory,
   SessionQuests,
   TurnRecord,
@@ -19,6 +20,7 @@ export const sessionKeys = {
   quests: (id: string) => ["session", id, "quests"] as const,
   suggestions: (id: string) => ["session", id, "suggestions"] as const,
   sheet: (id: string) => ["session", id, "sheet"] as const,
+  items: (id: string) => ["session", id, "items"] as const,
 };
 
 /** Session detail + turns — the data needed to render a resumed chronicle. */
@@ -98,6 +100,16 @@ export function useSessionSheet(sessionId: string, enabled: boolean) {
   });
 }
 
+/** Structured inventory (todo-rpg Phase 4) — gated on the resolved items flag. */
+export function useSessionItems(sessionId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: sessionKeys.items(sessionId),
+    queryFn: () => api<SessionItems>(`/session/${sessionId}/items`),
+    enabled: !!sessionId && enabled,
+    retry: false,
+  });
+}
+
 /**
  * Returns a callback that refetches the post-turn-mutated reads (memory +
  * world-state + quests) for a session. Passed to the SSE chat flow as
@@ -112,6 +124,7 @@ export function useRefreshMemory(): (sessionId: string) => Promise<void> {
         queryClient.invalidateQueries({ queryKey: sessionKeys.worldState(sessionId) }),
         queryClient.invalidateQueries({ queryKey: sessionKeys.quests(sessionId) }),
         queryClient.invalidateQueries({ queryKey: sessionKeys.sheet(sessionId) }),
+        queryClient.invalidateQueries({ queryKey: sessionKeys.items(sessionId) }),
       ]);
     },
     [queryClient],

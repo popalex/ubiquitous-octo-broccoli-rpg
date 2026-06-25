@@ -19,7 +19,7 @@
   "timezone": "browser",
   "title": "RPG \u00b7 Metrics (LLM & HTTP)",
   "uid": "rpg-metrics",
-  "version": 5,
+  "version": 6,
   "templating": {
     "list": []
   },
@@ -1227,6 +1227,30 @@
           "instant": true,
           "range": false,
           "refId": "G"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rpg_items_gained_total) or vector(0)",
+          "legendFormat": "Items gained",
+          "instant": true,
+          "range": false,
+          "refId": "H"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rpg_items_used_total) or vector(0)",
+          "legendFormat": "Items used",
+          "instant": true,
+          "range": false,
+          "refId": "I"
         }
       ]
     },
@@ -1372,6 +1396,104 @@
           "editorMode": "code",
           "expr": "sum by (permadeath) (rpg_sheet_downs_total)",
           "legendFormat": "permadeath={{permadeath}}",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "title": "Items gained \u2014 cumulative by source",
+      "description": "Cumulative since backend start (resets on api restart) \u2014 readable for sparse single-player events.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 112
+      },
+      "id": 27,
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "fillOpacity": 10
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (source) (rpg_items_gained_total)",
+          "legendFormat": "{{source}}",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "title": "Items used \u2014 cumulative",
+      "description": "Cumulative since backend start (resets on api restart) \u2014 readable for sparse single-player events.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 112
+      },
+      "id": 28,
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "fillOpacity": 10
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rpg_items_used_total)",
+          "legendFormat": "used",
           "range": true,
           "refId": "A"
         }

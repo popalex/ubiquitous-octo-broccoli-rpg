@@ -415,6 +415,60 @@
   color: #e06c6c;
 }
 
+/* Inventory panel (todo-rpg Phase 4) */
+.inv-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid rgba(201, 162, 39, 0.18);
+  background: rgba(201, 162, 39, 0.04);
+}
+
+.inv-item-equipped {
+  border-color: rgba(201, 162, 39, 0.5);
+  background: rgba(201, 162, 39, 0.1);
+}
+
+.inv-item-icon {
+  flex-shrink: 0;
+  color: var(--gold);
+}
+
+.inv-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.inv-item-name {
+  font-size: 0.92em;
+}
+
+.inv-item-effect {
+  font-size: 0.8em;
+  opacity: 0.75;
+}
+
+.inv-item-btn {
+  flex-shrink: 0;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.78em;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid rgba(120, 150, 220, 0.4);
+  background: rgba(120, 150, 220, 0.1);
+  color: inherit;
+  cursor: pointer;
+}
+
+.inv-item-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Outcome accents on the surrounding message bubble. */
 .dice-roll-critical_success .dice-roll-die,
 .dice-roll-success .dice-roll-die {

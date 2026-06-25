@@ -20,7 +20,14 @@ from app.models import CharacterSheet, EpisodeSummary, Turn
 from app.models import Session as ChatSession
 from app.schemas import CharacterSheetResponse, SessionDetailResponse, SessionInitResponse, SessionListItem
 from app.services.character_sheet import CharacterSheetService
-from app.services.features import character_sheet_on, dice_on, permadeath_on, quests_on, world_state_on
+from app.services.features import (
+    character_sheet_on,
+    dice_on,
+    items_on,
+    permadeath_on,
+    quests_on,
+    world_state_on,
+)
 
 _SUMMARY_PREVIEW_CHARS = 200
 
@@ -64,6 +71,7 @@ def session_to_init(
         dice_enabled=dice_on(session, settings),
         character_sheet_enabled=character_sheet_on(session, settings),
         permadeath_enabled=permadeath_on(session, settings),
+        items_enabled=items_on(session, settings),
         sheet=sheet_to_response(sheet, settings),
     )
 
@@ -92,6 +100,7 @@ def session_to_detail(
         dice_enabled=dice_on(session, settings),
         character_sheet_enabled=character_sheet_on(session, settings),
         permadeath_enabled=permadeath_on(session, settings),
+        items_enabled=items_on(session, settings),
         sheet=sheet_to_response(sheet, settings),
         parent_session_id=session.parent_session_id,
         forked_at_turn=session.forked_at_turn,
@@ -120,6 +129,7 @@ def session_to_list_item(session: ChatSession, settings: Settings, summary: str 
         dice_enabled=dice_on(session, settings),
         character_sheet_enabled=character_sheet_on(session, settings),
         permadeath_enabled=permadeath_on(session, settings),
+        items_enabled=items_on(session, settings),
         parent_session_id=session.parent_session_id,
         forked_at_turn=session.forked_at_turn,
     )

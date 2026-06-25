@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Session as ChatSession
 from app.providers.base import ProviderError
+from app.services.items import ItemChange
 from app.services.memory import MemoryService
 from app.services.post_turn_judge import PostTurnJudgeService
 from app.services.quests import QuestChange
@@ -48,20 +49,20 @@ class PostTurnRunner:
         user_message: str,
         response_text: str,
         turn_id: str | None,
-    ) -> tuple[list[QuestChange], list[str]]:
+    ) -> tuple[list[QuestChange], list[str], list[ItemChange]]:
         """Run the unified post-turn judge and return ``(quest_changes,
-        suggestions)``. Best-effort: never raises — a post-turn failure must not
-        break the turn."""
+        suggestions, item_changes)``. Best-effort: never raises — a post-turn
+        failure must not break the turn."""
         try:
-            _, quest_changes, suggestions = await self.post_turn_judge.judge_turn(
+            _, quest_changes, suggestions, item_changes = await self.post_turn_judge.judge_turn(
                 db,
                 session,
                 user_message=user_message,
                 response_text=response_text,
                 turn_id=turn_id,
             )
-            return quest_changes, suggestions
+            return quest_changes, suggestions, item_changes
         except Exception:
             # Deliberately broad: post-turn side effects must never fail the turn.
             logger.exception("post-turn judge skipped for session=%s", session.id)
-            return [], []
+            return [], [], []

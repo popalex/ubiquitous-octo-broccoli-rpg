@@ -27,7 +27,8 @@ from app.models import Quest, WorldStateLedger
 from app.models import Session as ChatSession
 from app.prompts import build_post_turn_judge_prompt
 from app.providers.base import BaseModelProvider, ProviderError, ProviderMessage
-from app.services.features import quests_on, world_state_on
+from app.services.features import items_on, quests_on, world_state_on
+from app.services.items import ItemChange, ItemDelta, ItemService
 from app.services.quests import QuestChange, QuestDelta, QuestService
 from app.services.world_state import LedgerDelta, WorldStateService
 from app.telemetry import (
@@ -48,11 +49,13 @@ class PostTurnJudgeService:
         provider: BaseModelProvider,
         world_state: WorldStateService,
         quests: QuestService,
+        items: ItemService,
         settings: Settings | None = None,
     ) -> None:
         self.provider = provider
         self.world_state = world_state
         self.quests = quests
+        self.items = items
         self.settings = settings or get_settings()
 
     async def judge_turn(
@@ -63,10 +66,10 @@ class PostTurnJudgeService:
         user_message: str,
         response_text: str,
         turn_id: str | None = None,
-    ) -> tuple[WorldStateLedger | None, list[QuestChange], list[str]]:
-        """Run the combined world+quest+suggestions extraction in one call and
-        apply each section. Returns ``(new_ledger_row_or_None, quest_changes,
-        suggestions)``.
+    ) -> tuple[WorldStateLedger | None, list[QuestChange], list[str], list[ItemChange]]:
+        """Run the combined world+quest+suggestions+items extraction in one call
+        and apply each section. Returns ``(new_ledger_row_or_None, quest_changes,
+        suggestions, item_changes)``.
 
         Best-effort: provider/schema/apply failures are logged + metered and
         skipped, never raised."""
@@ -75,8 +78,9 @@ class PostTurnJudgeService:
             session.turn_count % self.settings.quest_extraction_interval == 0
         )
         do_suggestions = bool(session.suggestions_enabled)
-        if not do_world and not do_quests and not do_suggestions:
-            return None, [], []
+        do_items = items_on(session, self.settings)
+        if not do_world and not do_quests and not do_suggestions and not do_items:
+            return None, [], [], []
 
         with tracer.start_as_current_span("orchestrator.post_turn_judge") as span:
             span.set_attribute("rpg.session_id", str(session.id))
@@ -84,7 +88,12 @@ class PostTurnJudgeService:
                 "rpg.post_turn.sections",
                 ",".join(
                     name
-                    for name, on in (("world", do_world), ("quests", do_quests), ("suggestions", do_suggestions))
+                    for name, on in (
+                        ("world", do_world),
+                        ("quests", do_quests),
+                        ("suggestions", do_suggestions),
+                        ("items", do_items),
+                    )
                     if on
                 ),
             )
@@ -116,7 +125,9 @@ class PostTurnJudgeService:
             parts.append(f"LATEST EXCHANGE:\nPLAYER: {user_message}\nRESPONSE: {response_text}")
             user_content = "\n\n".join(parts)
 
-            system_prompt = build_post_turn_judge_prompt(world=do_world, quests=do_quests, suggestions=do_suggestions)
+            system_prompt = build_post_turn_judge_prompt(
+                world=do_world, quests=do_quests, suggestions=do_suggestions, items=do_items
+            )
             post_turn_judge_calls.add(1)
             try:
                 payload = await self.provider.generate_json(
@@ -130,11 +141,11 @@ class PostTurnJudgeService:
             except ProviderError as exc:
                 logger.exception("post-turn judge failed for session=%s", session.id)
                 record_span_error(span, exc)
-                return None, [], []
+                return None, [], [], []
 
             if not isinstance(payload, dict):
                 logger.warning("post-turn judge returned non-object for session=%s", session.id)
-                return None, [], []
+                return None, [], [], []
             set_completion(span, json.dumps(payload))
 
             world_raw, quest_raw = self._split_sections(payload, world=do_world, quests=do_quests)
@@ -148,7 +159,22 @@ class PostTurnJudgeService:
                 else []
             )
             suggestions = self._extract_suggestions(payload) if do_suggestions else []
-            return new_ledger, quest_changes, suggestions
+            item_changes = await self._apply_items(db, session, payload.get("item_delta")) if do_items else []
+            return new_ledger, quest_changes, suggestions, item_changes
+
+    async def _apply_items(self, db, session: ChatSession, raw: object) -> list[ItemChange]:
+        """Parse + apply the item_delta section (lenient). Best-effort: a bad
+        section yields no changes, never raises."""
+        if not raw:
+            return []
+        delta = ItemDelta.lenient(raw)
+        if delta.is_empty():
+            return []
+        try:
+            return await self.items.apply_item_delta(db, session, delta)
+        except Exception:
+            logger.exception("post-turn judge item apply failed for session=%s", session.id)
+            return []
 
     async def suggest_only(
         self,

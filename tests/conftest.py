@@ -31,6 +31,10 @@ def make_test_settings(**overrides) -> Settings:
         suggestions_enabled=False,
         world_state_enabled=False,
         quests_enabled=False,
+        # Items is a post-turn-judge section too, so pin it off in the baseline —
+        # otherwise an ambient ITEMS_ENABLED (e.g. from .env in CI) leaks a 4th
+        # section and breaks the "no enabled section -> no LLM call" tests.
+        items_enabled=False,
     )
     defaults.update(overrides)
     return Settings(**defaults)
@@ -155,6 +159,7 @@ def _wire_factory_session(db_session: AsyncSession) -> None:
         CharacterCardFactory,
         CharacterSheetFactory,
         EpisodeSummaryFactory,
+        ItemFactory,
         MemoryFactFactory,
         QuestFactory,
         SessionFactory,
@@ -171,6 +176,7 @@ def _wire_factory_session(db_session: AsyncSession) -> None:
         EpisodeSummaryFactory,
         QuestFactory,
         CharacterSheetFactory,
+        ItemFactory,
     ):
         klass._meta.sqlalchemy_session = db_session  # type: ignore[attr-defined]
 

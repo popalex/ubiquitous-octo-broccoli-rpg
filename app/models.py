@@ -124,6 +124,8 @@ class Session(TimestampMixin, Base):
     # Permadeath (todo-rpg Phase 3): NULL inherits the global setting. When on,
     # reaching 0 HP ends the chronicle (status="dead") instead of downing.
     permadeath_enabled: Mapped[bool | None] = mapped_column(nullable=True)
+    # First-class items (todo-rpg Phase 4): NULL inherits the global setting.
+    items_enabled: Mapped[bool | None] = mapped_column(nullable=True)
 
     # Rewind & fork (§4a): set on a session created by forking another at a
     # given turn. NULL parent = an original chronicle. The parent is never
@@ -152,6 +154,7 @@ class Session(TimestampMixin, Base):
     character_sheet: Mapped[CharacterSheet | None] = relationship(
         back_populates="session", uselist=False, cascade="all, delete-orphan"
     )
+    items: Mapped[list[Item]] = relationship(back_populates="session", cascade="all, delete-orphan")
 
 
 class Turn(TimestampMixin, Base):
@@ -359,6 +362,37 @@ class CharacterSheet(TimestampMixin, Base):
     max_hp: Mapped[int] = mapped_column(Integer, nullable=False)
 
     session: Mapped[Session] = relationship(back_populates="character_sheet")
+
+
+class Item(TimestampMixin, Base):
+    """A first-class inventory item for one chronicle (todo-rpg Phase 4).
+
+    Distinct from the ledger's narrative inventory (freeform strings in
+    :class:`WorldStateLedger`, which coexists): these are structured, per-`Session`
+    objects whose **effect plugs into the mechanics already shipped** — an equipped
+    ``check_bonus`` item adds to the d20 skill check (Phase 1); a ``heal`` consumable
+    restores HP on use (Phase 3). Created by the post-turn judge (LLM proposes,
+    engine validates + clamps) or player actions. Gated behind ``ITEMS_ENABLED``.
+    """
+
+    __tablename__ = "items"
+    __table_args__ = (_id_check("items"),)
+
+    id: Mapped[str] = mapped_column(IdType, primary_key=True, default=new_id)
+    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    qty: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    equipped: Mapped[bool] = mapped_column(default=False, nullable=False)
+    consumable: Mapped[bool] = mapped_column(default=False, nullable=False)
+    # check_bonus | heal | NULL (flavor-only). Validated by ItemService.
+    effect_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    effect_value: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # For check_bonus: which attribute it boosts (might/finesse/wits/presence);
+    # NULL = applies to any check.
+    effect_attribute: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    session: Mapped[Session] = relationship(back_populates="items")
 
 
 class RelationshipState(TimestampMixin, Base):

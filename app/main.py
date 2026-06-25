@@ -45,6 +45,9 @@ from app.schemas import (
     GMSceneTransitionRequest,
     GMSceneTransitionResponse,
     HealthResponse,
+    ItemEquipRequest,
+    ItemResponse,
+    ItemUseResponse,
     MemoryFactResponse,
     NPCDialogueRequest,
     NPCDialogueResponse,
@@ -56,6 +59,7 @@ from app.schemas import (
     SessionForkRequest,
     SessionInitRequest,
     SessionInitResponse,
+    SessionItemsResponse,
     SessionListResponse,
     SessionMemoryResponse,
     SessionQuestsResponse,
@@ -64,8 +68,9 @@ from app.schemas import (
     WorldStateResponse,
 )
 from app.services.character_sheet import CharacterSheetService
-from app.services.features import character_sheet_on
+from app.services.features import character_sheet_on, permadeath_on
 from app.services.fork import ForkService
+from app.services.items import ItemService
 from app.services.orchestrator import get_orchestrator
 from app.services.quests import TERMINAL_STATUSES, QuestService
 from app.services.session_view import (
@@ -135,6 +140,7 @@ async def health(db: AsyncSession = Depends(get_db)) -> HealthResponse:
             dice_enabled=settings.dice_enabled,
             character_sheet_enabled=settings.character_sheet_enabled,
             permadeath_enabled=settings.permadeath_enabled,
+            items_enabled=settings.items_enabled,
             actor_model=settings.actor_model_name,
             gm_model=settings.gm_model_name,
             memory_model=settings.memory_model_name,
@@ -214,6 +220,7 @@ async def init_session(payload: SessionInitRequest, db: AsyncSession = Depends(g
         dice_enabled=payload.dice_enabled,
         character_sheet_enabled=payload.character_sheet_enabled,
         permadeath_enabled=payload.permadeath_enabled,
+        items_enabled=payload.items_enabled,
     )
     db.add(session)
     await db.flush()
@@ -291,6 +298,46 @@ async def rest_session(session_id: str, db: AsyncSession = Depends(get_db)) -> R
     beats = heal.notifications() if heal is not None else ["You rest, but you were already at full strength."]
     beats.append(f"Time passes — the world moves on ({settings.hp_rest_turn_cost} turns).")
     return RestResponse(session_id=session_id, sheet=response, beats=beats, turns_advanced=settings.hp_rest_turn_cost)
+
+
+@app.get("/session/{session_id}/items", response_model=SessionItemsResponse)
+async def get_session_items(session_id: str, db: AsyncSession = Depends(get_db)) -> SessionItemsResponse:
+    """The chronicle's structured inventory (todo-rpg Phase 4)."""
+    items = await ItemService(get_settings()).load_for_session(db, session_id)
+    return SessionItemsResponse(session_id=session_id, items=[ItemResponse.model_validate(it) for it in items])
+
+
+@app.post("/session/{session_id}/items/{item_id}/equip", response_model=ItemResponse)
+async def equip_item(
+    session_id: str, item_id: str, payload: ItemEquipRequest, db: AsyncSession = Depends(get_db)
+) -> ItemResponse:
+    """Equip/unequip an item (todo-rpg Phase 4) — equipped check_bonus items add
+    to the d20 roll."""
+    item = await ItemService(get_settings()).equip(db, session_id, item_id, payload.equipped)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found or not equippable.")
+    return ItemResponse.model_validate(item)
+
+
+@app.post("/session/{session_id}/items/{item_id}/use", response_model=ItemUseResponse)
+async def use_item(session_id: str, item_id: str, db: AsyncSession = Depends(get_db)) -> ItemUseResponse:
+    """Use one of a consumable item (todo-rpg Phase 4) — e.g. a healing draught
+    restores HP, then decrements/removes the item."""
+    settings = get_settings()
+    session = await db.scalar(select(ChatSession).where(ChatSession.id == session_id))
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    service = ItemService(settings)
+    hp_change, beats = await service.use(db, session, item_id, permadeath=permadeath_on(session, settings))
+    if not beats:
+        raise HTTPException(status_code=404, detail="Item not found or not usable.")
+    sheet = await CharacterSheetService(settings).load_for_session(db, session_id)
+    return ItemUseResponse(
+        session_id=session_id,
+        beats=beats,
+        sheet=sheet_to_response(sheet, settings),
+        items=[ItemResponse.model_validate(it) for it in await service.load_for_session(db, session_id)],
+    )
 
 
 @app.get("/session/{session_id}/turns", response_model=list[TurnResponse])

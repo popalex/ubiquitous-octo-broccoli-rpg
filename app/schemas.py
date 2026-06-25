@@ -44,6 +44,40 @@ class SessionInitRequest(BaseModel):
     dice_enabled: bool | None = None
     character_sheet_enabled: bool | None = None
     permadeath_enabled: bool | None = None
+    items_enabled: bool | None = None
+
+
+class ItemResponse(ORMModel):
+    """A first-class inventory item (todo-rpg Phase 4)."""
+
+    id: str
+    name: str
+    description: str | None
+    qty: int
+    equipped: bool
+    consumable: bool
+    effect_type: str | None
+    effect_value: int
+    effect_attribute: str | None
+
+
+class SessionItemsResponse(BaseModel):
+    session_id: str
+    items: list[ItemResponse] = Field(default_factory=list)
+
+
+class ItemEquipRequest(BaseModel):
+    equipped: bool
+
+
+class ItemUseResponse(BaseModel):
+    """Result of using a consumable item (todo-rpg Phase 4): the beats to surface,
+    the updated sheet (HP may have changed), and the refreshed inventory."""
+
+    session_id: str
+    beats: list[str] = Field(default_factory=list)
+    sheet: "CharacterSheetResponse | None" = None
+    items: list[ItemResponse] = Field(default_factory=list)
 
 
 class CharacterSheetResponse(ORMModel):
@@ -88,6 +122,7 @@ class SessionInitResponse(ORMModel):
     dice_enabled: bool
     character_sheet_enabled: bool
     permadeath_enabled: bool
+    items_enabled: bool
     sheet: CharacterSheetResponse | None = None
 
 
@@ -224,6 +259,7 @@ class SessionListItem(BaseModel):
     dice_enabled: bool
     character_sheet_enabled: bool
     permadeath_enabled: bool
+    items_enabled: bool
     # Fork lineage (§4a): NULL parent = an original chronicle.
     parent_session_id: str | None = None
     forked_at_turn: int | None = None
@@ -260,6 +296,7 @@ class SessionDetailResponse(BaseModel):
     dice_enabled: bool
     character_sheet_enabled: bool
     permadeath_enabled: bool
+    items_enabled: bool
     sheet: CharacterSheetResponse | None = None
     # Fork lineage (§4a): NULL parent = an original chronicle.
     parent_session_id: str | None = None
@@ -320,6 +357,7 @@ class HealthResponse(BaseModel):
     dice_enabled: bool
     character_sheet_enabled: bool
     permadeath_enabled: bool
+    items_enabled: bool
     # Resolved LLM model names per slot (DEV mode collapses actor/memory/gm onto
     # one). Embedding model is intentionally omitted — it's not a chat model.
     actor_model: str

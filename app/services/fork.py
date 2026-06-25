@@ -25,6 +25,7 @@ from app.models import (
     CharacterSheet,
     DiceRoll,
     EpisodeSummary,
+    Item,
     MemoryFact,
     Quest,
     RelationshipState,
@@ -75,6 +76,7 @@ class ForkService:
                 dice_enabled=parent.dice_enabled,
                 character_sheet_enabled=parent.character_sheet_enabled,
                 permadeath_enabled=parent.permadeath_enabled,
+                items_enabled=parent.items_enabled,
                 parent_session_id=parent.id,
                 forked_at_turn=at_turn,
             )
@@ -249,6 +251,24 @@ class ForkService:
                         xp=parent_sheet.xp,
                         hp=parent_sheet.hp,
                         max_hp=parent_sheet.max_hp,
+                    )
+                )
+
+            # --- items (todo-rpg Phase 4): inventory is per-chronicle; the fork
+            # inherits the parent's items at current qty/equipped ---
+            items = (await db.scalars(select(Item).where(Item.session_id == parent.id))).all()
+            for it in items:
+                db.add(
+                    Item(
+                        session_id=fork.id,
+                        name=it.name,
+                        description=it.description,
+                        qty=it.qty,
+                        equipped=it.equipped,
+                        consumable=it.consumable,
+                        effect_type=it.effect_type,
+                        effect_value=it.effect_value,
+                        effect_attribute=it.effect_attribute,
                     )
                 )
 

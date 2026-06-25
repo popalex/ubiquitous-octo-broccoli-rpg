@@ -162,6 +162,15 @@ class Settings(BaseSettings):
     # Off → 0 HP downs the character (recoverable); on → 0 HP ends the chronicle.
     permadeath_enabled: bool = False
 
+    # First-class items (todo-rpg Phase 4): structured per-chronicle inventory
+    # whose effects plug into the sheet — an equipped check_bonus item adds to the
+    # d20 roll, a heal consumable restores HP. The LLM proposes item gains/uses via
+    # the post-turn judge; the engine validates effects and clamps. Ships dark
+    # behind this flag (bake-first, like sheet/dice).
+    items_enabled: bool = False
+    item_check_bonus_max: int = 5  # clamp on the total equipped check bonus per roll
+    item_max: int = 50  # cap on tracked items per chronicle
+
     @property
     def actor_context_budget(self) -> int:
         return max(512, self.actor_max_input_tokens - self.actor_reserved_output_tokens)

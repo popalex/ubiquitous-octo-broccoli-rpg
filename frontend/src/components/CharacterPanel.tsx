@@ -1,4 +1,4 @@
-import { BookOpen, Dices, Lightbulb, Skull, Sparkle, Sparkles, Swords, Target, Zap } from "lucide-react";
+import { Backpack, BookOpen, Dices, Lightbulb, Skull, Sparkle, Sparkles, Swords, Target, Zap } from "lucide-react";
 import type { FormEvent } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
@@ -30,6 +30,8 @@ type Props = {
   setCharacterSheetEnabled: (v: boolean) => void;
   permadeathEnabled: boolean;
   setPermadeathEnabled: (v: boolean) => void;
+  itemsEnabled: boolean;
+  setItemsEnabled: (v: boolean) => void;
   currentLocation: string;
   setCurrentLocation: (v: string) => void;
   timeOfDay: string;
@@ -75,6 +77,8 @@ export function CharacterPanel({
   setCharacterSheetEnabled,
   permadeathEnabled,
   setPermadeathEnabled,
+  itemsEnabled,
+  setItemsEnabled,
   currentLocation,
   setCurrentLocation,
   timeOfDay,
@@ -335,6 +339,18 @@ export function CharacterPanel({
               </span>
             </label>
           )}
+
+          <label className="gm-toggle">
+            <input type="checkbox" checked={itemsEnabled} onChange={(e) => setItemsEnabled(e.target.checked)} />
+            <span className="toggle-label">
+              <Backpack className="inline-icon" /> Items
+            </span>
+            <span className="toggle-hint">
+              {itemsEnabled
+                ? "Loot with effects — equipped gear aids rolls, potions heal"
+                : "No structured inventory"}
+            </span>
+          </label>
 
           {gmEnabled && (
             <div className="gm-settings">

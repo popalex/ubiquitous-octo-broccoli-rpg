@@ -2,7 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 
 import { api } from "../api";
 import { withUiSpan } from "../telemetry";
-import type { CharacterLoadPayload, RestResult, SessionDetail } from "../types";
+import type { CharacterLoadPayload, Item, ItemUseResult, RestResult, SessionDetail } from "../types";
 
 type CharacterLoadResult = {
   character_card_id: string;
@@ -39,6 +39,7 @@ export type SessionInitInput = {
   dice_enabled: boolean | null;
   character_sheet_enabled: boolean | null;
   permadeath_enabled: boolean | null;
+  items_enabled: boolean | null;
 };
 
 /** POST /character/load — upserts the character + world templates. */
@@ -100,6 +101,29 @@ export function useRestSession() {
     mutationFn: (sessionId: string) =>
       withUiSpan("ui.rest", { "rpg.session_id": sessionId }, () =>
         api<RestResult>(`/session/${sessionId}/rest`, { method: "POST" }),
+      ),
+  });
+}
+
+/** POST /session/{id}/items/{itemId}/equip — equip/unequip an item (Phase 4). */
+export function useEquipItem() {
+  return useMutation({
+    mutationFn: ({ sessionId, itemId, equipped }: { sessionId: string; itemId: string; equipped: boolean }) =>
+      withUiSpan("ui.equip_item", { "rpg.session_id": sessionId }, () =>
+        api<Item>(`/session/${sessionId}/items/${itemId}/equip`, {
+          method: "POST",
+          body: JSON.stringify({ equipped }),
+        }),
+      ),
+  });
+}
+
+/** POST /session/{id}/items/{itemId}/use — use one of a consumable (Phase 4). */
+export function useUseItem() {
+  return useMutation({
+    mutationFn: ({ sessionId, itemId }: { sessionId: string; itemId: string }) =>
+      withUiSpan("ui.use_item", { "rpg.session_id": sessionId }, () =>
+        api<ItemUseResult>(`/session/${sessionId}/items/${itemId}/use`, { method: "POST" }),
       ),
   });
 }

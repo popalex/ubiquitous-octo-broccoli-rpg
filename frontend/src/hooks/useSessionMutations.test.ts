@@ -31,6 +31,7 @@ describe("useStartSession", () => {
       dice_enabled: null,
       character_sheet_enabled: null,
       permadeath_enabled: null,
+      items_enabled: null,
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
