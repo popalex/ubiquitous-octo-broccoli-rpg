@@ -14,6 +14,7 @@ const ERROR_HEALTH: Health = {
   dice_enabled: false,
   character_sheet_enabled: false,
   permadeath_enabled: false,
+  items_enabled: false,
   actor_model: "unknown",
   gm_model: "unknown",
   memory_model: "unknown",

@@ -35,8 +35,9 @@ from app.services.context_packet import (
 )
 from app.services.continuity import ContinuityResult, ContinuityService
 from app.services.dice import CRITICAL_SUCCESS, FAILURE, SUCCESS, message_may_need_check, roll_check, roll_directive
-from app.services.features import character_sheet_on, dice_on, permadeath_on, quests_on, world_state_on
+from app.services.features import character_sheet_on, dice_on, items_on, permadeath_on, quests_on, world_state_on
 from app.services.game_master import GameMasterService
+from app.services.items import ItemChange, ItemService
 from app.services.memory import MemoryService
 from app.services.post_turn_judge import PostTurnJudgeService
 from app.services.post_turn_runner import PostTurnRunner
@@ -135,7 +136,10 @@ class OrchestratorService:
         self.world_state = WorldStateService(self.memory_provider, self.settings)
         self.quests = QuestService(self.memory_provider, self.settings)
         self.character_sheet = CharacterSheetService(self.settings)
-        self.post_turn_judge = PostTurnJudgeService(self.memory_provider, self.world_state, self.quests, self.settings)
+        self.items = ItemService(self.settings)
+        self.post_turn_judge = PostTurnJudgeService(
+            self.memory_provider, self.world_state, self.quests, self.items, self.settings
+        )
         self.post_turn = PostTurnRunner(self.memory, self.post_turn_judge)
         self.turns = TurnPersister(estimate_tokens)
         self.context = ContextPacketBuilder(self.settings)
@@ -214,14 +218,14 @@ class OrchestratorService:
         )
 
         await self.post_turn.refresh_memory(db, session)
-        quest_changes, suggestions = await self.post_turn.judge(
+        quest_changes, suggestions, item_changes = await self.post_turn.judge(
             db,
             session,
             user_message=user_message,
             response_text=continuity.final_reply,
             turn_id=assistant_turn.id,
         )
-        advancement = await self._apply_progression(db, session, None, quest_changes, assistant_turn)
+        advancement = await self._apply_progression(db, session, None, quest_changes, assistant_turn, item_changes)
         logger.info(
             "chat session=%s turn_count=%s continuity_applied=%s", session.id, session.turn_count, continuity.applied
         )
@@ -285,6 +289,13 @@ class OrchestratorService:
             if not assessment.requires_check:
                 return None, ""
             modifier = self.character_sheet.attribute_mod(sheet, assessment.attribute)
+            # First-class items (todo-rpg Phase 4): equipped check_bonus gear adds
+            # to the roll for the governing attribute.
+            if items_on(session, self.settings):
+                items = await self.items.load_for_session(db, session.id)
+                item_bonus = self.items.check_bonus_for(items, assessment.attribute)
+                span.set_attribute("rpg.dice.item_bonus", item_bonus)
+                modifier += item_bonus
             die, total, outcome = roll_check(assessment.dc, modifier)
             dice_rolls.add(1, {"outcome": outcome})
             span.set_attribute("rpg.dice.skill_label", assessment.skill_label)
@@ -345,61 +356,68 @@ class OrchestratorService:
         roll: DiceRollResult | None,
         quest_changes: list[QuestChange],
         assistant_turn: Turn,
+        item_changes: list[ItemChange] | None = None,
     ) -> list[str]:
-        """Grant XP from this turn's check + quest completions and apply any
-        level-ups (todo-rpg Phase 2). Returns 'you leveled / improved X' beats and
-        persists them on ``assistant_turn`` so a chronicle reload re-renders them
-        (mirrors how a resolved roll is persisted + re-attached on /turns).
+        """Surface this turn's mechanical beats and persist them on
+        ``assistant_turn`` so a chronicle reload re-renders them (mirrors how a
+        resolved roll is re-attached on /turns). Covers item gains/losses
+        (todo-rpg Phase 4, sheet-independent), then sheet XP/level-ups (Phase 2)
+        and HP damage/downed/death (Phase 3) when the sheet is on. Best-effort —
+        any failure yields what beats were already collected."""
+        advancement: list[str] = []
+        # Item beats first — items can be enabled without the character sheet.
+        for change in item_changes or []:
+            advancement.append(change.notification())
 
-        ``grant_xp`` loads the sheet itself (under a row lock), so there is no
-        pre-load here. Best-effort — sheet feature off or any failure yields []."""
-        if not character_sheet_on(session, self.settings):
-            return []
-        try:
-            advancement: list[str] = []
-            # Checks grant XP tagged with the attribute used, so a resulting
-            # level-up trains that attribute. A failure still grants a sliver
-            # (xp_per_failure) — "you learn from failure"; grant_xp no-ops on 0.
-            if roll is not None:
-                if roll.outcome == CRITICAL_SUCCESS:
-                    amount, reason = self.settings.xp_per_critical, "check"
-                elif roll.outcome == SUCCESS:
-                    amount, reason = self.settings.xp_per_success, "check"
-                else:  # FAILURE
-                    amount, reason = self.settings.xp_per_failure, "check_failure"
-                level_up = await self.character_sheet.grant_xp(
-                    db, session.id, amount, attribute_key=roll.attribute, reason=reason
-                )
-                if level_up is not None:
-                    advancement.extend(level_up.notifications())
-            # Quest completions: a flat reward (no governing attribute).
-            completed = sum(1 for c in quest_changes if c.change == "completed")
-            if completed:
-                level_up = await self.character_sheet.grant_xp(
-                    db, session.id, self.settings.xp_per_quest_complete * completed, reason="quest"
-                )
-                if level_up is not None:
-                    advancement.extend(level_up.notifications())
-            # Stakes (todo-rpg Phase 3): a failed *dangerous* check costs HP. The GM
-            # tagged severity; the engine owns the number. At 0 HP the character is
-            # downed, or the chronicle ends when permadeath is on.
-            if roll is not None and roll.outcome == FAILURE:
-                dmg = self.character_sheet.damage_for_stakes(roll.stakes)
-                if dmg > 0:
-                    hit = await self.character_sheet.apply_damage(
-                        db, session.id, dmg, permadeath=permadeath_on(session, self.settings), reason="check"
+        if character_sheet_on(session, self.settings):
+            try:
+                # Checks grant XP tagged with the attribute used, so a resulting
+                # level-up trains that attribute. A failure still grants a sliver
+                # (xp_per_failure) — "you learn from failure"; grant_xp no-ops on 0.
+                if roll is not None:
+                    if roll.outcome == CRITICAL_SUCCESS:
+                        amount, reason = self.settings.xp_per_critical, "check"
+                    elif roll.outcome == SUCCESS:
+                        amount, reason = self.settings.xp_per_success, "check"
+                    else:  # FAILURE
+                        amount, reason = self.settings.xp_per_failure, "check_failure"
+                    level_up = await self.character_sheet.grant_xp(
+                        db, session.id, amount, attribute_key=roll.attribute, reason=reason
                     )
-                    if hit is not None:
-                        advancement.extend(hit.notifications())
-                        if hit.died:
-                            session.status = "dead"
-            if advancement:
+                    if level_up is not None:
+                        advancement.extend(level_up.notifications())
+                # Quest completions: a flat reward (no governing attribute).
+                completed = sum(1 for c in quest_changes if c.change == "completed")
+                if completed:
+                    level_up = await self.character_sheet.grant_xp(
+                        db, session.id, self.settings.xp_per_quest_complete * completed, reason="quest"
+                    )
+                    if level_up is not None:
+                        advancement.extend(level_up.notifications())
+                # Stakes (todo-rpg Phase 3): a failed *dangerous* check costs HP. The
+                # GM tagged severity; the engine owns the number. At 0 HP the character
+                # is downed, or the chronicle ends when permadeath is on.
+                if roll is not None and roll.outcome == FAILURE:
+                    dmg = self.character_sheet.damage_for_stakes(roll.stakes)
+                    if dmg > 0:
+                        hit = await self.character_sheet.apply_damage(
+                            db, session.id, dmg, permadeath=permadeath_on(session, self.settings), reason="check"
+                        )
+                        if hit is not None:
+                            advancement.extend(hit.notifications())
+                            if hit.died:
+                                session.status = "dead"
+            except Exception:
+                logger.exception("progression apply failed for session=%s", session.id)
+
+        if advancement:
+            try:
                 assistant_turn.advancement_json = advancement
                 await db.commit()
-            return advancement
-        except Exception:
-            logger.exception("progression apply failed for session=%s", session.id)
-            return []
+            except SQLAlchemyError:
+                logger.exception("advancement persist failed for session=%s", session.id)
+                await db.rollback()
+        return advancement
 
     async def gm_chat(
         self,
@@ -569,7 +587,7 @@ class OrchestratorService:
             pressure_quests=pressure_quests,
             turn_id=assistant_turn.id,
         )
-        extra_changes, suggestions = await self.post_turn.judge(
+        extra_changes, suggestions, item_changes = await self.post_turn.judge(
             db,
             session,
             user_message=user_message,
@@ -577,7 +595,9 @@ class OrchestratorService:
             turn_id=assistant_turn.id,
         )
         quest_changes += extra_changes
-        advancement = await self._apply_progression(db, session, dice_result, quest_changes, assistant_turn)
+        advancement = await self._apply_progression(
+            db, session, dice_result, quest_changes, assistant_turn, item_changes
+        )
 
         logger.info(
             "gm_chat session=%s turn_count=%s event_triggered=%s",
@@ -858,7 +878,7 @@ class OrchestratorService:
             pressure_quests=pressure_quests,
             turn_id=assistant_turn.id,
         )
-        extra_changes, suggestions = await self.post_turn.judge(
+        extra_changes, suggestions, item_changes = await self.post_turn.judge(
             db,
             session,
             user_message=user_message,
@@ -866,7 +886,9 @@ class OrchestratorService:
             turn_id=assistant_turn.id,
         )
         quest_changes += extra_changes
-        advancement = await self._apply_progression(db, session, dice_result, quest_changes, assistant_turn)
+        advancement = await self._apply_progression(
+            db, session, dice_result, quest_changes, assistant_turn, item_changes
+        )
         for frame in self._stream_post_turn_results(quest_changes, suggestions, advancement):
             yield frame
 
@@ -973,14 +995,14 @@ class OrchestratorService:
         # Memory refresh
         yield sse_phase("summarizing")
         await self.post_turn.refresh_memory(db, session)
-        quest_changes, suggestions = await self.post_turn.judge(
+        quest_changes, suggestions, item_changes = await self.post_turn.judge(
             db,
             session,
             user_message=user_message,
             response_text=full_reply,
             turn_id=assistant_turn.id,
         )
-        advancement = await self._apply_progression(db, session, None, quest_changes, assistant_turn)
+        advancement = await self._apply_progression(db, session, None, quest_changes, assistant_turn, item_changes)
         for frame in self._stream_post_turn_results(quest_changes, suggestions, advancement):
             yield frame
 

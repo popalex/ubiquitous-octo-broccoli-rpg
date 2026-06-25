@@ -155,6 +155,7 @@ def _wire_factory_session(db_session: AsyncSession) -> None:
         CharacterCardFactory,
         CharacterSheetFactory,
         EpisodeSummaryFactory,
+        ItemFactory,
         MemoryFactFactory,
         QuestFactory,
         SessionFactory,
@@ -171,6 +172,7 @@ def _wire_factory_session(db_session: AsyncSession) -> None:
         EpisodeSummaryFactory,
         QuestFactory,
         CharacterSheetFactory,
+        ItemFactory,
     ):
         klass._meta.sqlalchemy_session = db_session  # type: ignore[attr-defined]
 

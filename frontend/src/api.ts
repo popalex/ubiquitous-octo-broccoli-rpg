@@ -10,6 +10,7 @@ export const storageKeys = {
   diceEnabled: "small-rpg:dice-enabled",
   characterSheetEnabled: "small-rpg:character-sheet-enabled",
   permadeathEnabled: "small-rpg:permadeath-enabled",
+  itemsEnabled: "small-rpg:items-enabled",
   worldStateId: "small-rpg:world-state-id",
   sessionId: "small-rpg:session-id",
   sessionTitle: "small-rpg:session-title",

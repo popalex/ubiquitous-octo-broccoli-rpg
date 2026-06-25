@@ -28,6 +28,7 @@ function makeChronicle(overrides: Partial<ChronicleListItem> = {}): ChronicleLis
     dice_enabled: false,
     character_sheet_enabled: false,
     permadeath_enabled: false,
+    items_enabled: false,
     parent_session_id: null,
     forked_at_turn: null,
     ...overrides,

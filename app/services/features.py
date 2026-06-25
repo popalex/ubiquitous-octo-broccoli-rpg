@@ -39,3 +39,9 @@ def permadeath_on(session: ChatSession, settings: Settings) -> bool:
     if session.permadeath_enabled is not None:
         return session.permadeath_enabled
     return settings.permadeath_enabled
+
+
+def items_on(session: ChatSession, settings: Settings) -> bool:
+    if session.items_enabled is not None:
+        return session.items_enabled
+    return settings.items_enabled

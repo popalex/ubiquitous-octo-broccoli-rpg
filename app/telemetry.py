@@ -88,6 +88,8 @@ hp_healed = _meter.create_counter("rpg.sheet.hp_healed", description="HP restore
 sheet_downs = _meter.create_counter(
     "rpg.sheet.downs", description="Times a character hit 0 HP (downed/died), by permadeath"
 )
+items_gained = _meter.create_counter("rpg.items.gained", description="Items gained, by source")
+items_used = _meter.create_counter("rpg.items.used", description="Consumable items used")
 
 
 def messages_to_json(messages: Sequence) -> str:

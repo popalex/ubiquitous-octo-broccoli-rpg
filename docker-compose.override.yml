@@ -22,6 +22,7 @@ services:
       SUGGESTIONS_ENABLED: ${SUGGESTIONS_ENABLED:-true}
       DICE_ENABLED: ${DICE_ENABLED:-true}
       CHARACTER_SHEET_ENABLED: ${CHARACTER_SHEET_ENABLED:-true}
+      ITEMS_ENABLED: ${ITEMS_ENABLED:-true}
 
   # ollama-init lives in the base compose; override its dev model here so the
   # model it pulls matches the api's DEV_MODEL_NAME above (keep them in lock-step).

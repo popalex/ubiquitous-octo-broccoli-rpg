@@ -218,7 +218,39 @@ Return an empty array [] only if no sensible action follows.
 """.strip()
 
 
-def build_post_turn_judge_prompt(*, world: bool, quests: bool, suggestions: bool = False) -> str:
+_ITEMS_GUIDANCE = """
+You track CONCRETE items the player gains or loses in the latest exchange — loot,
+gifts, purchases, crafted goods, things picked up, and items consumed, dropped,
+given away, or destroyed. Only physical, possessable objects (not abilities,
+spells, or status). Be conservative: emit an item only when the text clearly
+states the player acquired or lost it.
+
+For a gained item, judge whether it has a MECHANICAL effect:
+- "check_bonus": a tool/gear that aids a kind of action (a fine lockpick, a
+  climbing rope, a silver tongue charm). Give "effect_value" 1-3 and, when it
+  clearly favours one attribute, "effect_attribute" = one of
+  might/finesse/wits/presence (omit for a general bonus).
+- "heal": a consumable that restores health (a potion, a bandage, rations). Give
+  "effect_value" = HP restored (a small number).
+- omit "effect_type" entirely for pure flavour/quest items (a letter, a key, a gem).
+Do NOT invent effects the fiction doesn't support — most narrative items are flavour.
+""".strip()
+
+_ITEMS_SCHEMA = """
+Return an object (omit a list if empty):
+{
+  "gained": [
+    {"name": "Fine Lockpick", "description": "slim, well-oiled", "qty": 1,
+     "effect_type": "check_bonus", "effect_value": 1, "effect_attribute": "finesse"},
+    {"name": "Healing Draught", "qty": 2, "effect_type": "heal", "effect_value": 6},
+    {"name": "Sealed Letter", "qty": 1}
+  ],
+  "lost": [{"name": "Torch", "qty": 1}]
+}
+""".strip()
+
+
+def build_post_turn_judge_prompt(*, world: bool, quests: bool, suggestions: bool = False, items: bool = False) -> str:
     """Assemble the unified post-turn judge system prompt from the enabled
     sections, reusing the exact world-state and quest guidance + schema
     fragments so the combined call stays in lock-step with the standalone
@@ -240,6 +272,9 @@ def build_post_turn_judge_prompt(*, world: bool, quests: bool, suggestions: bool
             f"{_SUGGESTIONS_GUIDANCE}\n\n{_SUGGESTIONS_SCHEMA}"
         )
         output_keys.append('  "suggestions": [ ...2-4 short action strings described above, or [] ... ]')
+    if items:
+        sections.append(f"TASK — item_delta (inventory items gained/lost):\n\n{_ITEMS_GUIDANCE}\n\n{_ITEMS_SCHEMA}")
+        output_keys.append('  "item_delta": { ...items gained/lost described above, or {} if none... }')
     sections.append(
         "FINAL OUTPUT — combine the tasks above into ONE JSON object. Put each "
         "result under its key; do NOT emit the inner field names at the top "

@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Quest, WorldStateLedger
+from app.services.items import ItemService
 from app.services.orchestrator import OrchestratorService
 from app.services.post_turn_judge import PostTurnJudgeService
 from app.services.quests import QuestService
@@ -52,6 +53,7 @@ def _judge(provider, settings) -> PostTurnJudgeService:
         provider,
         WorldStateService(provider, settings),
         QuestService(provider, settings),
+        ItemService(settings),
         settings,
     )
 
@@ -74,7 +76,7 @@ async def test_judge_applies_both_sections_in_one_call(db_session: AsyncSession)
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions, _items = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="I cut down Voss and vow to avenge the widow", response_text="Voss falls."
     )
 
@@ -97,7 +99,7 @@ async def test_bad_world_section_still_applies_quests(db_session: AsyncSession) 
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions, _items = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -114,7 +116,7 @@ async def test_bad_quest_section_still_applies_world(db_session: AsyncSession) -
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions, _items = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -138,7 +140,7 @@ async def test_one_bad_quest_item_does_not_sink_the_valid_ones(db_session: Async
     await db_session.flush()
 
     with patch("app.services.quests.quest_extract_failures") as failures:
-        _ledger, changes, _suggestions = await _judge(provider, settings).judge_turn(
+        _ledger, changes, _suggestions, _items = await _judge(provider, settings).judge_turn(
             db_session, session, user_message="x", response_text="y"
         )
 
@@ -161,7 +163,7 @@ async def test_world_only_session_skips_quests(db_session: AsyncSession) -> None
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions, _items = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -179,7 +181,7 @@ async def test_quests_only_session_skips_world(db_session: AsyncSession) -> None
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions, _items = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -198,7 +200,7 @@ async def test_quest_interval_gate_skips_quest_section(db_session: AsyncSession)
     session = SessionFactory(turn_count=4)  # 4 % 3 != 0
     await db_session.flush()
 
-    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions, _items = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -215,7 +217,7 @@ async def test_no_call_when_both_features_off(db_session: AsyncSession) -> None:
     session = SessionFactory(turn_count=2)
     await db_session.flush()
 
-    ledger_row, changes, _suggestions = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, _suggestions, _items = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -237,7 +239,7 @@ async def test_suggestions_returned_and_one_call(db_session: AsyncSession) -> No
     session = SessionFactory(turn_count=2, suggestions_enabled=True)
     await db_session.flush()
 
-    ledger_row, changes, suggestions = await _judge(provider, settings).judge_turn(
+    ledger_row, changes, suggestions, _items = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -255,7 +257,7 @@ async def test_suggestions_clamped_and_cleaned(db_session: AsyncSession) -> None
     session = SessionFactory(turn_count=2, suggestions_enabled=True)
     await db_session.flush()
 
-    _, _, suggestions = await _judge(provider, settings).judge_turn(
+    _, _, suggestions, _items = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -271,7 +273,7 @@ async def test_suggestions_deduped_case_insensitively(db_session: AsyncSession) 
     session = SessionFactory(turn_count=2, suggestions_enabled=True)
     await db_session.flush()
 
-    _, _, suggestions = await _judge(provider, settings).judge_turn(
+    _, _, suggestions, _items = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -286,7 +288,7 @@ async def test_malformed_suggestions_returns_empty(db_session: AsyncSession) -> 
     session = SessionFactory(turn_count=2, suggestions_enabled=True)
     await db_session.flush()
 
-    _, _, suggestions = await _judge(provider, settings).judge_turn(
+    _, _, suggestions, _items = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 
@@ -303,7 +305,7 @@ async def test_suggestions_off_session_yields_none(db_session: AsyncSession) -> 
     session = SessionFactory(turn_count=2, suggestions_enabled=False)
     await db_session.flush()
 
-    _, _, suggestions = await _judge(provider, settings).judge_turn(
+    _, _, suggestions, _items = await _judge(provider, settings).judge_turn(
         db_session, session, user_message="x", response_text="y"
     )
 

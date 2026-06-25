@@ -144,6 +144,8 @@ services:
       # chronicles like quests/suggestions. Pairs with dice: the sheet's attribute
       # modifier only shows up on skill checks.
       CHARACTER_SHEET_ENABLED: ${CHARACTER_SHEET_ENABLED:-true}
+      # First-class items (todo-rpg Phase 4) — on by default like the sheet.
+      ITEMS_ENABLED: ${ITEMS_ENABLED:-true}
       # Dice / skill checks (§4c) ship dark in prod, on in the dev override.
       DICE_ENABLED: ${DICE_ENABLED:-false}
     depends_on:

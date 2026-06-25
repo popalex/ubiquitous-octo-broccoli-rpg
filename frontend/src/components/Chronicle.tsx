@@ -7,17 +7,19 @@ import {
   useRefreshMemory,
   useSessionDetail,
   useSessionMemory,
+  useSessionItems,
   useSessionQuests,
   useSessionSheet,
   useSessionSuggestions,
   useSessionTurns,
   useWorldState,
 } from "../hooks/useSession";
-import { useForkSession, useRestSession } from "../hooks/useSessionMutations";
+import { useEquipItem, useForkSession, useRestSession, useUseItem } from "../hooks/useSessionMutations";
 import { turnsToMessages } from "../turns";
 import type { ChatMessage, GMEvent, RetrievedMemory, SessionDetail, TurnRecord } from "../types";
 import { ChatPanel } from "./ChatPanel";
 import { CharacterSheetPanel } from "./CharacterSheetPanel";
+import { InventoryPanel } from "./InventoryPanel";
 import { CodexPanel } from "./CodexPanel";
 import { MemoryPanel } from "./MemoryPanel";
 import { QuestJournal } from "./QuestJournal";
@@ -83,10 +85,13 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
   const worldState = useWorldState(sessionId);
   const quests = useSessionQuests(sessionId);
   const sheet = useSessionSheet(sessionId, detail.character_sheet_enabled);
+  const items = useSessionItems(sessionId, detail.items_enabled);
   const suggestions = useSessionSuggestions(sessionId, detail.suggestions_enabled);
   const refreshMemory = useRefreshMemory();
   const forkSession = useForkSession();
   const restSession = useRestSession();
+  const equipItem = useEquipItem();
+  const useItem = useUseItem();
   const [forkingTurn, setForkingTurn] = useState<number | null>(null);
 
   // A permadeath chronicle whose hero hit 0 HP is over — the server refuses
@@ -195,6 +200,42 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
     });
   }
 
+  function handleEquip(itemId: string, equipped: boolean) {
+    if (equipItem.isPending) return;
+    equipItem.mutate(
+      { sessionId, itemId, equipped },
+      {
+        onSuccess: () => void refreshMemory(sessionId).catch(() => {}),
+        onError: (err) => setStatusText(err instanceof Error ? err.message : "Couldn't change gear."),
+      },
+    );
+  }
+
+  function handleUseItem(itemId: string) {
+    if (useItem.isPending) return;
+    useItem.mutate(
+      { sessionId, itemId },
+      {
+        onSuccess: (res) => {
+          if (res.beats.length) {
+            setChatMessages((current) => [
+              ...current,
+              {
+                id: crypto.randomUUID(),
+                role: "narrator",
+                content: `**${res.beats.join(" ")}**`,
+                messageType: "advancement",
+              },
+            ]);
+            setStatusText(res.beats[0]);
+          }
+          void refreshMemory(sessionId).catch(() => {});
+        },
+        onError: (err) => setStatusText(err instanceof Error ? err.message : "Couldn't use item."),
+      },
+    );
+  }
+
   return (
     <>
       <div className="chronicle-summary-bar">
@@ -283,6 +324,20 @@ function ChronicleView({ sessionId, detail, initialTurns }: ViewProps) {
               dead={dead}
               onRest={handleRest}
               resting={restSession.isPending}
+            />
+          )}
+          {detail.items_enabled && (
+            <InventoryPanel
+              items={items.data?.items ?? null}
+              onEquip={handleEquip}
+              onUse={handleUseItem}
+              busyItemId={
+                equipItem.isPending
+                  ? equipItem.variables?.itemId
+                  : useItem.isPending
+                    ? useItem.variables?.itemId
+                    : null
+              }
             />
           )}
           <CodexPanel worldState={worldState.data ?? null} />

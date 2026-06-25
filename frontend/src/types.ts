@@ -9,6 +9,7 @@ export type Health = {
   dice_enabled: boolean;
   character_sheet_enabled: boolean;
   permadeath_enabled: boolean;
+  items_enabled: boolean;
   // Resolved LLM model per slot (embedding omitted — not a chat model).
   actor_model: string;
   gm_model: string;
@@ -35,6 +36,7 @@ export type ChronicleListItem = {
   dice_enabled: boolean;
   character_sheet_enabled: boolean;
   permadeath_enabled: boolean;
+  items_enabled: boolean;
   // Fork lineage: null parent = an original chronicle.
   parent_session_id: string | null;
   forked_at_turn: number | null;
@@ -60,6 +62,31 @@ export type RestResult = {
   turns_advanced: number;
 };
 
+export type Item = {
+  id: string;
+  name: string;
+  description: string | null;
+  qty: number;
+  equipped: boolean;
+  consumable: boolean;
+  // check_bonus | heal | null (flavor)
+  effect_type: string | null;
+  effect_value: number;
+  effect_attribute: string | null;
+};
+
+export type SessionItems = {
+  session_id: string;
+  items: Item[];
+};
+
+export type ItemUseResult = {
+  session_id: string;
+  beats: string[];
+  sheet: CharacterSheet | null;
+  items: Item[];
+};
+
 export type SessionDetail = {
   id: string;
   title: string | null;
@@ -81,6 +108,7 @@ export type SessionDetail = {
   dice_enabled: boolean;
   character_sheet_enabled: boolean;
   permadeath_enabled: boolean;
+  items_enabled: boolean;
   // Present when the character-sheet feature is on for this chronicle.
   sheet: CharacterSheet | null;
   // Fork lineage: null parent = an original chronicle.

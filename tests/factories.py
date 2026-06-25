@@ -7,6 +7,7 @@ from app.models import (
     CharacterCard,
     CharacterSheet,
     EpisodeSummary,
+    Item,
     MemoryFact,
     Quest,
     Turn,
@@ -136,3 +137,20 @@ class CharacterSheetFactory(SQLAlchemyModelFactory):
     xp = 0
     hp = 20
     max_hp = 20
+
+
+class ItemFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = Item
+        sqlalchemy_session = None
+        sqlalchemy_session_persistence = None
+
+    session = factory.SubFactory(SessionFactory)
+    name = factory.Sequence(lambda n: f"Item {n}")
+    description = None
+    qty = 1
+    equipped = False
+    consumable = False
+    effect_type = None
+    effect_value = 0
+    effect_attribute = None
