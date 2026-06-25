@@ -31,6 +31,10 @@ def make_test_settings(**overrides) -> Settings:
         suggestions_enabled=False,
         world_state_enabled=False,
         quests_enabled=False,
+        # Items is a post-turn-judge section too, so pin it off in the baseline —
+        # otherwise an ambient ITEMS_ENABLED (e.g. from .env in CI) leaks a 4th
+        # section and breaks the "no enabled section -> no LLM call" tests.
+        items_enabled=False,
     )
     defaults.update(overrides)
     return Settings(**defaults)
