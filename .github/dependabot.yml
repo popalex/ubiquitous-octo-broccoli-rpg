@@ -9,6 +9,13 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    groups:
+      # The OpenTelemetry packages pin each other exactly (opentelemetry-distro
+      # 0.64b0 requires opentelemetry-instrumentation==0.64b0), so a PR bumping
+      # one of them alone can never resolve. Ship them as a single PR.
+      opentelemetry:
+        patterns:
+          - "opentelemetry-*"
 
   - package-ecosystem: "docker" # See documentation for possible values
     directory: "/" # Location of package manifests
