@@ -18,14 +18,15 @@ jobs:
       - name: Start full stack (frontend + api + postgres, no Ollama)
         run: docker compose -f docker-compose.e2e.yml up -d --build --wait
 
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 11
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
+      # Corepack honours the `packageManager` pin in frontend/package.json, the
+      # same mechanism Dockerfile.frontend uses. pnpm/action-setup's standalone
+      # self-installer intermittently dies on a bad npm-registry response.
+      - name: Enable pnpm via corepack
+        working-directory: frontend
+        run: corepack enable
 
       - name: Install dependencies
         working-directory: frontend

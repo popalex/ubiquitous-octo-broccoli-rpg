@@ -48,14 +48,14 @@ jobs:
         working-directory: frontend
     steps:
     - uses: actions/checkout@v5
-    - uses: pnpm/action-setup@v6
-      with:
-        version: 11
     - uses: actions/setup-node@v5
       with:
         node-version: 24
-        cache: pnpm
-        cache-dependency-path: frontend/pnpm-lock.yaml
+    # Corepack honours the `packageManager` pin in frontend/package.json, the
+    # same mechanism Dockerfile.frontend uses. pnpm/action-setup's standalone
+    # self-installer intermittently dies on a bad npm-registry response.
+    - name: Enable pnpm via corepack
+      run: corepack enable
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
     - name: ESLint
@@ -72,14 +72,11 @@ jobs:
         working-directory: frontend
     steps:
     - uses: actions/checkout@v5
-    - uses: pnpm/action-setup@v6
-      with:
-        version: 11
     - uses: actions/setup-node@v5
       with:
         node-version: 24
-        cache: pnpm
-        cache-dependency-path: frontend/pnpm-lock.yaml
+    - name: Enable pnpm via corepack
+      run: corepack enable
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
     # Phase 1: route-interception E2E — the built frontend with every /api call
