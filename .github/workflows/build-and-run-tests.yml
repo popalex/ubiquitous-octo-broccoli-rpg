@@ -56,6 +56,17 @@ jobs:
     # self-installer intermittently dies on a bad npm-registry response.
     - name: Enable pnpm via corepack
       run: corepack enable
+    # Cache the pnpm store ourselves. setup-node's `cache: pnpm` can't be used:
+    # it shells out to pnpm before corepack has provided it, and it runs at the
+    # repo root where there's no `packageManager` field for corepack to resolve.
+    - name: Locate pnpm store
+      id: pnpm-store
+      run: echo "dir=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      with:
+        path: ${{ steps.pnpm-store.outputs.dir }}
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+        restore-keys: ${{ runner.os }}-pnpm-store-
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
     - name: ESLint
@@ -77,6 +88,14 @@ jobs:
         node-version: 24
     - name: Enable pnpm via corepack
       run: corepack enable
+    - name: Locate pnpm store
+      id: pnpm-store
+      run: echo "dir=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      with:
+        path: ${{ steps.pnpm-store.outputs.dir }}
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+        restore-keys: ${{ runner.os }}-pnpm-store-
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
     # Phase 1: route-interception E2E — the built frontend with every /api call
