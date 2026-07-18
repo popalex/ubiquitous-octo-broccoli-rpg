@@ -383,6 +383,61 @@ async def test_openai_api_error_raises_provider_error() -> None:
             await provider.generate_text(MSG, temperature=0.7, max_tokens=200)
 
 
+# ===========================================================================
+# OpenRouterProvider (OpenAI-compatible subclass; unit, SDK mocked)
+# ===========================================================================
+
+
+def test_build_provider_openrouter_returns_openrouter_provider() -> None:
+    from app.providers.base import build_provider
+    from app.providers.openrouter_provider import OpenRouterProvider
+
+    settings = make_test_settings(openrouter_api_key="sk-or-test")
+    provider = build_provider("openrouter", "meta-llama/llama-3.1-8b-instruct", settings, slot="actor")
+    assert isinstance(provider, OpenRouterProvider)
+    assert provider.slot == "actor"
+
+
+def test_openrouter_points_client_at_openrouter_and_uses_its_key() -> None:
+    """Credentials come from the openrouter_* settings, not openai_*."""
+    from app.providers.openrouter_provider import OpenRouterProvider
+
+    settings = make_test_settings(
+        openai_api_key=None,  # deliberately absent: must not be used
+        openrouter_api_key="sk-or-test",
+        openrouter_base_url="https://openrouter.ai/api/v1",
+    )
+    provider = OpenRouterProvider(model_name="meta-llama/llama-3.1-8b-instruct", settings=settings)
+    assert str(provider.client.base_url).startswith("https://openrouter.ai/api/v1")
+    assert provider.client.api_key == "sk-or-test"
+
+
+def test_openrouter_missing_key_raises_provider_error() -> None:
+    from app.providers.openrouter_provider import OpenRouterProvider
+
+    settings = make_test_settings(openrouter_api_key=None)
+    with pytest.raises(ProviderError, match="OPENROUTER_API_KEY"):
+        OpenRouterProvider(model_name="meta-llama/llama-3.1-8b-instruct", settings=settings)
+
+
+@pytest.mark.asyncio
+async def test_openrouter_generate_text_inherits_openai_path() -> None:
+    from app.providers.openrouter_provider import OpenRouterProvider
+
+    settings = make_test_settings(openrouter_api_key="sk-or-test")
+    provider = OpenRouterProvider(model_name="meta-llama/llama-3.1-8b-instruct", settings=settings)
+    fake_resp = _fake_completion("Hello from OpenRouter")
+
+    with patch.object(
+        provider.client.chat.completions,
+        "create",
+        new=AsyncMock(return_value=fake_resp),
+    ):
+        result = await provider.generate_text(MSG, temperature=0.7, max_tokens=200)
+
+    assert result == "Hello from OpenRouter"
+
+
 # ---------------------------------------------------------------------------
 # Provider slot labels (token metrics per orchestrator slot — TODO 5b)
 # ---------------------------------------------------------------------------

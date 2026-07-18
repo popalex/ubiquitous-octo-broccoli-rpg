@@ -99,6 +99,11 @@ def build_provider(
 
         return OpenAIProvider(model_name=model_name, settings=resolved_settings, slot=slot)
 
+    if provider_name == "openrouter":
+        from app.providers.openrouter_provider import OpenRouterProvider
+
+        return OpenRouterProvider(model_name=model_name, settings=resolved_settings, slot=slot)
+
     if provider_name == "ollama":
         from app.providers.ollama_provider import OllamaProvider
 
