@@ -20,7 +20,7 @@ opentelemetry-instrumentation-httpx==0.64b0
 opentelemetry-instrumentation-logging==0.64b0
 
 # Lint
-ruff==0.15.17
+ruff==0.15.21
 mypy==2.1.0
 
 # Test dependencies
