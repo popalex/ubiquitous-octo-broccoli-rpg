@@ -4,7 +4,7 @@ from typing import Literal, Self
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ProviderName = Literal["ollama", "openai", "mock"]
+ProviderName = Literal["ollama", "openai", "openrouter", "mock"]
 
 
 class Settings(BaseSettings):
@@ -46,6 +46,11 @@ class Settings(BaseSettings):
 
     openai_api_key: str | None = None
     openai_base_url: str | None = None
+    # OpenRouter is OpenAI-wire-compatible; the openrouter provider reuses the
+    # OpenAI client pointed here. Distinct key/URL settings so it can coexist
+    # with a real `openai` slot (which shares neither).
+    openrouter_api_key: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
     ollama_base_url: str = "http://host.docker.internal:11434"
 
     retrieval_top_k: int = 8

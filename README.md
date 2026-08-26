@@ -90,6 +90,22 @@ EMBEDDING_MODEL_NAME=text-embedding-3-small
 EMBEDDING_DIMENSION=768
 ```
 
+**OpenRouter** (one key, 400+ models, OpenAI-compatible) is wired in as its own
+provider. Set a key and point the text slots at OpenRouter model slugs:
+
+```bash
+ACTOR_PROVIDER=openrouter
+GM_PROVIDER=openrouter
+MEMORY_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-or-...
+ACTOR_MODEL_NAME=meta-llama/llama-3.1-8b-instruct
+GM_MODEL_NAME=meta-llama/llama-3.1-8b-instruct
+MEMORY_MODEL_NAME=microsoft/phi-4-mini-instruct
+# Keep embeddings local — OpenRouter has no nomic-embed-text, so switching the
+# embedding slot means re-embedding every stored memory:
+EMBEDDING_PROVIDER=ollama
+```
+
 ## 2. Start the Docker Dev Stack
 
 ```bash

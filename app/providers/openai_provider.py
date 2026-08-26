@@ -22,13 +22,18 @@ from app.telemetry import (
 class OpenAIProvider(BaseModelProvider):
     def __init__(self, model_name: str, settings: Any, slot: str = "unknown") -> None:
         super().__init__(model_name=model_name, settings=settings, slot=slot)
-        if not self.settings.openai_api_key:
-            raise ProviderError("OPENAI_API_KEY is required when an OpenAI provider is selected.")
+        api_key, base_url = self._resolve_credentials()
+        if not api_key:
+            raise ProviderError(self._missing_key_message())
 
-        self.client = AsyncOpenAI(
-            api_key=self.settings.openai_api_key,
-            base_url=self.settings.openai_base_url if self.settings.openai_base_url else None,
-        )
+        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url or None)
+
+    def _resolve_credentials(self) -> tuple[str | None, str | None]:
+        """(api_key, base_url) for the SDK client. Subclasses point elsewhere."""
+        return self.settings.openai_api_key, self.settings.openai_base_url
+
+    def _missing_key_message(self) -> str:
+        return "OPENAI_API_KEY is required when an OpenAI provider is selected."
 
     def _to_openai_messages(self, messages: Sequence[ProviderMessage]) -> list[ChatCompletionMessageParam]:
         # cast is load-bearing, NOT redundant: our messages carry a plain str
