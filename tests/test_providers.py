@@ -485,22 +485,39 @@ def test_orchestrator_labels_all_four_slots() -> None:
 # guard against a silent break on an `openai` bump — see the 2.x -> 3.x upgrade.
 
 
+def _with_mock_transport(
+    provider: OpenAIProvider,
+    handler: Callable[[httpx.Request], httpx.Response],
+) -> OpenAIProvider:
+    """Route the provider's SDK client at `handler` instead of the network.
+
+    Keeps the api_key and base_url the provider resolved for itself, so the
+    request the handler sees proves which credentials and host it would really
+    have used. That is what makes this reusable for the OpenRouter subclass.
+    """
+    from openai import AsyncOpenAI
+
+    provider.client = AsyncOpenAI(
+        api_key=provider.client.api_key,
+        base_url=provider.client.base_url,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    return provider
+
+
 def _openai_over_transport(
     handler: Callable[[httpx.Request], httpx.Response],
     *,
     model: str = "gpt-4o-mini",
 ) -> OpenAIProvider:
     """An OpenAIProvider whose SDK client talks to `handler` instead of the network."""
-    from openai import AsyncOpenAI
-
-    settings = make_test_settings(openai_api_key="sk-test", embedding_dimension=EMBEDDING_DIM)
-    provider = OpenAIProvider(model_name=model, settings=settings, slot="actor")
-    provider.client = AsyncOpenAI(
-        api_key="sk-test",
-        base_url="http://openai.test/v1",
-        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    settings = make_test_settings(
+        openai_api_key="sk-test",
+        openai_base_url="http://openai.test/v1",
+        embedding_dimension=EMBEDDING_DIM,
     )
-    return provider
+    provider = OpenAIProvider(model_name=model, settings=settings, slot="actor")
+    return _with_mock_transport(provider, handler)
 
 
 def _chat_completion_body(content: str) -> dict:
@@ -635,3 +652,75 @@ async def test_openai_wire_embed_texts_sends_dimensions_and_parses_vectors() -> 
     assert seen["body"]["dimensions"] == EMBEDDING_DIM
     assert len(vectors) == 2
     assert all(len(v) == EMBEDDING_DIM for v in vectors)
+
+
+# ---------------------------------------------------------------------------
+# OpenRouterProvider over the same mocked transport
+# ---------------------------------------------------------------------------
+#
+# The OpenRouter tests further up assert on client attributes and mock the SDK,
+# so nothing proves a real request would carry the OpenRouter key to the
+# OpenRouter host. The subclass overrides only credential resolution, and that
+# is exactly the part those tests cannot see. These close that gap.
+
+
+def _openrouter_over_transport(
+    handler: Callable[[httpx.Request], httpx.Response],
+    *,
+    model: str = "meta-llama/llama-3.1-8b-instruct",
+):
+    from app.providers.openrouter_provider import OpenRouterProvider
+
+    settings = make_test_settings(
+        openai_api_key=None,  # deliberately absent: leaking into the request is the bug
+        openrouter_api_key="sk-or-test",
+        openrouter_base_url="https://openrouter.ai/api/v1",
+    )
+    provider = OpenRouterProvider(model_name=model, settings=settings, slot="actor")
+    return _with_mock_transport(provider, handler)
+
+
+@pytest.mark.asyncio
+async def test_openrouter_wire_request_carries_its_own_key_and_host() -> None:
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["auth"] = request.headers.get("authorization")
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=_chat_completion_body("Hello from OpenRouter"))
+
+    provider = _openrouter_over_transport(handler)
+    result = await provider.generate_text(MSG, temperature=0.7, max_tokens=200)
+    await provider.aclose()
+
+    assert result == "Hello from OpenRouter"
+    assert seen["url"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert seen["auth"] == "Bearer sk-or-test"
+    # OpenRouter slugs contain a vendor prefix; it must survive verbatim.
+    assert seen["body"]["model"] == "meta-llama/llama-3.1-8b-instruct"
+
+
+@pytest.mark.asyncio
+async def test_openrouter_wire_streaming_works_through_the_subclass() -> None:
+    """The actor and GM slots stream, so the inherited SSE path has to hold up."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        events = [
+            {
+                "id": "gen-test",
+                "object": "chat.completion.chunk",
+                "created": 1,
+                "model": "meta-llama/llama-3.1-8b-instruct",
+                "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": None}],
+            }
+            for token in ["The ", "lantern ", "flickers."]
+        ]
+        sse = "".join(f"data: {json.dumps(e)}\n\n" for e in events) + "data: [DONE]\n\n"
+        return httpx.Response(200, content=sse, headers={"content-type": "text/event-stream"})
+
+    provider = _openrouter_over_transport(handler)
+    collected = [c async for c in provider.generate_text_stream(MSG, temperature=0.7, max_tokens=200)]
+    await provider.aclose()
+
+    assert "".join(collected) == "The lantern flickers."
