@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -411,3 +412,171 @@ def test_orchestrator_labels_all_four_slots() -> None:
         OrchestratorService(settings)
 
     assert slots == ["actor", "memory", "embedding", "gm"]
+
+
+# ===========================================================================
+# OpenAIProvider over a mocked HTTP transport (SDK wire compatibility)
+# ===========================================================================
+#
+# The OpenAIProvider tests above patch `client.chat.completions.create`, so the
+# SDK never builds a request or parses a response — they pass against any SDK
+# version, including one whose wire format changed underneath us. Nothing else
+# covers it either: every test and the E2E stack run the mock provider, and
+# OpenAIProvider is imported lazily inside build_provider, so a plain `pytest`
+# run never even imports the SDK.
+#
+# These tests mock httpx instead of the SDK, so real request serialization,
+# real SSE parsing, and the real pydantic response models all run. They are the
+# guard against a silent break on an `openai` bump — see the 2.x -> 3.x upgrade.
+
+
+def _openai_over_transport(
+    handler: Callable[[httpx.Request], httpx.Response],
+    *,
+    model: str = "gpt-4o-mini",
+) -> OpenAIProvider:
+    """An OpenAIProvider whose SDK client talks to `handler` instead of the network."""
+    from openai import AsyncOpenAI
+
+    settings = make_test_settings(openai_api_key="sk-test", embedding_dimension=EMBEDDING_DIM)
+    provider = OpenAIProvider(model_name=model, settings=settings, slot="actor")
+    provider.client = AsyncOpenAI(
+        api_key="sk-test",
+        base_url="http://openai.test/v1",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    return provider
+
+
+def _chat_completion_body(content: str) -> dict:
+    return {
+        "id": "chatcmpl-test",
+        "object": "chat.completion",
+        "created": 1,
+        "model": "gpt-4o-mini",
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    }
+
+
+@pytest.mark.asyncio
+async def test_openai_wire_generate_text_roundtrips_through_sdk() -> None:
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content)
+        seen["auth"] = request.headers.get("authorization")
+        return httpx.Response(200, json=_chat_completion_body("Hello from GPT"))
+
+    provider = _openai_over_transport(handler)
+    result = await provider.generate_text(MSG, temperature=0.7, max_tokens=200, json_mode=True)
+    await provider.aclose()
+
+    assert result == "Hello from GPT"
+    assert seen["url"] == "http://openai.test/v1/chat/completions"
+    assert seen["auth"] == "Bearer sk-test"
+    assert seen["body"]["model"] == "gpt-4o-mini"
+    assert seen["body"]["messages"] == [{"role": "user", "content": "Hello"}]
+    assert seen["body"]["temperature"] == 0.7
+    # Not `max_tokens`: the provider deliberately sends the newer field name.
+    assert seen["body"]["max_completion_tokens"] == 200
+    assert seen["body"]["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_openai_wire_generate_json_parses_completion() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_chat_completion_body('{"ok": true, "issues": []}'))
+
+    provider = _openai_over_transport(handler)
+    payload = await provider.generate_json(MSG, temperature=0.2, max_tokens=200)
+    await provider.aclose()
+
+    assert payload == {"ok": True, "issues": []}
+
+
+@pytest.mark.asyncio
+async def test_openai_wire_empty_completion_raises_provider_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_chat_completion_body(""))
+
+    provider = _openai_over_transport(handler)
+    with pytest.raises(ProviderError, match="empty completion"):
+        await provider.generate_text(MSG, temperature=0.7, max_tokens=200)
+    await provider.aclose()
+
+
+@pytest.mark.asyncio
+async def test_openai_wire_stream_parses_sse_deltas() -> None:
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        events = []
+        for token in ["Hel", "lo ", "world"]:
+            events.append(
+                {
+                    "id": "chatcmpl-test",
+                    "object": "chat.completion.chunk",
+                    "created": 1,
+                    "model": "gpt-4o-mini",
+                    "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": None}],
+                }
+            )
+        # Usage-only trailer, as sent for stream_options={"include_usage": True}.
+        events.append(
+            {
+                "id": "chatcmpl-test",
+                "object": "chat.completion.chunk",
+                "created": 1,
+                "model": "gpt-4o-mini",
+                "choices": [],
+                "usage": {"prompt_tokens": 11, "completion_tokens": 3, "total_tokens": 14},
+            }
+        )
+        sse = "".join(f"data: {json.dumps(e)}\n\n" for e in events) + "data: [DONE]\n\n"
+        return httpx.Response(200, content=sse, headers={"content-type": "text/event-stream"})
+
+    provider = _openai_over_transport(handler)
+    collected = [c async for c in provider.generate_text_stream(MSG, temperature=0.7, max_tokens=200)]
+    await provider.aclose()
+
+    assert collected == ["Hel", "lo ", "world"]
+    assert seen["body"]["stream"] is True
+    assert seen["body"]["stream_options"] == {"include_usage": True}
+
+
+@pytest.mark.asyncio
+async def test_openai_wire_embed_texts_sends_dimensions_and_parses_vectors() -> None:
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content)
+        count = len(seen["body"]["input"])
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "model": "text-embedding-3-small",
+                "data": [{"object": "embedding", "index": i, "embedding": [0.1] * EMBEDDING_DIM} for i in range(count)],
+                "usage": {"prompt_tokens": 4, "total_tokens": 4},
+            },
+        )
+
+    provider = _openai_over_transport(handler, model="text-embedding-3-small")
+    vectors = await provider.embed_texts(["hello", "world"])
+    await provider.aclose()
+
+    assert seen["url"] == "http://openai.test/v1/embeddings"
+    assert seen["body"]["input"] == ["hello", "world"]
+    assert seen["body"]["dimensions"] == EMBEDDING_DIM
+    assert len(vectors) == 2
+    assert all(len(v) == EMBEDDING_DIM for v in vectors)
