@@ -26,6 +26,22 @@ from opentelemetry.trace import Status, StatusCode
 logger = logging.getLogger(__name__)
 
 
+class _HealthLogFilter(logging.Filter):
+    """Drop /health probe access logs so the Docker healthcheck doesn't flood Loki.
+
+    uvicorn.access records carry the request path as ``record.args[2]`` (the
+    ``'%s - "%s %s HTTP/%s" %d'`` format). /health is already excluded from traces
+    and HTTP metrics; this trims it from the log stream too.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str):
+            if args[2].startswith("/health"):
+                return False
+        return True
+
+
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -218,6 +234,7 @@ def setup_telemetry(app) -> None:
         logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter()))
         set_logger_provider(logger_provider)
         otlp_log_handler = LoggingHandler(level=logging.INFO, logger_provider=logger_provider)
+        otlp_log_handler.addFilter(_HealthLogFilter())
         logging.getLogger().addHandler(otlp_log_handler)
         # uvicorn configures its own loggers with propagate=False, so their request
         # logs never reach the root handler. Attach the OTLP handler directly so the
